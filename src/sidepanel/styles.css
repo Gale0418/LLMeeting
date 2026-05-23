@@ -1,0 +1,166 @@
+:root {
+  color-scheme: light dark;
+  font-family: "Segoe UI", "Noto Sans TC", system-ui, sans-serif;
+  background: #f6f7f9;
+  color: #1f2328;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+.shell {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 18px;
+}
+
+h2 {
+  font-size: 14px;
+}
+
+#statusText {
+  margin-top: 4px;
+  color: #59636e;
+  font-size: 12px;
+}
+
+.composer {
+  display: grid;
+  gap: 8px;
+}
+
+label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #ccd2d9;
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+  color: inherit;
+  line-height: 1.45;
+}
+
+button {
+  border: 1px solid #1f6feb;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #1f6feb;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+#resetButton {
+  border-color: #ccd2d9;
+  background: #ffffff;
+  color: #1f2328;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.provider {
+  min-width: 0;
+  border: 1px solid #d8dee4;
+  border-radius: 8px;
+  padding: 8px;
+  background: #ffffff;
+}
+
+.provider span,
+.provider strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.provider span {
+  color: #59636e;
+  font-size: 12px;
+}
+
+.provider strong {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.output {
+  display: grid;
+  gap: 8px;
+}
+
+pre {
+  min-height: 180px;
+  max-height: 420px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid #d8dee4;
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+  color: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    background: #0d1117;
+    color: #e6edf3;
+  }
+
+  textarea,
+  pre,
+  .provider,
+  #resetButton {
+    border-color: #30363d;
+    background: #161b22;
+    color: #e6edf3;
+  }
+
+  #statusText,
+  .provider span {
+    color: #8b949e;
+  }
+}

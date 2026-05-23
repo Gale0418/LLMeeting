@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Debate Host</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>AI Debate Host</h1>
+          <p id="statusText">等待開始</p>
+        </div>
+        <button id="resetButton" type="button" title="重置">Reset</button>
+      </header>
+
+      <form id="debateForm" class="composer">
+        <label for="questionInput">問題</label>
+        <textarea id="questionInput" rows="7" placeholder="輸入要讓 ChatGPT、Gemini、Grok 辯論的問題"></textarea>
+        <button id="startButton" type="submit">開始辯論</button>
+      </form>
+
+      <section class="status-grid" aria-label="Provider status">
+        <article class="provider" data-provider="chatgpt">
+          <span>ChatGPT</span>
+          <strong id="chatgptState">待命</strong>
+        </article>
+        <article class="provider" data-provider="gemini">
+          <span>Gemini</span>
+          <strong id="geminiState">待命</strong>
+        </article>
+        <article class="provider" data-provider="grok">
+          <span>Grok</span>
+          <strong id="grokState">待命</strong>
+        </article>
+      </section>
+
+      <section class="output">
+        <h2>Transcript</h2>
+        <pre id="transcriptOutput">尚未開始</pre>
+      </section>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
