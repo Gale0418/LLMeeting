@@ -77,6 +77,32 @@
         "main [role='article']",
       ],
     },
+    claude: {
+      hosts: ["claude.ai"],
+      inputSelectors: [
+        "div[contenteditable='true']",
+        "div.ProseMirror",
+        "textarea",
+        "[role='textbox']",
+      ],
+      sendSelectors: [
+        "button[aria-label*='Send']",
+        "button[aria-label*='送出']",
+        "button[aria-label*='傳送']",
+        "button[aria-label*='Send Message']",
+        "button.rounded-lg",
+      ],
+      stopSelectors: [
+        "button[aria-label*='Stop']",
+        "button[aria-label*='停止']",
+      ],
+      responseSelectors: [
+        ".font-claude-message",
+        "[data-testid='message-bubble']",
+        ".prose",
+        "article",
+      ],
+    },
   };
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -98,16 +124,16 @@
       throw new Error(`目前頁面不是 ${message.provider}`);
     }
 
-    const input = await waitFor(() => findInput(config), 30000, "找不到輸入框，請確認已登入並開啟聊天頁");
+    const input = await waitFor(() => findInput(config), 30000, `找不到 ${message.provider} 的輸入框，請確認已登入並開啟聊天頁面。`);
     await writeInput(input, message.prompt);
 
-    const sendButton = await waitFor(() => findSendButton(config), 10000, "找不到可用的送出按鈕");
+    const sendButton = await waitFor(() => findSendButton(config), 10000, `找不到 ${message.provider} 可用的送出按鈕。`);
     sendButton.click();
 
     await waitForCompletion(config, message.timeoutMs || 120000);
     const content = readLastAssistantMessage(config);
     if (!content) {
-      throw new Error("無法讀取 AI 回覆");
+      throw new Error(`無法讀取 ${message.provider} 的 AI 回覆。`);
     }
 
     return { ok: true, provider: providerId, content };
@@ -124,12 +150,22 @@
     const candidates = collectElements(config.inputSelectors)
       .filter(isVisible)
       .filter((element) => !element.disabled && element.getAttribute("aria-disabled") !== "true");
-    return candidates[candidates.length - 1] || null;
+    return candidates[candidates.length - 1] || findLikelyInput();
+  }
+
+  function findLikelyInput() {
+    const placeholders = ["問", "ask", "message", "write", "chat", "聊", "輸入", "prompt"];
+    return Array.from(document.querySelectorAll("textarea, div[contenteditable='true'], [role='textbox']"))
+      .filter(isVisible)
+      .find((el) => {
+        const placeholder = (el.getAttribute("placeholder") || el.getAttribute("aria-label") || el.textContent || "").toLowerCase();
+        return placeholders.some((item) => placeholder.includes(item));
+      }) || null;
   }
 
   function findSendButton(config) {
     const candidates = collectElements(config.sendSelectors)
-      .filter((element) => element instanceof HTMLButtonElement)
+      .filter((element) => element instanceof HTMLButtonElement || element.getAttribute("role") === "button")
       .filter(isVisible)
       .filter((button) => !button.disabled && button.getAttribute("aria-disabled") !== "true");
 
@@ -137,19 +173,19 @@
   }
 
   function findLikelySendButton() {
-    const labels = ["send", "submit", "arrow", "送出", "傳送"];
-    return Array.from(document.querySelectorAll("button"))
+    const labels = ["send", "submit", "arrow", "送出", "傳送", "傳送訊息", "發送"];
+    return Array.from(document.querySelectorAll("button, [role='button']"))
       .filter(isVisible)
       .filter((button) => !button.disabled && button.getAttribute("aria-disabled") !== "true")
       .find((button) => {
-        const label = `${button.getAttribute("aria-label") || ""} ${button.title || ""}`.toLowerCase();
+        const label = `${button.getAttribute("aria-label") || ""} ${button.title || ""} ${button.textContent || ""}`.toLowerCase();
         return labels.some((item) => label.includes(item));
       }) || null;
   }
 
   async function writeInput(element, text) {
     element.focus();
-    await delay(100);
+    await delay(150);
 
     if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
       element.value = text;
@@ -179,14 +215,14 @@
         stableSince = Date.now();
       }
 
-      if (currentText && !isGenerating(config) && Date.now() - stableSince > 1800) {
+      if (currentText && !isGenerating(config) && Date.now() - stableSince > 2000) {
         return;
       }
 
       await delay(500);
     }
 
-    throw new Error("等待回覆逾時");
+    throw new Error("等待 AI 回覆逾時");
   }
 
   function isGenerating(config) {

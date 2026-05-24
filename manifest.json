@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Debate Host",
-  "description": "Run a private ChatGPT, Gemini, and Grok debate flow from a Chrome side panel.",
+  "description": "Run a private multi-AI debate flow from a Chrome side panel.",
   "version": "0.1.0",
   "permissions": ["sidePanel", "storage", "tabs", "scripting"],
   "host_permissions": [
@@ -9,7 +9,8 @@
     "https://chat.openai.com/*",
     "https://gemini.google.com/*",
     "https://grok.com/*",
-    "https://x.com/*"
+    "https://x.com/*",
+    "https://claude.ai/*"
   ],
   "action": {
     "default_title": "AI Debate Host"
@@ -28,7 +29,8 @@
         "https://chat.openai.com/*",
         "https://gemini.google.com/*",
         "https://grok.com/*",
-        "https://x.com/i/grok*"
+        "https://x.com/i/grok*",
+        "https://claude.ai/*"
       ],
       "js": ["src/content/provider-page.js"],
       "run_at": "document_idle"

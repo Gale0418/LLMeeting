@@ -66,3 +66,39 @@ test("engine records provider errors without blocking the next phase", () => {
   assert.equal(jobs.length, 3);
   assert.match(jobs.find((job) => job.provider === "chatgpt").prompt, /Gemini:\n\[錯誤：timeout\]/);
 });
+
+test("engine supports optional Claude as a participant", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini", "grok", "claude"]);
+  const jobs = engine.start("比較四個 AI 的觀點");
+
+  assert.deepEqual(jobs.map((job) => job.provider), ["chatgpt", "gemini", "grok", "claude"]);
+
+  engine.recordAnswer("chatgpt", "GPT 回答");
+  engine.recordAnswer("gemini", "Gemini 回答");
+  engine.recordAnswer("grok", "Grok 回答");
+  engine.recordAnswer("claude", "Claude 回答");
+
+  const critiqueJobs = engine.buildCritiqueJobs();
+  const chatgptPrompt = critiqueJobs.find((job) => job.provider === "chatgpt").prompt;
+
+  assert.match(chatgptPrompt, /Claude:\nClaude 回答/);
+});
+
+test("engine rejects debates with fewer than two active providers", () => {
+  assert.throws(
+    () => new DebateEngine(["chatgpt"]),
+    /至少需要 2 家 AI/,
+  );
+});
+
+test("engine rejects unknown active or summary providers", () => {
+  assert.throws(
+    () => new DebateEngine(["chatgpt", "unknown"]),
+    /Unknown provider: unknown/,
+  );
+
+  assert.throws(
+    () => new DebateEngine(["chatgpt", "gemini"], "unknown"),
+    /Unknown provider: unknown/,
+  );
+});

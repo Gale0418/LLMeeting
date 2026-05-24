@@ -1,9 +1,15 @@
 import { buildCritiquePrompt, buildFinalSummaryPrompt, buildFirstRoundPrompt } from "../shared/prompts.js";
-import { PROVIDERS, PROVIDER_IDS } from "../shared/providers.js";
+import {
+  DEFAULT_ACTIVE_PROVIDER_IDS,
+  PROVIDERS,
+  PROVIDER_IDS,
+  isProviderId,
+  normalizeProviderIds,
+} from "../shared/providers.js";
 import { normalizeText } from "../shared/text.js";
 
-function emptyProviderMap() {
-  return Object.fromEntries(PROVIDER_IDS.map((providerId) => [providerId, ""]));
+function emptyProviderMap(providerIds = PROVIDER_IDS) {
+  return Object.fromEntries(providerIds.map((providerId) => [providerId, ""]));
 }
 
 function providerJob(providerId, phase, prompt) {
@@ -11,12 +17,23 @@ function providerJob(providerId, phase, prompt) {
 }
 
 export class DebateEngine {
-  constructor() {
+  constructor(activeProviders = DEFAULT_ACTIVE_PROVIDER_IDS, summaryProvider = "chatgpt") {
+    this.validateRequestedProviders(activeProviders);
+    if (!isProviderId(summaryProvider)) {
+      throw new Error(`Unknown provider: ${summaryProvider}`);
+    }
+
+    this.activeProviders = normalizeProviderIds(activeProviders);
+    if (this.activeProviders.length < 2) {
+      throw new Error("至少需要 2 家 AI 才能進行辯論");
+    }
+
+    this.summaryProvider = summaryProvider;
     this.state = {
       phase: "idle",
       originalQuestion: "",
-      answers: emptyProviderMap(),
-      critiques: emptyProviderMap(),
+      answers: emptyProviderMap(activeProviders),
+      critiques: emptyProviderMap(activeProviders),
       errors: [],
     };
   }
@@ -26,12 +43,12 @@ export class DebateEngine {
     this.state = {
       phase: "first-round",
       originalQuestion: question,
-      answers: emptyProviderMap(),
-      critiques: emptyProviderMap(),
+      answers: emptyProviderMap(this.activeProviders),
+      critiques: emptyProviderMap(this.activeProviders),
       errors: [],
     };
 
-    return PROVIDERS.map((provider) =>
+    return PROVIDERS.filter((p) => this.activeProviders.includes(p.id)).map((provider) =>
       providerJob(provider.id, "first-round", buildFirstRoundPrompt(question)),
     );
   }
@@ -64,7 +81,7 @@ export class DebateEngine {
     this.requireComplete(this.state.answers, "first-round");
     this.state.phase = "critique";
 
-    return PROVIDERS.map((provider) =>
+    return PROVIDERS.filter((p) => this.activeProviders.includes(p.id)).map((provider) =>
       providerJob(
         provider.id,
         "critique",
@@ -72,6 +89,7 @@ export class DebateEngine {
           recipient: provider.id,
           originalQuestion: this.state.originalQuestion,
           answers: this.state.answers,
+          activeProviders: this.activeProviders,
         }),
       ),
     );
@@ -82,12 +100,13 @@ export class DebateEngine {
     this.state.phase = "summary";
 
     return providerJob(
-      "chatgpt",
+      this.summaryProvider,
       "summary",
       buildFinalSummaryPrompt({
         originalQuestion: this.state.originalQuestion,
         answers: this.state.answers,
         critiques: this.state.critiques,
+        activeProviders: this.activeProviders,
       }),
     );
   }
@@ -102,8 +121,20 @@ export class DebateEngine {
     }
   }
 
+  validateRequestedProviders(providerIds) {
+    if (!Array.isArray(providerIds)) {
+      return;
+    }
+
+    for (const providerId of providerIds) {
+      if (!isProviderId(providerId)) {
+        throw new Error(`Unknown provider: ${providerId}`);
+      }
+    }
+  }
+
   requireComplete(values, phase) {
-    const missingProvider = PROVIDER_IDS.find((providerId) => !values[providerId]);
+    const missingProvider = this.activeProviders.find((providerId) => !values[providerId]);
     if (missingProvider) {
       throw new Error(`Cannot leave ${phase}; missing ${missingProvider}`);
     }

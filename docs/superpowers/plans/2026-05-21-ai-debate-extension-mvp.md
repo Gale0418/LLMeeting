@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a private Chrome Manifest V3 extension that runs a fixed ChatGPT/Gemini/Grok debate flow and asks ChatGPT to summarize in its original conversation.
+**Goal:** Build a private Chrome Manifest V3 extension that runs a selectable AI debate flow with ChatGPT/Gemini/Grok by default, optional Claude, Mock Mode, and a configurable summary judge.
 
 **Architecture:** Use a side panel as the control UI, a background service worker as the debate orchestrator, and content-script provider adapters for each AI web app. Keep core behavior testable in pure ES modules, with Chrome APIs isolated behind thin runtime wrappers.
 
@@ -18,6 +18,7 @@
 - `src/shared/text.js`: Text clipping and transcript formatting helpers.
 - `src/shared/prompts.js`: First-round, critique-round, and final-summary prompt builders.
 - `src/background/debateEngine.js`: Pure debate state machine.
+- `src/background/chromeCompat.js`: Chrome API compatibility helpers that can be unit-tested outside Chrome.
 - `src/background/service-worker.js`: Chrome runtime integration for tabs, messaging, storage, and side panel updates.
 - `src/content/provider-page.js`: In-page provider adapter dispatcher and DOM automation helpers.
 - `src/sidepanel/index.html`: Side panel UI shell.
@@ -26,6 +27,10 @@
 - `tests/prompts.test.mjs`: Prompt-builder tests.
 - `tests/text.test.mjs`: Text helper tests.
 - `tests/debateEngine.test.mjs`: Debate state-machine tests.
+- `tests/providers.test.mjs`: Provider defaults, labels, and normalization tests.
+- `tests/chromeCompat.test.mjs`: Side panel compatibility helper tests.
+- `tests/assets.test.mjs`: Extension asset policy tests.
+- `tests/contentSafety.test.mjs`: Content-script safety checks.
 - `README.md`: Local loading and usage notes.
 
 ### Task 1: Test Harness And Prompt Builders

@@ -4,11 +4,17 @@ const startButton = document.querySelector("#startButton");
 const resetButton = document.querySelector("#resetButton");
 const statusText = document.querySelector("#statusText");
 const transcriptOutput = document.querySelector("#transcriptOutput");
+const chatTranscript = document.querySelector("#chatTranscript");
+const progressBar = document.querySelector("#progressBar");
+
+const mockModeCheckbox = document.querySelector("#mockModeCheckbox");
+const summaryProviderSelect = document.querySelector("#summaryProviderSelect");
 
 const providerStateEls = {
   chatgpt: document.querySelector("#chatgptState"),
   gemini: document.querySelector("#geminiState"),
   grok: document.querySelector("#grokState"),
+  claude: document.querySelector("#claudeState"),
 };
 
 form.addEventListener("submit", async (event) => {
@@ -19,9 +25,29 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
+  // 取得勾選的 providers
+  const activeProviders = Array.from(document.querySelectorAll(".provider-select:checked"))
+    .map((el) => el.value);
+
+  if (activeProviders.length < 2) {
+    renderMessage("❌ 至少需要選擇 2 家 AI 才能進行辯論喔！");
+    return;
+  }
+
+  const mockMode = mockModeCheckbox.checked;
+  const summaryProvider = summaryProviderSelect.value;
+
   startButton.disabled = true;
-  renderMessage("啟動辯論中...");
-  const response = await chrome.runtime.sendMessage({ type: "aiDebate:start", question });
+  renderMessage("啟動辯論大會中...");
+  
+  const response = await chrome.runtime.sendMessage({
+    type: "aiDebate:start",
+    question,
+    mockMode,
+    activeProviders,
+    summaryProvider,
+  });
+
   if (!response?.ok) {
     renderMessage(response?.error || "啟動失敗");
   }
@@ -54,15 +80,188 @@ function renderState(state) {
   startButton.disabled = Boolean(state.busy);
   statusText.textContent = state.message || state.status || "等待開始";
 
+  // 同步選單狀態 (當前非忙碌時)
+  if (!state.busy) {
+    if (state.mockMode !== undefined) {
+      mockModeCheckbox.checked = state.mockMode;
+    }
+    if (state.activeProviders) {
+      document.querySelectorAll(".provider-select").forEach((el) => {
+        el.checked = state.activeProviders.includes(el.value);
+      });
+    }
+    if (state.summaryProvider) {
+      summaryProviderSelect.value = state.summaryProvider;
+    }
+  }
+
   const transcript = state.transcript;
   const answers = transcript?.answers || {};
   const critiques = transcript?.critiques || {};
 
+  // 更新各個 AI 的目前狀態
+  const activeSet = new Set(state.activeProviders || ["chatgpt", "gemini", "grok"]);
   for (const provider of Object.keys(providerStateEls)) {
-    providerStateEls[provider].textContent = providerLabelForPhase(provider, state, answers, critiques);
+    if (!activeSet.has(provider)) {
+      providerStateEls[provider].textContent = "未啟用";
+      providerStateEls[provider].className = "state-inactive";
+      continue;
+    }
+
+    const label = providerLabelForPhase(provider, state, answers, critiques);
+    providerStateEls[provider].textContent = label;
+    
+    // 設定狀態樣式
+    if (label === "回答中" || label === "互評中") {
+      providerStateEls[provider].className = "state-active pulsing";
+    } else if (label === "已回答" || label === "已互評") {
+      providerStateEls[provider].className = "state-done";
+    } else {
+      providerStateEls[provider].className = "state-waiting";
+    }
   }
 
+  // 更新進度條
+  updateProgressBar(state);
+
+  // 渲染氣泡式對話框
+  renderChatBubbles(state);
+
+  // 傳統文字 Transcript（備用與除錯）
   transcriptOutput.textContent = buildTranscriptText(state);
+}
+
+function updateProgressBar(state) {
+  if (!progressBar) return;
+  let percent = 0;
+  if (state.status === "running") {
+    if (state.phase === "first-round") percent = 30;
+    else if (state.phase === "critique") percent = 65;
+    else if (state.phase === "summary") percent = 85;
+  } else if (state.status === "done") {
+    percent = 100;
+  } else if (state.status === "error") {
+    percent = 100;
+  }
+  
+  progressBar.style.width = `${percent}%`;
+  
+  if (state.status === "error") {
+    progressBar.classList.add("error");
+  } else {
+    progressBar.classList.remove("error");
+  }
+}
+
+function renderChatBubbles(state) {
+  if (!chatTranscript) return;
+  
+  const transcript = state.transcript;
+  if (!transcript || !transcript.originalQuestion) {
+    chatTranscript.innerHTML = `<div class="empty-state">點擊「開始辯論大會」來啟動對決吧！✨</div>`;
+    return;
+  }
+
+  let html = "";
+
+  // 1. 使用者提問
+  html += `
+    <div class="bubble-group user">
+      <div class="bubble-meta">主人提問 🙋‍♂️</div>
+      <div class="bubble-content">${escapeHTML(transcript.originalQuestion)}</div>
+    </div>
+  `;
+
+  // 2. 第一輪回答
+  const answers = transcript.answers || {};
+  const activeSet = new Set(state.activeProviders || ["chatgpt", "gemini", "grok"]);
+  
+  // 檢查是否有任何啟用的 provider 開始有回答或在回答中
+  const hasFirstRound = Array.from(activeSet).some(p => answers[p] || state.phase === "first-round");
+  if (hasFirstRound) {
+    html += `<div class="round-divider">第一輪：各抒己見 📢</div>`;
+    for (const providerId of activeSet) {
+      const content = answers[providerId];
+      if (!content && state.phase === "first-round") {
+        html += `
+          <div class="bubble-group assistant ${providerId} loading">
+            <div class="bubble-meta">${providerLabel(providerId)}</div>
+            <div class="bubble-content"><span class="loading-dots">思考生成中<span>.</span><span>.</span><span>.</span></span></div>
+          </div>
+        `;
+      } else if (content) {
+        html += `
+          <div class="bubble-group assistant ${providerId}">
+            <div class="bubble-meta">${providerLabel(providerId)}</div>
+            <div class="bubble-content">${formatContent(content)}</div>
+          </div>
+        `;
+      }
+    }
+  }
+
+  // 3. 第二輪互評
+  const critiques = transcript.critiques || {};
+  const hasCritiqueRound = Array.from(activeSet).some(p => critiques[p] || state.phase === "critique");
+  if (hasCritiqueRound && state.phase !== "first-round") {
+    html += `<div class="round-divider">第二輪：交叉評析 ⚡</div>`;
+    for (const providerId of activeSet) {
+      const content = critiques[providerId];
+      if (!content && state.phase === "critique") {
+        // 如果第一輪拿到了答案，才需要顯示第二輪思考中
+        if (answers[providerId] && !answers[providerId].startsWith("[錯誤：")) {
+          html += `
+            <div class="bubble-group assistant ${providerId} loading">
+              <div class="bubble-meta">${providerLabel(providerId)} 評析中</div>
+              <div class="bubble-content"><span class="loading-dots">撰寫互評中<span>.</span><span>.</span><span>.</span></span></div>
+            </div>
+          `;
+        }
+      } else if (content) {
+        html += `
+          <div class="bubble-group assistant ${providerId} critique">
+            <div class="bubble-meta">${providerLabel(providerId)} 評析</div>
+            <div class="bubble-content">${formatContent(content)}</div>
+          </div>
+        `;
+      }
+    }
+  }
+
+  // 4. 總結
+  if (state.phase === "summary" && !state.summary) {
+    const sumProvider = state.summaryProvider || "chatgpt";
+    html += `
+      <div class="round-divider">最終總結 👑</div>
+      <div class="bubble-group summary ${sumProvider} loading">
+        <div class="bubble-meta">${providerLabel(sumProvider)} 總結裁決中</div>
+        <div class="bubble-content"><span class="loading-dots">彙整精華中<span>.</span><span>.</span><span>.</span></span></div>
+      </div>
+    `;
+  } else if (state.summary) {
+    const sumProvider = state.summaryProvider || "chatgpt";
+    html += `
+      <div class="round-divider">最終裁決 👑</div>
+      <div class="bubble-group summary ${sumProvider}">
+        <div class="bubble-meta">${providerLabel(sumProvider)} 總結裁決</div>
+        <div class="bubble-content">${formatContent(state.summary)}</div>
+      </div>
+    `;
+  }
+
+  chatTranscript.innerHTML = html;
+  // 自動滑動到最新消息
+  chatTranscript.scrollTop = chatTranscript.scrollHeight;
+}
+
+function providerLabel(id) {
+  const labels = {
+    chatgpt: "ChatGPT",
+    gemini: "Gemini",
+    grok: "Grok",
+    claude: "Claude",
+  };
+  return labels[id] || id;
 }
 
 function providerLabelForPhase(provider, state, answers, critiques) {
@@ -97,15 +296,17 @@ function buildTranscriptText(state) {
     speakerBlock("ChatGPT", transcript.answers?.chatgpt),
     speakerBlock("Gemini", transcript.answers?.gemini),
     speakerBlock("Grok", transcript.answers?.grok),
+    speakerBlock("Claude", transcript.answers?.claude),
     "",
     "第二輪互評:",
     speakerBlock("ChatGPT", transcript.critiques?.chatgpt),
     speakerBlock("Gemini", transcript.critiques?.gemini),
     speakerBlock("Grok", transcript.critiques?.grok),
+    speakerBlock("Claude", transcript.critiques?.claude),
   ];
 
   if (state.summary) {
-    lines.push("", "GPT 最終總結:", state.summary);
+    lines.push("", `${providerLabel(state.summaryProvider)} 最終總結:`, state.summary);
   }
 
   if (state.errors?.length) {
@@ -121,4 +322,19 @@ function speakerBlock(label, content) {
 
 function renderMessage(message) {
   statusText.textContent = message;
+}
+
+function escapeHTML(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function formatContent(str) {
+  if (!str) return "";
+  // 把換行換成 <br>
+  return escapeHTML(str).replace(/\n/g, "<br>");
 }

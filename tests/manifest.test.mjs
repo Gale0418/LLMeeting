@@ -15,7 +15,7 @@ test("manifest declares the side-panel MV3 extension shell", async () => {
   assert.ok(manifest.permissions.includes("tabs"));
 });
 
-test("manifest has host permissions for ChatGPT, Gemini, and Grok", async () => {
+test("manifest has host permissions for ChatGPT, Gemini, Grok, and optional Claude", async () => {
   const manifest = JSON.parse(await readFile("manifest.json", "utf8"));
 
   assert.ok(manifest.host_permissions.includes("https://chatgpt.com/*"));
@@ -23,4 +23,6 @@ test("manifest has host permissions for ChatGPT, Gemini, and Grok", async () => 
   assert.ok(manifest.host_permissions.includes("https://gemini.google.com/*"));
   assert.ok(manifest.host_permissions.includes("https://grok.com/*"));
   assert.ok(manifest.host_permissions.includes("https://x.com/*"));
+  assert.ok(manifest.host_permissions.includes("https://claude.ai/*"));
+  assert.ok(manifest.content_scripts[0].matches.includes("https://claude.ai/*"));
 });

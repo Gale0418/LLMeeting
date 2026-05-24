@@ -1,12 +1,17 @@
-import { otherProviders, providerLabel, PROVIDERS } from "./providers.js";
+import { providerLabel, PROVIDERS } from "./providers.js";
 import { formatSpeakerBlock, normalizeText } from "./text.js";
 
 export function buildFirstRoundPrompt(originalQuestion) {
   return normalizeText(originalQuestion);
 }
 
-export function buildCritiquePrompt({ recipient, answers, maxChars }) {
-  const quotedAnswers = otherProviders(recipient)
+export function buildCritiquePrompt({ recipient, answers, maxChars, activeProviders }) {
+  const providersList = activeProviders 
+    ? PROVIDERS.filter((p) => activeProviders.includes(p.id)) 
+    : PROVIDERS;
+  const others = providersList.filter((p) => p.id !== recipient);
+
+  const quotedAnswers = others
     .map((provider) => formatSpeakerBlock(provider.label, answers[provider.id] || "[沒有取得回答]", { maxChars }))
     .join("\n\n");
 
@@ -17,7 +22,7 @@ export function buildCritiquePrompt({ recipient, answers, maxChars }) {
     "",
     quotedAnswers,
     "",
-    `請基於你上一輪自己的回答，評析 ${otherProviders(recipient).map((provider) => provider.label).join(" 與 ")} 的觀點。`,
+    `請基於你上一輪自己的回答，評析 ${others.map((provider) => provider.label).join(" 與 ")} 的觀點。`,
     "1. 哪些地方你同意？",
     "2. 哪些地方你反對？",
     "3. 哪些地方太草率或漏掉重點？",
@@ -27,12 +32,16 @@ export function buildCritiquePrompt({ recipient, answers, maxChars }) {
   ].join("\n");
 }
 
-export function buildFinalSummaryPrompt({ originalQuestion, answers, critiques, maxChars }) {
-  const answerBlocks = PROVIDERS.map((provider) =>
+export function buildFinalSummaryPrompt({ originalQuestion, answers, critiques, maxChars, activeProviders }) {
+  const providersList = activeProviders 
+    ? PROVIDERS.filter((p) => activeProviders.includes(p.id)) 
+    : PROVIDERS;
+
+  const answerBlocks = providersList.map((provider) =>
     formatSpeakerBlock(provider.label, answers[provider.id] || "[沒有取得回答]", { maxChars }),
   ).join("\n\n");
 
-  const critiqueBlocks = PROVIDERS.map((provider) =>
+  const critiqueBlocks = providersList.map((provider) =>
     formatSpeakerBlock(providerLabel(provider.id), critiques[provider.id] || "[沒有取得互評]", { maxChars }),
   ).join("\n\n");
 

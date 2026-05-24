@@ -10,36 +10,85 @@
     <main class="shell">
       <header class="topbar">
         <div>
-          <h1>AI Debate Host</h1>
+          <h1>LLMeeting</h1>
           <p id="statusText">等待開始</p>
         </div>
         <button id="resetButton" type="button" title="重置">Reset</button>
       </header>
 
+      <!-- 狀態進度條 -->
+      <div id="progressContainer" class="progress-container">
+        <div id="progressBar" class="progress-bar" style="width: 0%"></div>
+      </div>
+
       <form id="debateForm" class="composer">
-        <label for="questionInput">問題</label>
-        <textarea id="questionInput" rows="7" placeholder="輸入要讓 ChatGPT、Gemini、Grok 辯論的問題"></textarea>
-        <button id="startButton" type="submit">開始辯論</button>
+        <label for="questionInput" class="sr-only">問題</label>
+        <textarea id="questionInput" rows="4" placeholder="輸入要讓 AI 們辯論的問題..."></textarea>
+        
+        <!-- Mock Mode 切換開關 -->
+        <div class="mock-mode-row">
+          <label class="switch-container">
+            <input type="checkbox" id="mockModeCheckbox">
+            <span class="switch-slider"></span>
+            <span class="switch-text">開啟模擬測試模式 (Mock Mode)</span>
+          </label>
+        </div>
+
+        <!-- 進階自訂面板 -->
+        <details class="settings-panel">
+          <summary>⚙️ 進階辯論設定</summary>
+          <div class="settings-content">
+            <fieldset class="providers-fieldset">
+              <legend>參與辯論的 AI</legend>
+              <div class="checkbox-group">
+                <label><input type="checkbox" class="provider-select" value="chatgpt" checked> ChatGPT</label>
+                <label><input type="checkbox" class="provider-select" value="gemini" checked> Gemini</label>
+                <label><input type="checkbox" class="provider-select" value="grok" checked> Grok</label>
+                <label><input type="checkbox" class="provider-select" value="claude"> Claude (Beta)</label>
+              </div>
+            </fieldset>
+            
+            <div class="setting-item">
+              <label for="summaryProviderSelect">由誰擔任裁判總結：</label>
+              <select id="summaryProviderSelect">
+                <option value="chatgpt" selected>ChatGPT</option>
+                <option value="gemini">Gemini</option>
+                <option value="grok">Grok</option>
+                <option value="claude">Claude</option>
+              </select>
+            </div>
+          </div>
+        </details>
+
+        <button id="startButton" type="submit">開始辯論大會 🚀</button>
       </form>
 
       <section class="status-grid" aria-label="Provider status">
         <article class="provider" data-provider="chatgpt">
-          <span>ChatGPT</span>
+          <span class="provider-badge chatgpt">GPT</span>
           <strong id="chatgptState">待命</strong>
         </article>
         <article class="provider" data-provider="gemini">
-          <span>Gemini</span>
+          <span class="provider-badge gemini">Gemini</span>
           <strong id="geminiState">待命</strong>
         </article>
         <article class="provider" data-provider="grok">
-          <span>Grok</span>
+          <span class="provider-badge grok">Grok</span>
           <strong id="grokState">待命</strong>
+        </article>
+        <article class="provider" data-provider="claude">
+          <span class="provider-badge claude">Claude</span>
+          <strong id="claudeState">待命</strong>
         </article>
       </section>
 
       <section class="output">
         <h2>Transcript</h2>
-        <pre id="transcriptOutput">尚未開始</pre>
+        <!-- 氣泡對話框 Transcript -->
+        <div id="chatTranscript" class="chat-transcript">
+          <div class="empty-state">點擊「開始辯論大會」來啟動對決吧！✨</div>
+        </div>
+        <pre id="transcriptOutput" style="display: none;">尚未開始</pre>
       </section>
     </main>
     <script type="module" src="./app.js"></script>
