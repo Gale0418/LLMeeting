@@ -11,3 +11,23 @@ export async function setSidePanelOpenOnActionClick(chromeApi) {
     return false;
   }
 }
+
+export function urlMatchesPattern(url, pattern) {
+  if (!url || !pattern) {
+    return false;
+  }
+
+  const escaped = pattern
+    .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*/g, ".*");
+
+  return new RegExp(`^${escaped}$`).test(url);
+}
+
+export function isProviderTabReady(tab, provider) {
+  return Boolean(
+    tab &&
+    tab.status === "complete" &&
+    provider?.matchPatterns?.some((pattern) => urlMatchesPattern(tab.url, pattern)),
+  );
+}

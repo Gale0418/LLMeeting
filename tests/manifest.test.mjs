@@ -9,7 +9,10 @@ test("manifest declares the side-panel MV3 extension shell", async () => {
   assert.equal(manifest.side_panel.default_path, "src/sidepanel/index.html");
   assert.equal(manifest.background.service_worker, "src/background/service-worker.js");
   assert.equal(manifest.background.type, "module");
-  assert.deepEqual(manifest.content_scripts[0].js, ["src/content/provider-page.js"]);
+  assert.deepEqual(
+    manifest.content_scripts[0].js,
+    ["src/content/automation-core.js", "src/content/provider-page.js"],
+  );
   assert.ok(manifest.permissions.includes("sidePanel"));
   assert.ok(manifest.permissions.includes("storage"));
   assert.ok(manifest.permissions.includes("tabs"));

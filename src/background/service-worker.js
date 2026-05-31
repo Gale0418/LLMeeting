@@ -1,5 +1,5 @@
 import { DebateEngine } from "./debateEngine.js";
-import { setSidePanelOpenOnActionClick } from "./chromeCompat.js";
+import { isProviderTabReady, setSidePanelOpenOnActionClick } from "./chromeCompat.js";
 import { DEFAULT_ACTIVE_PROVIDER_IDS, PROVIDERS, providerLabel } from "../shared/providers.js";
 
 const STORAGE_KEY = "aiDebate.currentState";
@@ -198,30 +198,39 @@ async function getOrCreateProviderTab(providerId) {
     throw new Error(`Unknown provider: ${providerId}`);
   }
 
-  const existingTabs = await chrome.tabs.query({ url: provider.matchPatterns });
-  const usableTab = existingTabs.find((tab) => typeof tab.id === "number");
-  if (usableTab) {
-    return usableTab;
+  const boundTabId = runtimeState.providerTabs?.[providerId];
+  if (typeof boundTabId === "number") {
+    try {
+      const boundTab = await chrome.tabs.get(boundTabId);
+      if (isProviderTabReady(boundTab, provider)) {
+        return boundTab;
+      }
+    } catch (_error) {
+      // The user closed the debate tab. Open a fresh conversation below.
+    }
   }
 
   const createdTab = await chrome.tabs.create({ url: provider.startUrl, active: false });
-  await waitForTabComplete(createdTab.id);
-  return createdTab;
+  return waitForProviderTab(createdTab.id, provider);
 }
 
-async function waitForTabComplete(tabId) {
+async function waitForProviderTab(tabId, provider) {
   if (typeof tabId !== "number") {
-    return;
+    throw new Error(`${provider.label} 新對話分頁建立失敗`);
   }
 
   const deadline = Date.now() + 45000;
+  let lastUrl = "";
   while (Date.now() < deadline) {
     const tab = await chrome.tabs.get(tabId);
-    if (tab.status === "complete") {
-      return;
+    lastUrl = tab.url || tab.pendingUrl || lastUrl;
+    if (isProviderTabReady(tab, provider)) {
+      return tab;
     }
     await delay(500);
   }
+
+  throw new Error(`${provider.label} 新對話頁面尚未就緒，目前網址：${lastUrl || "unknown"}。請確認已登入。`);
 }
 
 async function sendProviderMessage(tabId, job) {
@@ -236,11 +245,16 @@ async function sendProviderMessage(tabId, job) {
   try {
     return await chrome.tabs.sendMessage(tabId, payload);
   } catch (_error) {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["src/content/provider-page.js"],
-    });
-    return chrome.tabs.sendMessage(tabId, payload);
+    const tab = await chrome.tabs.get(tabId);
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ["src/content/automation-core.js", "src/content/provider-page.js"],
+      });
+      return await chrome.tabs.sendMessage(tabId, payload);
+    } catch (error) {
+      throw new Error(`${error.message}（目前網址：${tab.url || tab.pendingUrl || "unknown"}）`);
+    }
   }
 }
 

@@ -3,6 +3,10 @@
     return;
   }
   globalThis.__aiDebateContentLoaded = true;
+  const {
+    assistantSnapshot,
+    hasFreshAssistantResponse,
+  } = globalThis.aiDebateAutomationCore;
 
   const PROVIDERS = {
     chatgpt: {
@@ -15,6 +19,7 @@
       ],
       sendSelectors: [
         "button[data-testid='send-button']",
+        "button[type='submit']",
         "button[aria-label*='Send']",
         "button[aria-label*='送出']",
         "button[aria-label*='Submit']",
@@ -39,6 +44,7 @@
         "[role='textbox']",
       ],
       sendSelectors: [
+        "button[type='submit']",
         "button[aria-label*='Send']",
         "button[aria-label*='送出']",
         "button.send-button",
@@ -63,6 +69,7 @@
       ],
       sendSelectors: [
         "button[data-testid='send-button']",
+        "button[type='submit']",
         "button[aria-label*='Send']",
         "button[aria-label*='送出']",
       ],
@@ -86,11 +93,11 @@
         "[role='textbox']",
       ],
       sendSelectors: [
+        "button[type='submit']",
         "button[aria-label*='Send']",
         "button[aria-label*='送出']",
         "button[aria-label*='傳送']",
         "button[aria-label*='Send Message']",
-        "button.rounded-lg",
       ],
       stopSelectors: [
         "button[aria-label*='Stop']",
@@ -124,13 +131,18 @@
       throw new Error(`目前頁面不是 ${message.provider}`);
     }
 
+    const baseline = readAssistantSnapshot(config);
     const input = await waitFor(() => findInput(config), 30000, `找不到 ${message.provider} 的輸入框，請確認已登入並開啟聊天頁面。`);
     await writeInput(input, message.prompt);
 
-    const sendButton = await waitFor(() => findSendButton(config), 10000, `找不到 ${message.provider} 可用的送出按鈕。`);
-    sendButton.click();
+    const sendButton = await waitForOptional(() => findSendButton(config), 3000);
+    if (sendButton) {
+      sendButton.click();
+    } else {
+      dispatchEnter(input);
+    }
 
-    await waitForCompletion(config, message.timeoutMs || 120000);
+    await waitForCompletion(config, message.timeoutMs || 120000, baseline);
     const content = readLastAssistantMessage(config);
     if (!content) {
       throw new Error(`無法讀取 ${message.provider} 的 AI 回覆。`);
@@ -188,7 +200,7 @@
     await delay(150);
 
     if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
-      element.value = text;
+      setNativeValue(element, text);
       element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
       element.dispatchEvent(new Event("change", { bubbles: true }));
       return;
@@ -196,6 +208,7 @@
 
     document.getSelection()?.selectAllChildren(element);
     document.execCommand("insertText", false, text);
+    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
 
     if (!element.textContent?.includes(text.slice(0, 20))) {
       element.textContent = text;
@@ -203,19 +216,46 @@
     }
   }
 
-  async function waitForCompletion(config, timeoutMs) {
+  function setNativeValue(element, text) {
+    const prototype = element instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+    setter?.call(element, text);
+  }
+
+  function dispatchEnter(element) {
+    for (const type of ["keydown", "keypress", "keyup"]) {
+      element.dispatchEvent(new KeyboardEvent(type, {
+        key: "Enter",
+        code: "Enter",
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true,
+      }));
+    }
+  }
+
+  async function waitForCompletion(config, timeoutMs, baseline) {
     const deadline = Date.now() + timeoutMs;
     let lastText = "";
     let stableSince = Date.now();
 
     while (Date.now() < deadline) {
-      const currentText = readLastAssistantMessage(config);
+      const current = readAssistantSnapshot(config);
+      const currentText = current.lastText;
       if (currentText !== lastText) {
         lastText = currentText;
         stableSince = Date.now();
       }
 
-      if (currentText && !isGenerating(config) && Date.now() - stableSince > 2000) {
+      if (
+        currentText &&
+        hasFreshAssistantResponse(baseline, current) &&
+        !isGenerating(config) &&
+        Date.now() - stableSince > 2000
+      ) {
         return;
       }
 
@@ -231,13 +271,18 @@
   }
 
   function readLastAssistantMessage(config) {
-    const texts = collectElements(config.responseSelectors)
+    return readAssistantSnapshot(config).lastText;
+  }
+
+  function readAssistantSnapshot(config) {
+    const elements = [...new Set(collectElements(config.responseSelectors))];
+    const texts = elements
       .filter(isVisible)
       .map((element) => element.innerText || element.textContent || "")
       .map((text) => text.trim())
       .filter((text) => text.length > 0);
 
-    return texts[texts.length - 1] || "";
+    return assistantSnapshot(texts);
   }
 
   function collectElements(selectors) {
@@ -266,6 +311,18 @@
       await delay(250);
     }
     throw new Error(errorMessage);
+  }
+
+  async function waitForOptional(getValue, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const value = getValue();
+      if (value) {
+        return value;
+      }
+      await delay(250);
+    }
+    return null;
   }
 
   function delay(ms) {

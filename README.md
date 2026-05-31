@@ -9,6 +9,7 @@
 3. 最後把原題、第一輪回答、第二輪互評貼回指定裁判 AI，預設由 ChatGPT 總結。
 4. 側邊欄顯示進度、氣泡式 transcript、錯誤與本機狀態。
 5. 提供 Mock Mode，不需要開任何 AI 網頁也能先測完整流程。
+6. 每場真實辯論會為各 provider 開啟新的對話分頁，再於同一分頁延續互評。
 
 ## 本機載入
 
@@ -19,6 +20,8 @@
 5. 先手動登入 ChatGPT、Gemini、Grok；若要使用 Claude，也先登入 Claude。
 6. 點 Chrome 工具列的 AI Debate Host 圖示開啟側邊欄。
 7. 輸入短問題測試，例如：`天為什麼是藍的？`
+
+修改插件檔案後，請回到 `chrome://extensions` 對 AI Debate Host 按重新載入，再重新開啟側邊欄。
 
 ## 建議測試順序
 
