@@ -29,3 +29,10 @@ test("content script falls back to Enter submit after writing the prompt", async
   assert.match(script, /dispatchEnter\(input\)/);
   assert.match(script, /button\[type='submit'\]/);
 });
+
+test("content script does not accept the submitted prompt bubble as an AI response", async () => {
+  const script = await readFile("src/content/provider-page.js", "utf8");
+
+  assert.match(script, /!isPromptEcho\(prompt, currentText\)/);
+  assert.match(script, /waitForCompletion\(config, message\.timeoutMs \|\| 120000, baseline, message\.prompt\)/);
+});

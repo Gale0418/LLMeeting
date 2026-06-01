@@ -7,6 +7,7 @@
     assistantSnapshot,
     formatStageError,
     hasFreshAssistantResponse,
+    isPromptEcho,
   } = globalThis.aiDebateAutomationCore;
 
   const PROVIDERS = {
@@ -149,7 +150,7 @@
       }
 
       stage = "等待新回覆";
-      await waitForCompletion(config, message.timeoutMs || 120000, baseline);
+      await waitForCompletion(config, message.timeoutMs || 120000, baseline, message.prompt);
       stage = "讀取新回覆";
       const content = readLastAssistantMessage(config);
       if (!content) {
@@ -248,7 +249,7 @@
     }
   }
 
-  async function waitForCompletion(config, timeoutMs, baseline) {
+  async function waitForCompletion(config, timeoutMs, baseline, prompt) {
     const deadline = Date.now() + timeoutMs;
     let lastText = "";
     let stableSince = Date.now();
@@ -264,6 +265,7 @@
       if (
         currentText &&
         hasFreshAssistantResponse(baseline, current) &&
+        !isPromptEcho(prompt, currentText) &&
         !isGenerating(config) &&
         Date.now() - stableSince > 2000
       ) {

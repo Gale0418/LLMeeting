@@ -14,6 +14,10 @@
     return current.count > baseline.count || current.lastText !== baseline.lastText;
   }
 
+  function isPromptEcho(prompt, candidate) {
+    return normalizeWhitespace(prompt) === normalizeWhitespace(candidate);
+  }
+
   function formatStageError(stage, error) {
     const message = error instanceof Error ? error.message : String(error || "unknown error");
     return `[${stage}] ${message}`;
@@ -23,5 +27,10 @@
     assistantSnapshot,
     formatStageError,
     hasFreshAssistantResponse,
+    isPromptEcho,
   };
+
+  function normalizeWhitespace(text) {
+    return String(text || "").trim().replace(/\s+/g, " ");
+  }
 })();

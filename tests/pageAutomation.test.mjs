@@ -7,6 +7,7 @@ const {
   assistantSnapshot,
   formatStageError,
   hasFreshAssistantResponse,
+  isPromptEcho,
 } = globalThis.aiDebateAutomationCore;
 
 test("assistantSnapshot records assistant message count and latest text", () => {
@@ -39,4 +40,9 @@ test("formatStageError preserves the failing automation stage", () => {
     formatStageError("尋找輸入框", new Error("找不到 Gemini 輸入框")),
     "[尋找輸入框] 找不到 Gemini 輸入框",
   );
+});
+
+test("isPromptEcho detects the user's submitted prompt despite whitespace differences", () => {
+  assert.equal(isPromptEcho("請分析：\nPony V6", "  請分析： Pony V6  "), true);
+  assert.equal(isPromptEcho("請分析 Pony V6", "我的結論：Pony V6 仍然很強"), false);
 });
