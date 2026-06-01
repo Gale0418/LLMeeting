@@ -4,6 +4,7 @@ const startButton = document.querySelector("#startButton");
 const resetButton = document.querySelector("#resetButton");
 const statusText = document.querySelector("#statusText");
 const transcriptOutput = document.querySelector("#transcriptOutput");
+const diagnosticsOutput = document.querySelector("#diagnosticsOutput");
 const chatTranscript = document.querySelector("#chatTranscript");
 const progressBar = document.querySelector("#progressBar");
 
@@ -129,6 +130,28 @@ function renderState(state) {
 
   // 傳統文字 Transcript（備用與除錯）
   transcriptOutput.textContent = buildTranscriptText(state);
+  renderDiagnostics(state);
+}
+
+function renderDiagnostics(state) {
+  if (!diagnosticsOutput) {
+    return;
+  }
+
+  const diagnostics = state.providerDiagnostics || {};
+  const activeProviders = state.activeProviders || ["chatgpt", "gemini", "grok"];
+  const blocks = activeProviders.map((providerId) => {
+    const details = diagnostics[providerId] || {};
+    return [
+      `${providerLabel(providerId)}: ${details.stage || "idle"}`,
+      details.phase ? `回合: ${details.phase}` : "",
+      Number.isInteger(details.tabId) ? `分頁: ${details.tabId}` : "",
+      details.url ? `網址: ${details.url}` : "",
+      details.error ? `錯誤: ${details.error}` : "",
+    ].filter(Boolean).join("\n");
+  });
+
+  diagnosticsOutput.textContent = blocks.join("\n\n") || "尚未開始";
 }
 
 function updateProgressBar(state) {

@@ -14,8 +14,14 @@
     return current.count > baseline.count || current.lastText !== baseline.lastText;
   }
 
+  function formatStageError(stage, error) {
+    const message = error instanceof Error ? error.message : String(error || "unknown error");
+    return `[${stage}] ${message}`;
+  }
+
   globalThis.aiDebateAutomationCore = {
     assistantSnapshot,
+    formatStageError,
     hasFreshAssistantResponse,
   };
 })();

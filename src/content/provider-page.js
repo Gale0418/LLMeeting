@@ -5,6 +5,7 @@
   globalThis.__aiDebateContentLoaded = true;
   const {
     assistantSnapshot,
+    formatStageError,
     hasFreshAssistantResponse,
   } = globalThis.aiDebateAutomationCore;
 
@@ -125,30 +126,40 @@
   });
 
   async function sendAndRead(message) {
-    const providerId = detectProviderId();
-    const config = PROVIDERS[providerId];
-    if (!config || providerId !== message.provider) {
-      throw new Error(`目前頁面不是 ${message.provider}`);
+    let stage = "辨識頁面";
+    try {
+      const providerId = detectProviderId();
+      const config = PROVIDERS[providerId];
+      if (!config || providerId !== message.provider) {
+        throw new Error(`目前頁面不是 ${message.provider}`);
+      }
+
+      const baseline = readAssistantSnapshot(config);
+      stage = "尋找輸入框";
+      const input = await waitFor(() => findInput(config), 30000, `找不到 ${message.provider} 的輸入框，請確認已登入並開啟聊天頁面。`);
+      stage = "填入提示";
+      await writeInput(input, message.prompt);
+
+      stage = "送出提示";
+      const sendButton = await waitForOptional(() => findSendButton(config), 3000);
+      if (sendButton) {
+        sendButton.click();
+      } else {
+        dispatchEnter(input);
+      }
+
+      stage = "等待新回覆";
+      await waitForCompletion(config, message.timeoutMs || 120000, baseline);
+      stage = "讀取新回覆";
+      const content = readLastAssistantMessage(config);
+      if (!content) {
+        throw new Error(`無法讀取 ${message.provider} 的 AI 回覆。`);
+      }
+
+      return { ok: true, provider: providerId, content };
+    } catch (error) {
+      throw new Error(formatStageError(stage, error));
     }
-
-    const baseline = readAssistantSnapshot(config);
-    const input = await waitFor(() => findInput(config), 30000, `找不到 ${message.provider} 的輸入框，請確認已登入並開啟聊天頁面。`);
-    await writeInput(input, message.prompt);
-
-    const sendButton = await waitForOptional(() => findSendButton(config), 3000);
-    if (sendButton) {
-      sendButton.click();
-    } else {
-      dispatchEnter(input);
-    }
-
-    await waitForCompletion(config, message.timeoutMs || 120000, baseline);
-    const content = readLastAssistantMessage(config);
-    if (!content) {
-      throw new Error(`無法讀取 ${message.provider} 的 AI 回覆。`);
-    }
-
-    return { ok: true, provider: providerId, content };
   }
 
   function detectProviderId() {

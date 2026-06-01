@@ -1,5 +1,6 @@
 import { DebateEngine } from "./debateEngine.js";
 import { isProviderTabReady, setSidePanelOpenOnActionClick } from "./chromeCompat.js";
+import { createProviderDiagnostics, updateProviderDiagnostic } from "./diagnostics.js";
 import { DEFAULT_ACTIVE_PROVIDER_IDS, PROVIDERS, providerLabel } from "../shared/providers.js";
 
 const STORAGE_KEY = "aiDebate.currentState";
@@ -53,7 +54,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return false;
 });
 
-function createIdleState() {
+function createIdleState(providerIds = DEFAULT_ACTIVE_PROVIDER_IDS) {
   return {
     busy: false,
     status: "idle",
@@ -61,6 +62,7 @@ function createIdleState() {
     message: "等待開始",
     question: "",
     providerTabs: {},
+    providerDiagnostics: createProviderDiagnostics(providerIds),
     transcript: null,
     summary: "",
     errors: [],
@@ -86,7 +88,7 @@ async function startDebate(question, options = {}) {
 
   engine = new DebateEngine(activeProviders, summaryProvider);
   runtimeState = {
-    ...createIdleState(),
+    ...createIdleState(activeProviders),
     busy: true,
     status: "running",
     phase: "first-round",
@@ -137,24 +139,26 @@ async function startDebate(question, options = {}) {
 }
 
 async function runProviderJobs(jobs, target, mockMode) {
-  const results = await Promise.all(jobs.map((job) => sendJob(job, mockMode)));
-
-  for (const result of results) {
-    if (result.ok && target === "answer") {
-      engine.recordAnswer(result.provider, result.content);
-    } else if (result.ok && target === "critique") {
-      engine.recordCritique(result.provider, result.content);
-    } else {
-      engine.markProviderError(result.provider, result.phase, result.error || "unknown error");
-      runtimeState.errors = [...runtimeState.errors, result];
-    }
+  for (const job of jobs) {
+    const result = await sendJob(job, mockMode);
+    recordProviderResult(result, target);
+    runtimeState = {
+      ...runtimeState,
+      transcript: engine.snapshot(),
+    };
+    await publishState();
   }
+}
 
-  runtimeState = {
-    ...runtimeState,
-    transcript: engine.snapshot(),
-  };
-  await publishState();
+function recordProviderResult(result, target) {
+  if (result.ok && target === "answer") {
+    engine.recordAnswer(result.provider, result.content);
+  } else if (result.ok && target === "critique") {
+    engine.recordCritique(result.provider, result.content);
+  } else {
+    engine.markProviderError(result.provider, result.phase, result.error || "unknown error");
+    runtimeState.errors = [...runtimeState.errors, result];
+  }
 }
 
 async function sendJob(job, mockMode) {
@@ -163,12 +167,30 @@ async function sendJob(job, mockMode) {
       return await sendMockJob(job);
     }
 
+    await setProviderDiagnostic(job.provider, {
+      stage: "opening-tab",
+      phase: job.phase,
+      error: "",
+    });
     const tab = await getOrCreateProviderTab(job.provider);
+    await setProviderDiagnostic(job.provider, {
+      stage: "activating-tab",
+      phase: job.phase,
+      tabId: tab.id,
+      url: tab.url || tab.pendingUrl || "",
+    });
+    await activateProviderTab(tab);
     runtimeState = {
       ...runtimeState,
       message: `${providerLabel(job.provider)}：${phaseLabel(job.phase)}`,
       providerTabs: { ...runtimeState.providerTabs, [job.provider]: tab.id },
     };
+    runtimeState.providerDiagnostics = updateProviderDiagnostic(runtimeState.providerDiagnostics, job.provider, {
+      stage: "waiting-response",
+      phase: job.phase,
+      tabId: tab.id,
+      url: tab.url || tab.pendingUrl || "",
+    });
     await publishState();
 
     const response = await sendProviderMessage(tab.id, job);
@@ -176,6 +198,10 @@ async function sendJob(job, mockMode) {
       throw new Error(response?.error || "provider returned empty response");
     }
 
+    await setProviderDiagnostic(job.provider, {
+      stage: "received",
+      phase: job.phase,
+    });
     return {
       ok: true,
       provider: job.provider,
@@ -183,6 +209,11 @@ async function sendJob(job, mockMode) {
       content: response.content,
     };
   } catch (error) {
+    await setProviderDiagnostic(job.provider, {
+      stage: "error",
+      phase: job.phase,
+      error: error.message,
+    });
     return {
       ok: false,
       provider: job.provider,
@@ -210,8 +241,13 @@ async function getOrCreateProviderTab(providerId) {
     }
   }
 
-  const createdTab = await chrome.tabs.create({ url: provider.startUrl, active: false });
+  const createdTab = await chrome.tabs.create({ url: provider.startUrl, active: true });
   return waitForProviderTab(createdTab.id, provider);
+}
+
+async function activateProviderTab(tab) {
+  await chrome.tabs.update(tab.id, { active: true });
+  await delay(750);
 }
 
 async function waitForProviderTab(tabId, provider) {
@@ -263,6 +299,14 @@ async function publishState() {
   chrome.runtime.sendMessage({ type: "aiDebate:stateChanged", state: runtimeState }).catch(() => {});
 }
 
+async function setProviderDiagnostic(providerId, patch) {
+  runtimeState = {
+    ...runtimeState,
+    providerDiagnostics: updateProviderDiagnostic(runtimeState.providerDiagnostics, providerId, patch),
+  };
+  await publishState();
+}
+
 async function getRuntimeState() {
   if (runtimeState.status !== "idle" || runtimeState.busy) {
     return runtimeState;
@@ -297,6 +341,11 @@ async function sendMockJob(job) {
   runtimeState = {
     ...runtimeState,
     message: `[模擬] ${providerLabel(job.provider)}：${phaseLabel(job.phase)}`,
+    providerDiagnostics: updateProviderDiagnostic(runtimeState.providerDiagnostics, job.provider, {
+      stage: "mock-response",
+      phase: job.phase,
+      error: "",
+    }),
   };
   await publishState();
 

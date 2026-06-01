@@ -5,6 +5,7 @@ await import("../src/content/automation-core.js");
 
 const {
   assistantSnapshot,
+  formatStageError,
   hasFreshAssistantResponse,
 } = globalThis.aiDebateAutomationCore;
 
@@ -31,4 +32,11 @@ test("hasFreshAssistantResponse accepts changed text while a streaming message g
   const baseline = assistantSnapshot([]);
 
   assert.equal(hasFreshAssistantResponse(baseline, assistantSnapshot(["串流中的文字"])), true);
+});
+
+test("formatStageError preserves the failing automation stage", () => {
+  assert.equal(
+    formatStageError("尋找輸入框", new Error("找不到 Gemini 輸入框")),
+    "[尋找輸入框] 找不到 Gemini 輸入框",
+  );
 });
