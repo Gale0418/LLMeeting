@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AI Debate Host",
+  "name": "LLMeeting",
   "description": "Run a private multi-AI debate flow from a Chrome side panel.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "permissions": ["sidePanel", "storage", "tabs", "scripting"],
   "host_permissions": [
     "https://chatgpt.com/*",
@@ -13,7 +13,7 @@
     "https://claude.ai/*"
   ],
   "action": {
-    "default_title": "AI Debate Host"
+    "default_title": "LLMeeting"
   },
   "background": {
     "service_worker": "src/background/service-worker.js",

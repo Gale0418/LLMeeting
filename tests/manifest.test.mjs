@@ -5,6 +5,8 @@ import { readFile } from "node:fs/promises";
 test("manifest declares the side-panel MV3 extension shell", async () => {
   const manifest = JSON.parse(await readFile("manifest.json", "utf8"));
 
+  assert.equal(manifest.name, "LLMeeting");
+  assert.equal(manifest.action.default_title, "LLMeeting");
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.side_panel.default_path, "src/sidepanel/index.html");
   assert.equal(manifest.background.service_worker, "src/background/service-worker.js");

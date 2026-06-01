@@ -1,4 +1,4 @@
-# AI Debate Host
+# LLMeeting
 
 私人用 Chrome Manifest V3 插件，用側邊欄主持多個 AI 的辯論流程。預設使用 ChatGPT、Gemini、Grok；Claude 可在進階設定中手動啟用。
 
@@ -20,10 +20,10 @@
 3. 點 Load unpacked。
 4. 選擇這個資料夾：`D:\MyGame\LLMeeting`。
 5. 先手動登入 ChatGPT、Gemini、Grok；若要使用 Claude，也先登入 Claude。
-6. 點 Chrome 工具列的 AI Debate Host 圖示開啟側邊欄。
+6. 點 Chrome 工具列的 LLMeeting 圖示開啟側邊欄。
 7. 輸入短問題測試，例如：`天為什麼是藍的？`
 
-修改插件檔案後，請回到 `chrome://extensions` 對 AI Debate Host 按重新載入，再重新開啟側邊欄。
+修改插件檔案後，請回到 `chrome://extensions` 對 LLMeeting 按重新載入，再重新開啟側邊欄。
 
 ## 建議測試順序
 
