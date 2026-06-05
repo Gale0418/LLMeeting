@@ -10,6 +10,7 @@ const chatTranscript = document.querySelector("#chatTranscript");
 const progressBar = document.querySelector("#progressBar");
 
 const summaryProviderSelect = document.querySelector("#summaryProviderSelect");
+const providerSelectEls = Array.from(document.querySelectorAll(".provider-select"));
 
 const providerStateEls = {
   chatgpt: document.querySelector("#chatgptState"),
@@ -17,6 +18,8 @@ const providerStateEls = {
   grok: document.querySelector("#grokState"),
   claude: document.querySelector("#claudeState"),
 };
+
+let latestState = null;
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -27,6 +30,10 @@ summaryDebateButton.addEventListener("click", async () => {
   await startDebate("summary");
 });
 
+providerSelectEls.forEach((el) => {
+  el.addEventListener("change", renderProviderSelectionPreview);
+});
+
 async function startDebate(mode) {
   const question = questionInput.value.trim();
   if (mode === "fast" && !question) {
@@ -34,8 +41,7 @@ async function startDebate(mode) {
     return;
   }
 
-  const activeProviders = Array.from(document.querySelectorAll(".provider-select:checked"))
-    .map((el) => el.value);
+  const activeProviders = selectedProviderIds();
 
   if (activeProviders.length < 2) {
     renderMessage("❌ 至少需要選擇 2 家 AI 才能進行辯論喔！");
@@ -84,12 +90,13 @@ function renderState(state) {
     return;
   }
 
+  latestState = state;
   setActionButtonsDisabled(Boolean(state.busy));
   statusText.textContent = state.message || state.status || "等待開始";
 
   if (!state.busy) {
     if (state.activeProviders) {
-      document.querySelectorAll(".provider-select").forEach((el) => {
+      providerSelectEls.forEach((el) => {
         el.checked = state.activeProviders.includes(el.value) || state.sourceProvider === el.value;
       });
     }
@@ -99,33 +106,7 @@ function renderState(state) {
   }
 
   const transcript = state.transcript;
-  const answers = transcript?.answers || {};
-  const critiques = transcript?.critiques || {};
-
-  // 更新各個 AI 的目前狀態
-  const activeSet = new Set([
-    ...(state.activeProviders || ["chatgpt", "gemini", "grok"]),
-    state.sourceProvider,
-  ].filter(Boolean));
-  for (const provider of Object.keys(providerStateEls)) {
-    if (!activeSet.has(provider)) {
-      providerStateEls[provider].textContent = "未啟用";
-      providerStateEls[provider].className = "state-inactive";
-      continue;
-    }
-
-    const label = providerLabelForPhase(provider, state, answers, critiques);
-    providerStateEls[provider].textContent = label;
-    
-    // 設定狀態樣式
-    if (label === "回答中" || label === "互評中" || label === "總結中") {
-      providerStateEls[provider].className = "state-active pulsing";
-    } else if (label === "已回答" || label === "已互評" || label === "已總結") {
-      providerStateEls[provider].className = "state-done";
-    } else {
-      providerStateEls[provider].className = "state-waiting";
-    }
-  }
+  renderProviderStatuses(state);
 
   // 更新進度條
   updateProgressBar(state);
@@ -136,6 +117,55 @@ function renderState(state) {
   // 傳統文字 Transcript（備用與除錯）
   transcriptOutput.textContent = buildTranscriptText(state);
   renderDiagnostics(state);
+}
+
+function renderProviderSelectionPreview() {
+  if (!latestState || latestState.busy) {
+    return;
+  }
+
+  const previewState = {
+    ...latestState,
+    activeProviders: selectedProviderIds(),
+    sourceProvider: "",
+  };
+  renderProviderStatuses(previewState);
+  renderDiagnostics(previewState);
+}
+
+function selectedProviderIds() {
+  return providerSelectEls
+    .filter((el) => el.checked)
+    .map((el) => el.value);
+}
+
+function renderProviderStatuses(state) {
+  const transcript = state.transcript;
+  const answers = transcript?.answers || {};
+  const critiques = transcript?.critiques || {};
+  const activeSet = new Set([
+    ...(state.activeProviders || ["chatgpt", "gemini", "grok"]),
+    state.sourceProvider,
+  ].filter(Boolean));
+
+  for (const provider of Object.keys(providerStateEls)) {
+    if (!activeSet.has(provider)) {
+      providerStateEls[provider].textContent = "未啟用";
+      providerStateEls[provider].className = "state-inactive";
+      continue;
+    }
+
+    const label = providerLabelForPhase(provider, state, answers, critiques);
+    providerStateEls[provider].textContent = label;
+
+    if (label === "回答中" || label === "互評中" || label === "總結中") {
+      providerStateEls[provider].className = "state-active pulsing";
+    } else if (label === "已回答" || label === "已互評" || label === "已總結") {
+      providerStateEls[provider].className = "state-done";
+    } else {
+      providerStateEls[provider].className = "state-waiting";
+    }
+  }
 }
 
 function renderDiagnostics(state) {

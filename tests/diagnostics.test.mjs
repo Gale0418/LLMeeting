@@ -50,3 +50,12 @@ test("side panel exposes quick and summary debate actions without mock mode", as
   assert.match(app, /startDebate\("fast"\)/);
   assert.match(app, /startDebate\("summary"\)/);
 });
+
+test("side panel previews checked providers while idle", async () => {
+  const app = await readFile("src/sidepanel/app.js", "utf8");
+
+  assert.match(app, /const providerSelectEls = Array\.from\(document\.querySelectorAll\("\.provider-select"\)\)/);
+  assert.match(app, /providerSelectEls\.forEach\(\(el\) => \{\s+el\.addEventListener\("change", renderProviderSelectionPreview\);/);
+  assert.match(app, /function renderProviderSelectionPreview\(\)/);
+  assert.match(app, /activeProviders: selectedProviderIds\(\)/);
+});
