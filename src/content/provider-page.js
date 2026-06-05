@@ -9,6 +9,7 @@
     hasFreshAssistantResponse,
     isPromptEcho,
   } = globalThis.aiDebateAutomationCore;
+  const submittedRuns = new Map();
 
   const PROVIDERS = {
     chatgpt: {
@@ -115,11 +116,17 @@
   };
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type !== "aiDebate:sendAndRead") {
+    const handlers = {
+      "aiDebate:sendAndRead": sendAndRead,
+      "aiDebate:submitPrompt": submitPrompt,
+      "aiDebate:readSubmittedResponse": readSubmittedResponse,
+    };
+    const handler = handlers[message?.type];
+    if (!handler) {
       return false;
     }
 
-    sendAndRead(message)
+    handler(message)
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
 
@@ -127,13 +134,14 @@
   });
 
   async function sendAndRead(message) {
+    const submitted = await submitPrompt(message);
+    return readSubmittedResponse({ ...message, runId: submitted.runId });
+  }
+
+  async function submitPrompt(message) {
     let stage = "辨識頁面";
     try {
-      const providerId = detectProviderId();
-      const config = PROVIDERS[providerId];
-      if (!config || providerId !== message.provider) {
-        throw new Error(`目前頁面不是 ${message.provider}`);
-      }
+      const { providerId, config } = requireProviderPage(message.provider);
 
       const baseline = readAssistantSnapshot(config);
       stage = "尋找輸入框";
@@ -149,18 +157,57 @@
         dispatchEnter(input);
       }
 
+      const runId = message.runId || createRunId(providerId, message.phase);
+      submittedRuns.set(runId, {
+        providerId,
+        phase: message.phase,
+        baseline,
+        prompt: message.prompt,
+        submittedAt: Date.now(),
+      });
+
+      return { ok: true, provider: providerId, runId };
+    } catch (error) {
+      throw new Error(formatStageError(stage, error));
+    }
+  }
+
+  async function readSubmittedResponse(message) {
+    let stage = "辨識頁面";
+    try {
+      const { providerId, config } = requireProviderPage(message.provider);
+      const run = submittedRuns.get(message.runId);
+      if (!run || run.providerId !== providerId) {
+        throw new Error(`找不到 ${message.provider} 這次送出的等待紀錄。`);
+      }
+
       stage = "等待新回覆";
-      await waitForCompletion(config, message.timeoutMs || 120000, baseline, message.prompt);
+      await waitForCompletion(config, message.timeoutMs || 120000, run.baseline, run.prompt);
       stage = "讀取新回覆";
       const content = readLastAssistantMessage(config);
       if (!content) {
         throw new Error(`無法讀取 ${message.provider} 的 AI 回覆。`);
       }
 
+      submittedRuns.delete(message.runId);
       return { ok: true, provider: providerId, content };
     } catch (error) {
       throw new Error(formatStageError(stage, error));
     }
+  }
+
+  function requireProviderPage(expectedProvider) {
+    const providerId = detectProviderId();
+    const config = PROVIDERS[providerId];
+    if (!config || providerId !== expectedProvider) {
+      throw new Error(`目前頁面不是 ${expectedProvider}`);
+    }
+
+    return { providerId, config };
+  }
+
+  function createRunId(providerId, phase) {
+    return `${providerId}:${phase || "message"}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
   }
 
   function detectProviderId() {

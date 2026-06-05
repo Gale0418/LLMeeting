@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildConversationSummaryPrompt,
   buildCritiquePrompt,
   buildFinalSummaryPrompt,
 } from "../src/shared/prompts.js";
@@ -43,4 +44,12 @@ test("final summary prompt includes original question, first answers, and critiq
   assert.match(prompt, /Gemini:\n就是藍的呀~/);
   assert.match(prompt, /第二輪互評:/);
   assert.match(prompt, /請整理最終結論、共識、分歧、盲點與建議答案/);
+});
+
+test("conversation summary prompt asks the current AI to preserve context for other providers", () => {
+  const prompt = buildConversationSummaryPrompt();
+
+  assert.match(prompt, /請總結目前這整段對話/);
+  assert.match(prompt, /其他 AI/);
+  assert.match(prompt, /不是要你現在回答新問題/);
 });

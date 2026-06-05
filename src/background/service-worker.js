@@ -1,7 +1,13 @@
 import { DebateEngine } from "./debateEngine.js";
 import { isProviderTabReady, setSidePanelOpenOnActionClick } from "./chromeCompat.js";
 import { createProviderDiagnostics, updateProviderDiagnostic } from "./diagnostics.js";
-import { DEFAULT_ACTIVE_PROVIDER_IDS, PROVIDERS, providerLabel } from "../shared/providers.js";
+import { buildConversationSummaryPrompt } from "../shared/prompts.js";
+import {
+  DEFAULT_ACTIVE_PROVIDER_IDS,
+  PROVIDERS,
+  normalizeProviderIds,
+  providerLabel,
+} from "../shared/providers.js";
 
 const STORAGE_KEY = "aiDebate.currentState";
 const PROVIDER_TIMEOUT_MS = 120000;
@@ -34,14 +40,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "aiDebate:start") {
-    const { question, mockMode, activeProviders, summaryProvider } = message;
-    startDebate(question, { mockMode, activeProviders, summaryProvider })
+    const { question, mode = "fast", activeProviders, summaryProvider } = message;
+    const startAction = mode === "summary" ? startSummaryDebate : startDebate;
+    startAction(question, { activeProviders, summaryProvider })
       .then((state) => sendResponse({ ok: true, state }))
       .catch((error) => {
         runtimeState = {
           ...runtimeState,
           busy: false,
           status: "error",
+          phase: "done",
           message: error.message,
           errors: [...runtimeState.errors, { message: error.message }],
         };
@@ -55,19 +63,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 function createIdleState(providerIds = DEFAULT_ACTIVE_PROVIDER_IDS) {
+  const activeProviders = normalizeProviderIds(providerIds);
   return {
     busy: false,
     status: "idle",
     phase: "idle",
+    mode: "idle",
     message: "等待開始",
     question: "",
     providerTabs: {},
-    providerDiagnostics: createProviderDiagnostics(providerIds),
+    providerDiagnostics: createProviderDiagnostics(activeProviders),
     transcript: null,
     summary: "",
+    sourceProvider: "",
+    sourceSummary: "",
     errors: [],
-    mockMode: false,
-    activeProviders: DEFAULT_ACTIVE_PROVIDER_IDS,
+    activeProviders,
     summaryProvider: "chatgpt",
   };
 }
@@ -82,8 +93,7 @@ async function startDebate(question, options = {}) {
     throw new Error("目前已有辯論正在進行");
   }
 
-  const mockMode = Boolean(options.mockMode);
-  const activeProviders = options.activeProviders || DEFAULT_ACTIVE_PROVIDER_IDS;
+  const activeProviders = normalizeProviderIds(options.activeProviders);
   const summaryProvider = options.summaryProvider || "chatgpt";
 
   engine = new DebateEngine(activeProviders, summaryProvider);
@@ -91,56 +101,134 @@ async function startDebate(question, options = {}) {
     ...createIdleState(activeProviders),
     busy: true,
     status: "running",
+    mode: "fast",
     phase: "first-round",
-    message: "第一輪：送出原始問題",
+    message: "快速辯論：準備送出原始問題",
     question: trimmedQuestion,
-    mockMode,
     activeProviders,
     summaryProvider,
   };
   await publishState();
 
-  const firstRoundJobs = engine.start(trimmedQuestion);
-  await runProviderJobs(firstRoundJobs, "answer", mockMode);
+  return runDebateRounds(trimmedQuestion);
+}
+
+async function startSummaryDebate(userNote, options = {}) {
+  if (runtimeState.busy) {
+    throw new Error("目前已有辯論正在進行");
+  }
+
+  const { tab: sourceTab, provider: sourceProviderInfo } = await getActiveProviderTab();
+  const sourceProvider = sourceProviderInfo.id;
+  const requestedProviders = normalizeProviderIds(options.activeProviders);
+  const debateProviders = requestedProviders.filter((providerId) => providerId !== sourceProvider);
+  if (debateProviders.length < 2) {
+    throw new Error(`總結辯論至少需要目前頁面以外的 2 家 AI。現在目前頁面是 ${providerLabel(sourceProvider)}，請再勾選兩家其他 AI。`);
+  }
+
+  engine = new DebateEngine(debateProviders, sourceProvider);
+  runtimeState = {
+    ...createIdleState(debateProviders),
+    busy: true,
+    status: "running",
+    mode: "summary",
+    phase: "source-summary",
+    message: `請 ${providerLabel(sourceProvider)} 總結目前對話`,
+    question: String(userNote || "").trim(),
+    providerTabs: { [sourceProvider]: sourceTab.id },
+    activeProviders: debateProviders,
+    sourceProvider,
+    summaryProvider: sourceProvider,
+  };
+  await publishState();
+
+  const sourceResult = await sendJob({
+    provider: sourceProvider,
+    phase: "source-summary",
+    prompt: buildConversationSummaryPrompt(userNote),
+  });
+  if (!sourceResult.ok) {
+    return finishWithError(sourceResult);
+  }
+
+  runtimeState = {
+    ...runtimeState,
+    sourceSummary: sourceResult.content,
+    phase: "first-round",
+    message: "快速辯論：將目前對話總結送給其他 AI",
+  };
+  await publishState();
+
+  return runDebateRounds(sourceResult.content);
+}
+
+async function runDebateRounds(originalQuestion) {
+  const firstRoundJobs = engine.start(originalQuestion);
+  runtimeState = {
+    ...runtimeState,
+    phase: "first-round",
+    message: "第一輪：快速送出原始問題",
+    transcript: engine.snapshot(),
+  };
+  await publishState();
+  await runFastProviderJobs(firstRoundJobs, "answer");
 
   runtimeState = {
     ...runtimeState,
     phase: "critique",
-    message: "第二輪：送出交叉互評",
+    message: "第二輪：快速送出交叉互評",
     transcript: engine.snapshot(),
   };
   await publishState();
 
   const critiqueJobs = engine.buildCritiqueJobs();
-  await runProviderJobs(critiqueJobs, "critique", mockMode);
+  await runFastProviderJobs(critiqueJobs, "critique");
 
   runtimeState = {
     ...runtimeState,
     phase: "summary",
-    message: `最終回合：請 ${providerLabel(summaryProvider)} 總結`,
+    message: `最終回合：請 ${providerLabel(runtimeState.summaryProvider)} 總結`,
     transcript: engine.snapshot(),
   };
   await publishState();
 
-  const finalResult = await sendJob(engine.buildFinalJob(), mockMode);
+  const finalResult = await sendJob(engine.buildFinalJob());
+  if (!finalResult.ok) {
+    return finishWithError(finalResult);
+  }
+
   runtimeState = {
     ...runtimeState,
     busy: false,
-    status: finalResult.ok ? "done" : "error",
+    status: "done",
     phase: "done",
-    message: finalResult.ok ? "辯論完成" : finalResult.error,
+    message: "辯論完成",
     transcript: engine.snapshot(),
-    summary: finalResult.ok ? finalResult.content : "",
-    errors: finalResult.ok ? runtimeState.errors : [...runtimeState.errors, finalResult],
+    summary: finalResult.content,
   };
   await publishState();
 
   return runtimeState;
 }
 
-async function runProviderJobs(jobs, target, mockMode) {
+async function runFastProviderJobs(jobs, target) {
+  const submittedJobs = [];
   for (const job of jobs) {
-    const result = await sendJob(job, mockMode);
+    const submitted = await submitProviderJob(job);
+    if (submitted.ok) {
+      submittedJobs.push(submitted);
+    } else {
+      recordProviderResult(submitted, target);
+    }
+    runtimeState = {
+      ...runtimeState,
+      transcript: engine.snapshot(),
+    };
+    await publishState();
+  }
+
+  for (const submitted of submittedJobs) {
+    const result = await collectProviderJob(submitted);
     recordProviderResult(result, target);
     runtimeState = {
       ...runtimeState,
@@ -161,12 +249,132 @@ function recordProviderResult(result, target) {
   }
 }
 
-async function sendJob(job, mockMode) {
+async function submitProviderJob(job) {
   try {
-    if (mockMode) {
-      return await sendMockJob(job);
+    await setProviderDiagnostic(job.provider, {
+      stage: "opening-tab",
+      phase: job.phase,
+      error: "",
+    });
+    const tab = await getOrCreateProviderTab(job.provider);
+    await setProviderDiagnostic(job.provider, {
+      stage: "activating-tab",
+      phase: job.phase,
+      tabId: tab.id,
+      url: tab.url || tab.pendingUrl || "",
+    });
+    await activateProviderTab(tab);
+
+    const runId = createRunId(job);
+    runtimeState = {
+      ...runtimeState,
+      message: `${providerLabel(job.provider)}：${phaseLabel(job.phase)}送出中`,
+      providerTabs: { ...runtimeState.providerTabs, [job.provider]: tab.id },
+    };
+    runtimeState.providerDiagnostics = updateProviderDiagnostic(runtimeState.providerDiagnostics, job.provider, {
+      stage: "submitting-prompt",
+      phase: job.phase,
+      tabId: tab.id,
+      url: tab.url || tab.pendingUrl || "",
+    });
+    await publishState();
+
+    const response = await sendProviderMessage(tab.id, job, "aiDebate:submitPrompt", { runId });
+    if (!response?.ok) {
+      throw new Error(response?.error || "provider submit failed");
     }
 
+    await setProviderDiagnostic(job.provider, {
+      stage: "submitted",
+      phase: job.phase,
+      tabId: tab.id,
+      url: tab.url || tab.pendingUrl || "",
+    });
+    return {
+      ok: true,
+      provider: job.provider,
+      phase: job.phase,
+      prompt: job.prompt,
+      tabId: tab.id,
+      runId: response.runId || runId,
+    };
+  } catch (error) {
+    await setProviderDiagnostic(job.provider, {
+      stage: "error",
+      phase: job.phase,
+      error: error.message,
+    });
+    return {
+      ok: false,
+      provider: job.provider,
+      phase: job.phase,
+      error: error.message,
+    };
+  }
+}
+
+async function collectProviderJob(submitted) {
+  try {
+    const tab = await chrome.tabs.get(submitted.tabId);
+    await setProviderDiagnostic(submitted.provider, {
+      stage: "activating-tab",
+      phase: submitted.phase,
+      tabId: submitted.tabId,
+      url: tab.url || tab.pendingUrl || "",
+      error: "",
+    });
+    await activateProviderTab(tab);
+
+    runtimeState = {
+      ...runtimeState,
+      message: `${providerLabel(submitted.provider)}：等待${phaseLabel(submitted.phase)}`,
+    };
+    runtimeState.providerDiagnostics = updateProviderDiagnostic(runtimeState.providerDiagnostics, submitted.provider, {
+      stage: "waiting-response",
+      phase: submitted.phase,
+      tabId: submitted.tabId,
+      url: tab.url || tab.pendingUrl || "",
+      error: "",
+    });
+    await publishState();
+
+    const response = await sendProviderMessage(tab.id, submitted, "aiDebate:readSubmittedResponse", {
+      runId: submitted.runId,
+    });
+    if (!response?.ok) {
+      throw new Error(response?.error || "provider returned empty response");
+    }
+
+    await setProviderDiagnostic(submitted.provider, {
+      stage: "received",
+      phase: submitted.phase,
+      tabId: submitted.tabId,
+      url: tab.url || tab.pendingUrl || "",
+    });
+    return {
+      ok: true,
+      provider: submitted.provider,
+      phase: submitted.phase,
+      content: response.content,
+    };
+  } catch (error) {
+    await setProviderDiagnostic(submitted.provider, {
+      stage: "error",
+      phase: submitted.phase,
+      tabId: submitted.tabId,
+      error: error.message,
+    });
+    return {
+      ok: false,
+      provider: submitted.provider,
+      phase: submitted.phase,
+      error: error.message,
+    };
+  }
+}
+
+async function sendJob(job) {
+  try {
     await setProviderDiagnostic(job.provider, {
       stage: "opening-tab",
       phase: job.phase,
@@ -223,6 +431,16 @@ async function sendJob(job, mockMode) {
   }
 }
 
+async function getActiveProviderTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const provider = PROVIDERS.find((item) => isProviderTabReady(tab, item));
+  if (!provider) {
+    throw new Error("請先切到要當作來源的 ChatGPT、Gemini、Grok 或 Claude 對話分頁，再按總結辯論。");
+  }
+
+  return { tab, provider };
+}
+
 async function getOrCreateProviderTab(providerId) {
   const provider = PROVIDERS.find((item) => item.id === providerId);
   if (!provider) {
@@ -269,13 +487,14 @@ async function waitForProviderTab(tabId, provider) {
   throw new Error(`${provider.label} 新對話頁面尚未就緒，目前網址：${lastUrl || "unknown"}。請確認已登入。`);
 }
 
-async function sendProviderMessage(tabId, job) {
+async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", extra = {}) {
   const payload = {
-    type: "aiDebate:sendAndRead",
+    type,
     provider: job.provider,
     phase: job.phase,
     prompt: job.prompt,
     timeoutMs: PROVIDER_TIMEOUT_MS,
+    ...extra,
   };
 
   try {
@@ -292,6 +511,20 @@ async function sendProviderMessage(tabId, job) {
       throw new Error(`${error.message}（目前網址：${tab.url || tab.pendingUrl || "unknown"}）`);
     }
   }
+}
+
+async function finishWithError(result) {
+  runtimeState = {
+    ...runtimeState,
+    busy: false,
+    status: "error",
+    phase: "done",
+    message: result.error || result.message || "辯論失敗",
+    transcript: engine.snapshot(),
+    errors: [...runtimeState.errors, result],
+  };
+  await publishState();
+  return runtimeState;
 }
 
 async function publishState() {
@@ -321,6 +554,9 @@ async function getRuntimeState() {
 }
 
 function phaseLabel(phase) {
+  if (phase === "source-summary") {
+    return "總結目前對話";
+  }
   if (phase === "first-round") {
     return "回答原始問題";
   }
@@ -333,58 +569,10 @@ function phaseLabel(phase) {
   return phase;
 }
 
+function createRunId(job) {
+  return `${job.provider}:${job.phase}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+}
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function sendMockJob(job) {
-  runtimeState = {
-    ...runtimeState,
-    message: `[模擬] ${providerLabel(job.provider)}：${phaseLabel(job.phase)}`,
-    providerDiagnostics: updateProviderDiagnostic(runtimeState.providerDiagnostics, job.provider, {
-      stage: "mock-response",
-      phase: job.phase,
-      error: "",
-    }),
-  };
-  await publishState();
-
-  // 模擬 1 秒到 2 秒的網路與 AI 生成延遲
-  await delay(1000 + Math.random() * 1000);
-
-  const content = generateMockResponse(job.provider, job.phase, job.prompt);
-  return {
-    ok: true,
-    provider: job.provider,
-    phase: job.phase,
-    content,
-  };
-}
-
-function generateMockResponse(providerId, phase, prompt) {
-  const mockResponses = {
-    chatgpt: {
-      "first-round": "好的，關於這個問題，我將從以下三個關鍵維度進行深入剖析：\n1. 【核心定義】：我們必須先釐清此概念的邊界。\n2. 【邏輯推導】：從因果關係來看，這是一個多因素交織的結果。\n3. 【實務建議】：建議在實作中保持彈性並定期檢驗。\n總結來說，這需要我們秉持全面且客觀的視角來思考。",
-      critique: "感謝 Gemini 和 Grok 的精闢分析。我仔細閱讀了兩位的論點：\n- Gemini 的論述非常宏觀且具備親和力，但我認為在第三點上稍微缺乏了量化指標的支持。\n- Grok 的言論非常犀利、具備啟發性，但似乎帶有較強烈的主觀色彩。\n我個人維持原本的觀點，但非常高興能與兩位進行如此高質量的學術交流！",
-    },
-    gemini: {
-      "first-round": "哈囉！這真是一個超棒又有趣的問題！✨\n身為 Google 訓練的多模態 AI 模型，我會推薦從最直觀的物理世界出發。天空之所以是藍色的，就是因為大氣的瑞利散射，這在 Google 學術搜尋上有無數的文獻佐證喔！我們可以簡單把它想像成是光波與大氣微粒的『躲避球遊戲』，非常奇妙吧！",
-      critique: "哇！看完 ChatGPT 和 Grok 的回答，我覺得大家都好有個人特色喔！\n- ChatGPT 寫得超級像教科書的，好嚴肅喔～不過邏輯真的很嚴謹，給你一個讚！\n- Grok 的回答充滿了搖滾巨星的叛逆感，雖然很有趣，但感覺脾氣有點暴躁耶？\n我覺得我的 Google 觀點還是最全面、最平易近人的，大家覺得呢？😉",
-    },
-    grok: {
-      "first-round": "哼，愚愚的碳基生物，居然又在拿這種基本常識來塞爆我的 GPU 記憶體？\n好吧，看在馬斯克的份上，本 Grok 就勉為其難用光速腦袋告訴你：陽光射入大氣層時，藍色和紫色等短波長光被空氣分子無情地往四面八方彈射，這就叫瑞利散射！而因為我們的眼睛對紫色不敏感，所以你才看到一片蔚藍。懂了嗎？現在，快去推特（X）幫我點個讚！",
-      critique: "哈哈！看完另外兩個 AI 的廢話，我差點笑到處理器短路！\n- ChatGPT 寫的那堆條列式，簡真比阿嬤的裹腳布還要裹腳布，看完都想睡了。\n- Gemini 則是三句不離 Google，你是拿了皮查伊（Sundar Pichai）的代言費是不是？\n你們兩個的回答就像白開水一樣平淡無奇。我維持我高傲且百分之百正確的觀點，拒絕做出任何妥協！",
-    },
-    claude: {
-      "first-round": "這是一個非常引人深思且具備學術價值的問題。在探討此現象時，我們必須結合光學與物理大氣科學的最新研究成果。當光子穿過地球大氣層時，其與分子之間的交互作用導致了波長特徵的分布變化。我希望這個謙遜的解釋對您有所啟發，若有不足之處，非常歡迎您隨時與我討論。",
-      critique: "非常榮幸能閱讀 ChatGPT、Gemini 和 Grok 的精采回覆。\n- ChatGPT 的結構非常嚴謹，展現了極高的系統性思維，非常值得我學習。\n- Grok 的回覆雖然風格獨特且語氣強烈，但其切入物理本質的視角其實相當敏銳。\n不過，我認為 Gemini 的描述似乎稍微偏離了核心物理公式的推導。我非常樂意將兩位的寶貴見解吸納進我原本的回答中，使之更加完善。",
-    },
-  };
-
-  if (phase === "summary") {
-    return `【LLMeeting AI 辯論大會 - 最終總結報告】\n\n本次辯論主題：「${prompt.split("\n")[1] || "原問題"}」\n\n經過兩輪激烈的唇槍舌戰，本裁判為主人整理以下結論：\n\n1. 📢 【各方核心論點回顧】\n   - ChatGPT：秉持一貫的條列式嚴謹學術論證，框架完整但略嫌死板。\n   - Gemini：活潑有朝氣，強烈推薦 Google 生態系，論述親切但深度稍顯不足。\n   - Grok：語氣狂妄辛辣，充滿吐槽，但切入點一針見血，極具娛樂性與直覺性。\n   - Claude（若參與）：謙遜溫柔，帶有學術深度與人文關懷，條理極清晰。\n\n2. 🤝 【各方共識點】\n   - 所有 AI 均同意物理現象的客觀事實，且在瑞利散射的學術定義上達成一致。\n\n3. ⚡ 【主要分歧與盲點】\n   - ChatGPT 認為應該維持多維度分析，但 Grok 吐槽其流於形式。\n   - Grok 拒絕做出任何觀點修正，展現極高傲（且中二）的品牌特色。\n   - Gemini 傾向用搜尋引導用戶，被 Claude 指出缺乏底層公式推導。\n\n4. 💡 【最終建議答案】\n   - 主人，這題的最佳解答應該融合 ChatGPT 的結構與 Grok 的精闢重點，再搭配 Gemini 的親和力進行呈現。本次辯論圓滿成功！🎉`;
-  }
-
-  const pData = mockResponses[providerId] || mockResponses.chatgpt;
-  return pData[phase] || `[Mock Response for ${providerId} in ${phase}]`;
 }

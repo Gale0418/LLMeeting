@@ -1,6 +1,7 @@
 const form = document.querySelector("#debateForm");
 const questionInput = document.querySelector("#questionInput");
-const startButton = document.querySelector("#startButton");
+const quickDebateButton = document.querySelector("#quickDebateButton");
+const summaryDebateButton = document.querySelector("#summaryDebateButton");
 const resetButton = document.querySelector("#resetButton");
 const statusText = document.querySelector("#statusText");
 const transcriptOutput = document.querySelector("#transcriptOutput");
@@ -8,7 +9,6 @@ const diagnosticsOutput = document.querySelector("#diagnosticsOutput");
 const chatTranscript = document.querySelector("#chatTranscript");
 const progressBar = document.querySelector("#progressBar");
 
-const mockModeCheckbox = document.querySelector("#mockModeCheckbox");
 const summaryProviderSelect = document.querySelector("#summaryProviderSelect");
 
 const providerStateEls = {
@@ -20,13 +20,20 @@ const providerStateEls = {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  await startDebate("fast");
+});
+
+summaryDebateButton.addEventListener("click", async () => {
+  await startDebate("summary");
+});
+
+async function startDebate(mode) {
   const question = questionInput.value.trim();
-  if (!question) {
+  if (mode === "fast" && !question) {
     renderMessage("請先輸入問題");
     return;
   }
 
-  // 取得勾選的 providers
   const activeProviders = Array.from(document.querySelectorAll(".provider-select:checked"))
     .map((el) => el.value);
 
@@ -35,16 +42,15 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
-  const mockMode = mockModeCheckbox.checked;
   const summaryProvider = summaryProviderSelect.value;
 
-  startButton.disabled = true;
-  renderMessage("啟動辯論大會中...");
+  setActionButtonsDisabled(true);
+  renderMessage(mode === "summary" ? "啟動總結辯論中..." : "啟動快速辯論中...");
   
   const response = await chrome.runtime.sendMessage({
     type: "aiDebate:start",
+    mode,
     question,
-    mockMode,
     activeProviders,
     summaryProvider,
   });
@@ -53,7 +59,7 @@ form.addEventListener("submit", async (event) => {
     renderMessage(response?.error || "啟動失敗");
   }
   renderState(response?.state);
-});
+}
 
 resetButton.addEventListener("click", async () => {
   const response = await chrome.runtime.sendMessage({ type: "aiDebate:reset" });
@@ -78,20 +84,16 @@ function renderState(state) {
     return;
   }
 
-  startButton.disabled = Boolean(state.busy);
+  setActionButtonsDisabled(Boolean(state.busy));
   statusText.textContent = state.message || state.status || "等待開始";
 
-  // 同步選單狀態 (當前非忙碌時)
   if (!state.busy) {
-    if (state.mockMode !== undefined) {
-      mockModeCheckbox.checked = state.mockMode;
-    }
     if (state.activeProviders) {
       document.querySelectorAll(".provider-select").forEach((el) => {
-        el.checked = state.activeProviders.includes(el.value);
+        el.checked = state.activeProviders.includes(el.value) || state.sourceProvider === el.value;
       });
     }
-    if (state.summaryProvider) {
+    if (state.summaryProvider && summaryProviderSelect.querySelector(`option[value="${state.summaryProvider}"]`)) {
       summaryProviderSelect.value = state.summaryProvider;
     }
   }
@@ -101,7 +103,10 @@ function renderState(state) {
   const critiques = transcript?.critiques || {};
 
   // 更新各個 AI 的目前狀態
-  const activeSet = new Set(state.activeProviders || ["chatgpt", "gemini", "grok"]);
+  const activeSet = new Set([
+    ...(state.activeProviders || ["chatgpt", "gemini", "grok"]),
+    state.sourceProvider,
+  ].filter(Boolean));
   for (const provider of Object.keys(providerStateEls)) {
     if (!activeSet.has(provider)) {
       providerStateEls[provider].textContent = "未啟用";
@@ -113,9 +118,9 @@ function renderState(state) {
     providerStateEls[provider].textContent = label;
     
     // 設定狀態樣式
-    if (label === "回答中" || label === "互評中") {
+    if (label === "回答中" || label === "互評中" || label === "總結中") {
       providerStateEls[provider].className = "state-active pulsing";
-    } else if (label === "已回答" || label === "已互評") {
+    } else if (label === "已回答" || label === "已互評" || label === "已總結") {
       providerStateEls[provider].className = "state-done";
     } else {
       providerStateEls[provider].className = "state-waiting";
@@ -139,7 +144,10 @@ function renderDiagnostics(state) {
   }
 
   const diagnostics = state.providerDiagnostics || {};
-  const activeProviders = state.activeProviders || ["chatgpt", "gemini", "grok"];
+  const activeProviders = [
+    ...(state.activeProviders || ["chatgpt", "gemini", "grok"]),
+    state.sourceProvider,
+  ].filter((providerId, index, list) => providerId && list.indexOf(providerId) === index);
   const blocks = activeProviders.map((providerId) => {
     const details = diagnostics[providerId] || {};
     return [
@@ -158,7 +166,8 @@ function updateProgressBar(state) {
   if (!progressBar) return;
   let percent = 0;
   if (state.status === "running") {
-    if (state.phase === "first-round") percent = 30;
+    if (state.phase === "source-summary") percent = 15;
+    else if (state.phase === "first-round") percent = 30;
     else if (state.phase === "critique") percent = 65;
     else if (state.phase === "summary") percent = 85;
   } else if (state.status === "done") {
@@ -181,7 +190,19 @@ function renderChatBubbles(state) {
   
   const transcript = state.transcript;
   if (!transcript || !transcript.originalQuestion) {
-    chatTranscript.innerHTML = `<div class="empty-state">點擊「開始辯論大會」來啟動對決吧！✨</div>`;
+    if (state.phase === "source-summary") {
+      const sourceProvider = state.sourceProvider || state.summaryProvider || "chatgpt";
+      chatTranscript.innerHTML = `
+        <div class="round-divider">整理目前對話</div>
+        <div class="bubble-group summary ${sourceProvider} loading">
+          <div class="bubble-meta">${providerLabel(sourceProvider)} 正在總結</div>
+          <div class="bubble-content"><span class="loading-dots">整理上下文中<span>.</span><span>.</span><span>.</span></span></div>
+        </div>
+      `;
+      return;
+    }
+
+    chatTranscript.innerHTML = `<div class="empty-state">輸入問題跑快速辯論，或在目前 AI 分頁按「總結辯論」。</div>`;
     return;
   }
 
@@ -190,7 +211,7 @@ function renderChatBubbles(state) {
   // 1. 使用者提問
   html += `
     <div class="bubble-group user">
-      <div class="bubble-meta">主人提問 🙋‍♂️</div>
+      <div class="bubble-meta">${state.mode === "summary" ? "目前對話總結" : "主人提問 🙋‍♂️"}</div>
       <div class="bubble-content">${escapeHTML(transcript.originalQuestion)}</div>
     </div>
   `;
@@ -288,6 +309,18 @@ function providerLabel(id) {
 }
 
 function providerLabelForPhase(provider, state, answers, critiques) {
+  if (state.phase === "source-summary" && provider === state.sourceProvider) {
+    return state.sourceSummary ? "已總結" : "總結中";
+  }
+  if (state.sourceSummary && provider === state.sourceProvider && !state.summary) {
+    return "已總結";
+  }
+  if (state.phase === "summary" && provider === state.summaryProvider) {
+    return "總結中";
+  }
+  if (state.summary && provider === state.summaryProvider) {
+    return "已總結";
+  }
   if (state.providerTabs?.[provider] && state.phase === "first-round" && !answers[provider]) {
     return "回答中";
   }
@@ -303,6 +336,11 @@ function providerLabelForPhase(provider, state, answers, critiques) {
   return state.busy ? "等待中" : "待命";
 }
 
+function setActionButtonsDisabled(disabled) {
+  quickDebateButton.disabled = disabled;
+  summaryDebateButton.disabled = disabled;
+}
+
 function buildTranscriptText(state) {
   const transcript = state.transcript;
   if (!transcript) {
@@ -312,7 +350,7 @@ function buildTranscriptText(state) {
   const lines = [
     `狀態: ${state.message || state.status}`,
     "",
-    "原問題:",
+    state.mode === "summary" ? "目前對話總結:" : "原問題:",
     transcript.originalQuestion || state.question || "",
     "",
     "第一輪回答:",

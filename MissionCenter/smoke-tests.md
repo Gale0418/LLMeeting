@@ -1,0 +1,10 @@
+# Smoke Tests
+
+| 日期 | 關聯任務 ID | 測試內容 | 測試方式 | 預期結果 | 實際結果 | 通過 / 失敗 | 執行類型 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-06-05 | LLM-T6 | 完整自動化測試 | `npm test` | 所有測試通過 | 43/43 pass | 通過 | automated |
+| 2026-06-05 | LLM-T6 | Service worker 語法 | `node --check src\background\service-worker.js` | 無語法錯誤 | 無輸出，exit 0 | 通過 | automated |
+| 2026-06-05 | LLM-T6 | Content script 語法 | `node --check src\content\provider-page.js` | 無語法錯誤 | 無輸出，exit 0 | 通過 | automated |
+| 2026-06-05 | LLM-T6 | Side panel app 語法 | `node --check src\sidepanel\app.js` | 無語法錯誤 | 無輸出，exit 0 | 通過 | automated |
+| 2026-06-05 | LLM-T6 | Diff whitespace 檢查 | `git diff --check` | 無 whitespace error | 只有 Windows CRLF 提示 | 通過 | automated |
+| 2026-06-05 | LLM-T5 | Side panel 按鈕與 Mock 移除 | 本機預覽 DOM/截圖檢查 | 快速辯論、總結辯論可見，Mock 不存在，無水平溢出 | 按鈕寬 218px、高 46px，無水平溢出 | 通過 | manual |

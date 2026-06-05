@@ -1,0 +1,25 @@
+# 收尾
+
+- 摘要：LLMeeting 0.2.0 已完成快速鬪技場與總結辯論程式碼實作，Mock Mode 已移除。
+- 已完成：
+  - 多 AI 辯論基礎流程。
+  - 快速辯論排程。
+  - 目前 AI 對話總結後開啟辯論。
+  - Side panel 雙按鈕 UI。
+  - 自動化測試與基本視覺檢查。
+- 未完成：
+  - Chrome 實機驗收快速辯論與總結辯論。
+  - CodeRabbit review。
+  - Claude 真實流程驗證。
+  - Pro 付費牆或授權系統。
+- 風險：
+  - Provider DOM 變動。
+  - 背景分頁節流。
+  - 長上下文 prompt 過長。
+- Smoke tests：
+  - `npm test` 43/43 pass。
+  - `node --check` 三個主要 JS 檔案 pass。
+  - `git diff --check` 無 whitespace error。
+  - Side panel 本機預覽無水平溢出，Mock 不存在。
+- 回顧：
+  - 下一步應先做真實 Chrome 試玩，再決定要補強穩定性還是開始設計付費授權。

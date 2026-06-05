@@ -2,10 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-test("provider jobs run sequentially so each chat page can be activated reliably", async () => {
+test("fast provider jobs submit prompts before collecting replies", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
-  assert.doesNotMatch(script, /Promise\.all\(jobs\.map\(\(job\) => sendJob\(job, mockMode\)\)\)/);
+  assert.match(script, /runFastProviderJobs/);
+  assert.match(script, /submitProviderJob/);
+  assert.match(script, /collectProviderJob/);
+  assert.match(script, /submittedJobs\.push\(submitted\)/);
   assert.match(script, /await activateProviderTab\(tab\)/);
 });
 
@@ -15,11 +18,11 @@ test("new provider tabs open as active pages instead of dormant background tabs"
   assert.match(script, /chrome\.tabs\.create\(\{ url: provider\.startUrl, active: true \}\)/);
 });
 
-test("each provider result is published as soon as its sequential job finishes", async () => {
+test("summary debate starts from the current provider tab and returns the final prompt there", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
-  assert.match(
-    script,
-    /for \(const job of jobs\) \{\s+const result = await sendJob\(job, mockMode\);\s+recordProviderResult\(result, target\);[\s\S]*?await publishState\(\);\s+\}/,
-  );
+  assert.match(script, /startSummaryDebate/);
+  assert.match(script, /getActiveProviderTab/);
+  assert.match(script, /sourceProvider/);
+  assert.match(script, /summaryProvider: sourceProvider/);
 });

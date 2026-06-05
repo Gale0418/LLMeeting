@@ -5,6 +5,23 @@ export function buildFirstRoundPrompt(originalQuestion) {
   return normalizeText(originalQuestion);
 }
 
+export function buildConversationSummaryPrompt(userNote = "") {
+  const note = normalizeText(userNote);
+  return [
+    "請總結目前這整段對話，作為交給其他 AI 評估與辯論的背景資料。",
+    "",
+    "這不是要你現在回答新問題，也不是要你繼續延伸討論。",
+    "請用清楚、可轉貼的格式整理：",
+    "1. 目前正在討論的核心問題。",
+    "2. 已經確認的條件、限制與偏好。",
+    "3. 重要上下文與尚未解決的分歧。",
+    "4. 如果其他 AI 要評論，最需要注意的盲點。",
+    note ? "" : null,
+    note ? "使用者補充:" : null,
+    note || null,
+  ].filter((line) => line !== null).join("\n");
+}
+
 export function buildCritiquePrompt({ recipient, answers, maxChars, activeProviders }) {
   const providersList = activeProviders 
     ? PROVIDERS.filter((p) => activeProviders.includes(p.id)) 

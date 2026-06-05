@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 await import("../src/content/automation-core.js");
 
@@ -45,4 +46,13 @@ test("formatStageError preserves the failing automation stage", () => {
 test("isPromptEcho detects the user's submitted prompt despite whitespace differences", () => {
   assert.equal(isPromptEcho("請分析：\nPony V6", "  請分析： Pony V6  "), true);
   assert.equal(isPromptEcho("請分析 Pony V6", "我的結論：Pony V6 仍然很強"), false);
+});
+
+test("provider page automation can submit first and read the reply later", async () => {
+  const script = await readFile("src/content/provider-page.js", "utf8");
+
+  assert.match(script, /aiDebate:submitPrompt/);
+  assert.match(script, /aiDebate:readSubmittedResponse/);
+  assert.match(script, /submittedRuns/);
+  assert.match(script, /sendAndRead\(message\)/);
 });
