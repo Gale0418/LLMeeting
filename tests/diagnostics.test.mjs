@@ -47,6 +47,7 @@ test("side panel exposes quick and summary debate actions without mock mode", as
   assert.doesNotMatch(app, /mockModeCheckbox/);
   assert.match(html, /id="quickDebateButton"/);
   assert.match(html, /id="summaryDebateButton"/);
+  assert.match(html, /value="claude" checked> Claude/);
   assert.match(app, /startDebate\("fast"\)/);
   assert.match(app, /startDebate\("summary"\)/);
 });

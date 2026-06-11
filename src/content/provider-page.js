@@ -108,6 +108,8 @@
       ],
       responseSelectors: [
         ".font-claude-message",
+        "[data-message-author='assistant']",
+        "[data-is-streaming]",
         "[data-testid='message-bubble']",
         ".prose",
         "article",
@@ -358,7 +360,7 @@
   function isVisible(element) {
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
-    return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none" && style.opacity !== "0";
   }
 
   async function waitFor(getValue, timeoutMs, errorMessage) {

@@ -14,6 +14,7 @@ test("engine starts a fixed first-round debate for all providers", () => {
       ["chatgpt", "first-round", "天為什麼是藍的？"],
       ["gemini", "first-round", "天為什麼是藍的？"],
       ["grok", "first-round", "天為什麼是藍的？"],
+      ["claude", "first-round", "天為什麼是藍的？"],
     ],
   );
 });
@@ -24,12 +25,14 @@ test("engine builds critique jobs after all first answers are recorded", () => {
   engine.recordAnswer("chatgpt", "是散射。");
   engine.recordAnswer("gemini", "就是藍的呀~");
   engine.recordAnswer("grok", "我不知道。");
+  engine.recordAnswer("claude", "需要看光的波長。");
 
   const jobs = engine.buildCritiqueJobs();
 
   assert.equal(engine.snapshot().phase, "critique");
-  assert.equal(jobs.length, 3);
+  assert.equal(jobs.length, 4);
   assert.match(jobs.find((job) => job.provider === "chatgpt").prompt, /Gemini:\n就是藍的呀~/);
+  assert.match(jobs.find((job) => job.provider === "chatgpt").prompt, /Claude:\n需要看光的波長。/);
   assert.doesNotMatch(jobs.find((job) => job.provider === "chatgpt").prompt, /ChatGPT:\n是散射。/);
 });
 
@@ -39,10 +42,12 @@ test("engine builds final ChatGPT summary job after all critiques are recorded",
   engine.recordAnswer("chatgpt", "是散射。");
   engine.recordAnswer("gemini", "就是藍的呀~");
   engine.recordAnswer("grok", "我不知道。");
+  engine.recordAnswer("claude", "需要看光的波長。");
   engine.buildCritiqueJobs();
   engine.recordCritique("chatgpt", "Gemini 太草率。");
   engine.recordCritique("gemini", "GPT 比較完整。");
   engine.recordCritique("grok", "我同意散射。");
+  engine.recordCritique("claude", "需要補充大氣散射。");
 
   const job = engine.buildFinalJob();
 
@@ -60,10 +65,11 @@ test("engine records provider errors without blocking the next phase", () => {
   engine.recordAnswer("chatgpt", "是散射。");
   engine.markProviderError("gemini", "first-round", "timeout");
   engine.recordAnswer("grok", "我不知道。");
+  engine.recordAnswer("claude", "需要看光的波長。");
 
   const jobs = engine.buildCritiqueJobs();
 
-  assert.equal(jobs.length, 3);
+  assert.equal(jobs.length, 4);
   assert.match(jobs.find((job) => job.provider === "chatgpt").prompt, /Gemini:\n\[錯誤：timeout\]/);
 });
 

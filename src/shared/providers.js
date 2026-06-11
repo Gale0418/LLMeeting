@@ -26,7 +26,7 @@ export const PROVIDERS = [
 ];
 
 export const PROVIDER_IDS = PROVIDERS.map((provider) => provider.id);
-export const DEFAULT_ACTIVE_PROVIDER_IDS = ["chatgpt", "gemini", "grok"];
+export const DEFAULT_ACTIVE_PROVIDER_IDS = ["chatgpt", "gemini", "grok", "claude"];
 
 export function providerById(providerId) {
   return PROVIDERS.find((item) => item.id === providerId) || null;

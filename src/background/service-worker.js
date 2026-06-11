@@ -284,6 +284,8 @@ async function submitProviderJob(job) {
       throw new Error(response?.error || "provider submit failed");
     }
 
+    await delay(500);
+
     await setProviderDiagnostic(job.provider, {
       stage: "submitted",
       phase: job.phase,
