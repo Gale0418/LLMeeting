@@ -78,7 +78,7 @@ async function startDebate(mode) {
 
   if (!response?.ok) {
     if (response?.code === "PRO_REQUIRED") {
-      renderLockedFeatureMessage(response.feature);
+      renderLockedFeatureMessage(response?.feature);
     } else {
       renderMessage(response?.error || "啟動失敗");
     }
@@ -431,7 +431,7 @@ function startingMessage(mode) {
     return "啟動總結辯論中...";
   }
   if (mode === "fast") {
-    return "啟動快速鬪技場中...";
+    return "啟動快速鬥技場中...";
   }
   return "啟動基礎辯論中...";
 }

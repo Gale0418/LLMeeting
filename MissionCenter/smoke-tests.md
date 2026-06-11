@@ -12,3 +12,6 @@
 | 2026-06-11 | LLM-T12 | Free/Pro 完整自動化測試 | `npm test` | entitlement、side panel、service worker 測試全部通過 | 48/48 pass | 通過 | automated |
 | 2026-06-11 | LLM-T12 | Free/Pro 語法檢查 | `node --check src\background\service-worker.js`、`node --check src\sidepanel\app.js`、`node --check src\shared\entitlements.js` | 無語法錯誤 | 三個指令皆無輸出，exit 0 | 通過 | automated |
 | 2026-06-11 | LLM-T12 | Diff whitespace 檢查 | `git diff --check` | 無 whitespace error | exit 0，只有 Windows CRLF 提示 | 通過 | automated |
+| 2026-06-11 | LLM-T8 | CodeRabbit review | `coderabbit review --agent --base master --base-commit 93c108d` | 取得 review 結果並修正真實問題 | 3 minor issues；2 個真實修正、1 個防禦性改善 | 通過 | external |
+| 2026-06-11 | LLM-T13 | 商店準備測試 | `npm test` | store prep test 與既有測試全部通過 | 50/50 pass | 通過 | automated |
+| 2026-06-11 | LLM-T13 | Chrome Web Store zip | `npm run package`、`tar -tf dist\llmeeting-0.3.0.zip` | 產生 zip，內容只含 manifest、assets、src | `dist\llmeeting-0.3.0.zip` 1,749,463 bytes；未包含測試與任務文件 | 通過 | automated |

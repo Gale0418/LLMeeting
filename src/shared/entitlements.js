@@ -4,7 +4,7 @@ export const ENTITLEMENT_STORAGE_KEY = "aiDebate.entitlementPlan";
 
 const FEATURE_LABELS = {
   basicDebate: "基礎辯論",
-  fastDebate: "快速鬪技場",
+  fastDebate: "快速鬥技場",
   summaryDebate: "總結辯論",
   history: "歷史紀錄",
   export: "匯出",
@@ -46,7 +46,7 @@ export function canUseFeature(entitlements, featureId) {
 }
 
 export function featureLabel(featureId) {
-  return FEATURE_LABELS[featureId] || featureId;
+  return FEATURE_LABELS[featureId] || featureId || "這項功能";
 }
 
 export function proRequiredMessage(featureId) {

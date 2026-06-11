@@ -30,9 +30,12 @@ test("pro entitlement unlocks fast debate and summary debate without changing pr
   assert.equal(canUseFeature(pro, "basicDebate"), true);
   assert.equal(canUseFeature(pro, "fastDebate"), true);
   assert.equal(canUseFeature(pro, "summaryDebate"), true);
+  assert.equal(canUseFeature(pro, "history"), true);
+  assert.equal(canUseFeature(pro, "export"), true);
 });
 
 test("feature labels stay user-facing for locked action messages", () => {
-  assert.equal(featureLabel("fastDebate"), "快速鬪技場");
+  assert.equal(featureLabel("fastDebate"), "快速鬥技場");
   assert.equal(featureLabel("summaryDebate"), "總結辯論");
+  assert.equal(featureLabel(), "這項功能");
 });

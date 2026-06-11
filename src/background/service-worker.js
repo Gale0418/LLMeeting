@@ -124,7 +124,7 @@ async function startFastDebate(question, options = {}) {
     ...options,
     mode: "fast",
     scheduler: "fast",
-    openingMessage: "快速鬪技場：準備送出原始問題",
+    openingMessage: "快速鬥技場：準備送出原始問題",
   });
 }
 

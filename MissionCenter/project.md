@@ -1,6 +1,6 @@
 # 專案
 
-- 目標：完成 LLMeeting Chrome 插件 MVP，支援多 AI 辯論、快速鬪技場、從目前 AI 對話總結後開啟辯論，並保留可追蹤的補強清單。
+- 目標：完成 LLMeeting Chrome 插件 MVP，支援多 AI 辯論、快速鬥技場、從目前 AI 對話總結後開啟辯論，並保留可追蹤的補強清單。
 - 週期：2026-06-05 收尾檢查
 - 標籤：chrome-extension, llmeeting, ai-debate, pro-feature, verification
 - 活動紀錄：
