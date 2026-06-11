@@ -4,3 +4,4 @@
 - 2026-06-05：移除 Mock Mode，因為目前專案已進入真實網頁自動化試玩階段，Mock 入口容易讓 UI 變複雜。
 - 2026-06-05：總結辯論以目前 active provider tab 作為來源與最後裁判，其他勾選 provider 負責第一輪與互評。
 - 2026-06-05：CodeRabbit review 暫停到主人明確同意第三方資料傳送後再執行。
+- 2026-06-11：Free 版保留 ChatGPT/Gemini/Grok/Claude 四家 AI 基礎輪流辯論；快速鬪技場與總結辯論先列為 Pro 預留入口，不接付款後端。

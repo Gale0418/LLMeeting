@@ -1,9 +1,18 @@
+import {
+  canUseFeature,
+  entitlementsForPlan,
+  featureLabel,
+  proRequiredMessage,
+} from "../shared/entitlements.js";
+
 const form = document.querySelector("#debateForm");
 const questionInput = document.querySelector("#questionInput");
+const basicDebateButton = document.querySelector("#basicDebateButton");
 const quickDebateButton = document.querySelector("#quickDebateButton");
 const summaryDebateButton = document.querySelector("#summaryDebateButton");
 const resetButton = document.querySelector("#resetButton");
 const statusText = document.querySelector("#statusText");
+const planBadge = document.querySelector("#planBadge");
 const transcriptOutput = document.querySelector("#transcriptOutput");
 const diagnosticsOutput = document.querySelector("#diagnosticsOutput");
 const chatTranscript = document.querySelector("#chatTranscript");
@@ -20,14 +29,20 @@ const providerStateEls = {
 };
 
 let latestState = null;
+let currentEntitlements = entitlementsForPlan();
+const fallbackProviderIds = ["chatgpt", "gemini", "grok", "claude"];
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  await startDebate("fast");
+  await startDebate("basic");
+});
+
+quickDebateButton.addEventListener("click", async () => {
+  await startProDebate("fast", "fastDebate");
 });
 
 summaryDebateButton.addEventListener("click", async () => {
-  await startDebate("summary");
+  await startProDebate("summary", "summaryDebate");
 });
 
 providerSelectEls.forEach((el) => {
@@ -36,7 +51,7 @@ providerSelectEls.forEach((el) => {
 
 async function startDebate(mode) {
   const question = questionInput.value.trim();
-  if (mode === "fast" && !question) {
+  if ((mode === "basic" || mode === "fast") && !question) {
     renderMessage("請先輸入問題");
     return;
   }
@@ -51,7 +66,7 @@ async function startDebate(mode) {
   const summaryProvider = summaryProviderSelect.value;
 
   setActionButtonsDisabled(true);
-  renderMessage(mode === "summary" ? "啟動總結辯論中..." : "啟動快速辯論中...");
+  renderMessage(startingMessage(mode));
   
   const response = await chrome.runtime.sendMessage({
     type: "aiDebate:start",
@@ -62,9 +77,22 @@ async function startDebate(mode) {
   });
 
   if (!response?.ok) {
-    renderMessage(response?.error || "啟動失敗");
+    if (response?.code === "PRO_REQUIRED") {
+      renderLockedFeatureMessage(response.feature);
+    } else {
+      renderMessage(response?.error || "啟動失敗");
+    }
   }
   renderState(response?.state);
+}
+
+async function startProDebate(mode, featureId) {
+  if (!canUseFeature(currentEntitlements, featureId)) {
+    renderLockedFeatureMessage(featureId);
+    return;
+  }
+
+  await startDebate(mode);
 }
 
 resetButton.addEventListener("click", async () => {
@@ -91,7 +119,9 @@ function renderState(state) {
   }
 
   latestState = state;
+  currentEntitlements = state.entitlements || entitlementsForPlan();
   setActionButtonsDisabled(Boolean(state.busy));
+  renderEntitlementState();
   statusText.textContent = state.message || state.status || "等待開始";
 
   if (!state.busy) {
@@ -144,7 +174,7 @@ function renderProviderStatuses(state) {
   const answers = transcript?.answers || {};
   const critiques = transcript?.critiques || {};
   const activeSet = new Set([
-    ...(state.activeProviders || ["chatgpt", "gemini", "grok"]),
+    ...(state.activeProviders || fallbackProviderIds),
     state.sourceProvider,
   ].filter(Boolean));
 
@@ -175,7 +205,7 @@ function renderDiagnostics(state) {
 
   const diagnostics = state.providerDiagnostics || {};
   const activeProviders = [
-    ...(state.activeProviders || ["chatgpt", "gemini", "grok"]),
+    ...(state.activeProviders || fallbackProviderIds),
     state.sourceProvider,
   ].filter((providerId, index, list) => providerId && list.indexOf(providerId) === index);
   const blocks = activeProviders.map((providerId) => {
@@ -232,7 +262,7 @@ function renderChatBubbles(state) {
       return;
     }
 
-    chatTranscript.innerHTML = `<div class="empty-state">輸入問題跑快速辯論，或在目前 AI 分頁按「總結辯論」。</div>`;
+    chatTranscript.innerHTML = `<div class="empty-state">輸入問題跑基礎辯論。</div>`;
     return;
   }
 
@@ -248,7 +278,7 @@ function renderChatBubbles(state) {
 
   // 2. 第一輪回答
   const answers = transcript.answers || {};
-  const activeSet = new Set(state.activeProviders || ["chatgpt", "gemini", "grok"]);
+  const activeSet = new Set(state.activeProviders || fallbackProviderIds);
   
   // 檢查是否有任何啟用的 provider 開始有回答或在回答中
   const hasFirstRound = Array.from(activeSet).some(p => answers[p] || state.phase === "first-round");
@@ -367,8 +397,43 @@ function providerLabelForPhase(provider, state, answers, critiques) {
 }
 
 function setActionButtonsDisabled(disabled) {
+  basicDebateButton.disabled = disabled;
   quickDebateButton.disabled = disabled;
   summaryDebateButton.disabled = disabled;
+}
+
+function renderEntitlementState() {
+  if (planBadge) {
+    planBadge.textContent = currentEntitlements.isPro ? "Pro" : "Free";
+    planBadge.className = `plan-badge ${currentEntitlements.isPro ? "is-pro" : "is-free"}`;
+  }
+
+  renderProActionState(quickDebateButton, "fastDebate");
+  renderProActionState(summaryDebateButton, "summaryDebate");
+}
+
+function renderProActionState(button, featureId) {
+  if (!button) {
+    return;
+  }
+
+  const locked = !canUseFeature(currentEntitlements, featureId);
+  button.classList.toggle("is-locked", locked);
+  button.title = locked ? proRequiredMessage(featureId) : featureLabel(featureId);
+}
+
+function renderLockedFeatureMessage(featureId) {
+  renderMessage(proRequiredMessage(featureId));
+}
+
+function startingMessage(mode) {
+  if (mode === "summary") {
+    return "啟動總結辯論中...";
+  }
+  if (mode === "fast") {
+    return "啟動快速鬪技場中...";
+  }
+  return "啟動基礎辯論中...";
 }
 
 function buildTranscriptText(state) {

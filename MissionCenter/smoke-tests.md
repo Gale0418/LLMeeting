@@ -9,3 +9,6 @@
 | 2026-06-05 | LLM-T6 | Diff whitespace 檢查 | `git diff --check` | 無 whitespace error | 只有 Windows CRLF 提示 | 通過 | automated |
 | 2026-06-05 | LLM-T5 | Side panel 按鈕與 Mock 移除 | 本機預覽 DOM/截圖檢查 | 快速辯論、總結辯論可見，Mock 不存在，無水平溢出 | 按鈕寬 218px、高 46px，無水平溢出 | 通過 | manual |
 | 2026-06-11 | LLM-T11 | 四家 AI 預設啟用 | `npm test` | DEFAULT_ACTIVE_PROVIDER_IDS 包含 ChatGPT/Gemini/Grok/Claude，Claude checkbox 預設 checked | 44/44 pass | 通過 | automated |
+| 2026-06-11 | LLM-T12 | Free/Pro 完整自動化測試 | `npm test` | entitlement、side panel、service worker 測試全部通過 | 48/48 pass | 通過 | automated |
+| 2026-06-11 | LLM-T12 | Free/Pro 語法檢查 | `node --check src\background\service-worker.js`、`node --check src\sidepanel\app.js`、`node --check src\shared\entitlements.js` | 無語法錯誤 | 三個指令皆無輸出，exit 0 | 通過 | automated |
+| 2026-06-11 | LLM-T12 | Diff whitespace 檢查 | `git diff --check` | 無 whitespace error | exit 0，只有 Windows CRLF 提示 | 通過 | automated |

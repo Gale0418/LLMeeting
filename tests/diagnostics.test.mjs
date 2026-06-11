@@ -39,17 +39,22 @@ test("side panel exposes a visible provider diagnostics output", async () => {
   assert.match(app, /renderDiagnostics\(state\)/);
 });
 
-test("side panel exposes quick and summary debate actions without mock mode", async () => {
+test("side panel exposes free basic debate and pro-gated advanced actions without mock mode", async () => {
   const html = await readFile("src/sidepanel/index.html", "utf8");
   const app = await readFile("src/sidepanel/app.js", "utf8");
 
   assert.doesNotMatch(html, /mockModeCheckbox/);
   assert.doesNotMatch(app, /mockModeCheckbox/);
+  assert.match(html, /id="basicDebateButton"/);
   assert.match(html, /id="quickDebateButton"/);
   assert.match(html, /id="summaryDebateButton"/);
+  assert.match(html, /data-pro-feature="fastDebate"/);
+  assert.match(html, /data-pro-feature="summaryDebate"/);
   assert.match(html, /value="claude" checked> Claude/);
-  assert.match(app, /startDebate\("fast"\)/);
-  assert.match(app, /startDebate\("summary"\)/);
+  assert.match(app, /startDebate\("basic"\)/);
+  assert.match(app, /startProDebate\("fast", "fastDebate"\)/);
+  assert.match(app, /startProDebate\("summary", "summaryDebate"\)/);
+  assert.match(app, /renderEntitlementState/);
 });
 
 test("side panel previews checked providers while idle", async () => {

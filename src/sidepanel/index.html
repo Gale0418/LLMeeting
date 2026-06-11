@@ -10,7 +10,10 @@
     <main class="shell">
       <header class="topbar">
         <div>
-          <h1>LLMeeting</h1>
+          <div class="brand-row">
+            <h1>LLMeeting</h1>
+            <span id="planBadge" class="plan-badge">Free</span>
+          </div>
           <p id="statusText">等待開始</p>
         </div>
         <button id="resetButton" type="button" title="重置">Reset</button>
@@ -52,8 +55,13 @@
         </details>
 
         <div class="action-row">
-          <button id="quickDebateButton" class="primary-action" type="submit">快速辯論 ⚡</button>
-          <button id="summaryDebateButton" class="secondary-action" type="button">總結辯論 ✦</button>
+          <button id="basicDebateButton" class="primary-action" type="submit">基礎辯論</button>
+          <button id="quickDebateButton" class="secondary-action pro-action" type="button" data-pro-feature="fastDebate">
+            快速鬪技場 ⚡ <span class="pro-pill">PRO</span>
+          </button>
+          <button id="summaryDebateButton" class="secondary-action pro-action" type="button" data-pro-feature="summaryDebate">
+            總結辯論 ✦ <span class="pro-pill">PRO</span>
+          </button>
         </div>
       </form>
 
@@ -80,7 +88,7 @@
         <h2>Transcript</h2>
         <!-- 氣泡對話框 Transcript -->
         <div id="chatTranscript" class="chat-transcript">
-          <div class="empty-state">輸入問題跑快速辯論，或在目前 AI 分頁按「總結辯論」。</div>
+          <div class="empty-state">輸入問題跑基礎辯論。</div>
         </div>
         <pre id="transcriptOutput" style="display: none;">尚未開始</pre>
       </section>

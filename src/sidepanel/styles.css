@@ -80,6 +80,12 @@ body {
   padding: 8px 4px;
 }
 
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .topbar h1 {
   font-size: 24px;
   font-weight: 700;
@@ -87,6 +93,26 @@ body {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   letter-spacing: 0;
+}
+
+.plan-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  border-radius: 999px;
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.plan-badge.is-pro {
+  border-color: rgba(0, 242, 254, 0.35);
+  background: rgba(0, 242, 254, 0.1);
+  color: #7cf7ff;
 }
 
 #statusText {
@@ -301,6 +327,10 @@ select:focus {
   gap: 10px;
 }
 
+#basicDebateButton {
+  grid-column: 1 / -1;
+}
+
 .primary-action,
 .secondary-action {
   min-height: 44px;
@@ -324,6 +354,31 @@ select:focus {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.14);
   color: var(--text-primary);
+}
+
+.pro-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.pro-action.is-locked {
+  border-style: dashed;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.pro-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 2px 5px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffe08a;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 800;
 }
 
 .primary-action:hover:not(:disabled),

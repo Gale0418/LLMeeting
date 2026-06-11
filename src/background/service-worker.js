@@ -1,6 +1,13 @@
 import { DebateEngine } from "./debateEngine.js";
 import { isProviderTabReady, setSidePanelOpenOnActionClick } from "./chromeCompat.js";
 import { createProviderDiagnostics, updateProviderDiagnostic } from "./diagnostics.js";
+import {
+  canUseFeature,
+  ENTITLEMENT_STORAGE_KEY,
+  entitlementsForPlan,
+  featureLabel,
+  proRequiredMessage,
+} from "../shared/entitlements.js";
 import { buildConversationSummaryPrompt } from "../shared/prompts.js";
 import {
   DEFAULT_ACTIVE_PROVIDER_IDS,
@@ -40,21 +47,39 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "aiDebate:start") {
-    const { question, mode = "fast", activeProviders, summaryProvider } = message;
-    const startAction = mode === "summary" ? startSummaryDebate : startDebate;
+    const { question, mode = "basic", activeProviders, summaryProvider } = message;
+    const startAction = {
+      basic: startBasicDebate,
+      fast: startFastDebate,
+      summary: startSummaryDebate,
+    }[mode];
+
+    if (!startAction) {
+      sendResponse({ ok: false, error: `Unknown debate mode: ${mode}`, state: runtimeState });
+      return false;
+    }
+
     startAction(question, { activeProviders, summaryProvider })
       .then((state) => sendResponse({ ok: true, state }))
-      .catch((error) => {
+      .catch(async (error) => {
+        const isProRequired = error.code === "PRO_REQUIRED";
         runtimeState = {
           ...runtimeState,
           busy: false,
-          status: "error",
-          phase: "done",
+          status: isProRequired ? "idle" : "error",
+          phase: isProRequired ? runtimeState.phase : "done",
           message: error.message,
-          errors: [...runtimeState.errors, { message: error.message }],
+          errors: isProRequired ? runtimeState.errors : [...runtimeState.errors, { message: error.message }],
+          entitlements: await getEntitlements(),
         };
-        publishState();
-        sendResponse({ ok: false, error: error.message, state: runtimeState });
+        await publishState();
+        sendResponse({
+          ok: false,
+          code: error.code || "ERROR",
+          feature: error.feature || "",
+          error: error.message,
+          state: runtimeState,
+        });
       });
     return true;
   }
@@ -80,10 +105,30 @@ function createIdleState(providerIds = DEFAULT_ACTIVE_PROVIDER_IDS) {
     errors: [],
     activeProviders,
     summaryProvider: "chatgpt",
+    entitlements: entitlementsForPlan(),
   };
 }
 
-async function startDebate(question, options = {}) {
+async function startBasicDebate(question, options = {}) {
+  return startQuestionDebate(question, {
+    ...options,
+    mode: "basic",
+    scheduler: "sequential",
+    openingMessage: "基礎辯論：準備逐家送出原始問題",
+  });
+}
+
+async function startFastDebate(question, options = {}) {
+  await requireProFeature("fastDebate");
+  return startQuestionDebate(question, {
+    ...options,
+    mode: "fast",
+    scheduler: "fast",
+    openingMessage: "快速鬪技場：準備送出原始問題",
+  });
+}
+
+async function startQuestionDebate(question, options = {}) {
   const trimmedQuestion = String(question || "").trim();
   if (!trimmedQuestion) {
     throw new Error("請先輸入問題");
@@ -95,25 +140,31 @@ async function startDebate(question, options = {}) {
 
   const activeProviders = normalizeProviderIds(options.activeProviders);
   const summaryProvider = options.summaryProvider || "chatgpt";
+  const entitlements = await getEntitlements();
+  const mode = options.mode || "basic";
+  const scheduler = options.scheduler || "sequential";
 
   engine = new DebateEngine(activeProviders, summaryProvider);
   runtimeState = {
     ...createIdleState(activeProviders),
     busy: true,
     status: "running",
-    mode: "fast",
+    mode,
     phase: "first-round",
-    message: "快速辯論：準備送出原始問題",
+    message: options.openingMessage || "基礎辯論：準備送出原始問題",
     question: trimmedQuestion,
     activeProviders,
     summaryProvider,
+    entitlements,
   };
   await publishState();
 
-  return runDebateRounds(trimmedQuestion);
+  return runDebateRounds(trimmedQuestion, { scheduler });
 }
 
 async function startSummaryDebate(userNote, options = {}) {
+  await requireProFeature("summaryDebate");
+
   if (runtimeState.busy) {
     throw new Error("目前已有辯論正在進行");
   }
@@ -122,6 +173,7 @@ async function startSummaryDebate(userNote, options = {}) {
   const sourceProvider = sourceProviderInfo.id;
   const requestedProviders = normalizeProviderIds(options.activeProviders);
   const debateProviders = requestedProviders.filter((providerId) => providerId !== sourceProvider);
+  const entitlements = await getEntitlements();
   if (debateProviders.length < 2) {
     throw new Error(`總結辯論至少需要目前頁面以外的 2 家 AI。現在目前頁面是 ${providerLabel(sourceProvider)}，請再勾選兩家其他 AI。`);
   }
@@ -139,6 +191,7 @@ async function startSummaryDebate(userNote, options = {}) {
     activeProviders: debateProviders,
     sourceProvider,
     summaryProvider: sourceProvider,
+    entitlements,
   };
   await publishState();
 
@@ -159,30 +212,34 @@ async function startSummaryDebate(userNote, options = {}) {
   };
   await publishState();
 
-  return runDebateRounds(sourceResult.content);
+  return runDebateRounds(sourceResult.content, { scheduler: "fast" });
 }
 
-async function runDebateRounds(originalQuestion) {
+async function runDebateRounds(originalQuestion, options = {}) {
+  const scheduler = options.scheduler || "sequential";
+  const runProviderJobs = scheduler === "fast" ? runFastProviderJobs : runSequentialProviderJobs;
+  const schedulerLabel = scheduler === "fast" ? "快速" : "逐家";
+
   const firstRoundJobs = engine.start(originalQuestion);
   runtimeState = {
     ...runtimeState,
     phase: "first-round",
-    message: "第一輪：快速送出原始問題",
+    message: `第一輪：${schedulerLabel}送出原始問題`,
     transcript: engine.snapshot(),
   };
   await publishState();
-  await runFastProviderJobs(firstRoundJobs, "answer");
+  await runProviderJobs(firstRoundJobs, "answer");
 
   runtimeState = {
     ...runtimeState,
     phase: "critique",
-    message: "第二輪：快速送出交叉互評",
+    message: `第二輪：${schedulerLabel}送出交叉互評`,
     transcript: engine.snapshot(),
   };
   await publishState();
 
   const critiqueJobs = engine.buildCritiqueJobs();
-  await runFastProviderJobs(critiqueJobs, "critique");
+  await runProviderJobs(critiqueJobs, "critique");
 
   runtimeState = {
     ...runtimeState,
@@ -209,6 +266,18 @@ async function runDebateRounds(originalQuestion) {
   await publishState();
 
   return runtimeState;
+}
+
+async function runSequentialProviderJobs(jobs, target) {
+  for (const job of jobs) {
+    const result = await sendJob(job);
+    recordProviderResult(result, target);
+    runtimeState = {
+      ...runtimeState,
+      transcript: engine.snapshot(),
+    };
+    await publishState();
+  }
 }
 
 async function runFastProviderJobs(jobs, target) {
@@ -552,7 +621,30 @@ async function getRuntimeState() {
     runtimeState = stored[STORAGE_KEY];
   }
 
+  runtimeState = {
+    ...runtimeState,
+    entitlements: await getEntitlements(),
+  };
+
   return runtimeState;
+}
+
+async function getEntitlements() {
+  const stored = await chrome.storage.local.get(ENTITLEMENT_STORAGE_KEY);
+  return entitlementsForPlan(stored?.[ENTITLEMENT_STORAGE_KEY]);
+}
+
+async function requireProFeature(featureId) {
+  const entitlements = await getEntitlements();
+  if (canUseFeature(entitlements, featureId)) {
+    return entitlements;
+  }
+
+  const error = new Error(proRequiredMessage(featureId));
+  error.code = "PRO_REQUIRED";
+  error.feature = featureId;
+  error.name = `${featureLabel(featureId)}Locked`;
+  throw error;
 }
 
 function phaseLabel(phase) {

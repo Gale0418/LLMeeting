@@ -12,6 +12,15 @@ test("fast provider jobs submit prompts before collecting replies", async () => 
   assert.match(script, /await activateProviderTab\(tab\)/);
 });
 
+test("free basic debate uses sequential provider jobs while pro workflows are gated", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  assert.match(script, /startBasicDebate/);
+  assert.match(script, /runSequentialProviderJobs/);
+  assert.match(script, /requireProFeature\("fastDebate"\)/);
+  assert.match(script, /requireProFeature\("summaryDebate"\)/);
+});
+
 test("new provider tabs open as active pages instead of dormant background tabs", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
