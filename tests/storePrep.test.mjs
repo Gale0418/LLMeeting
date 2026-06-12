@@ -11,6 +11,7 @@ test("package script builds a Chrome Web Store zip from extension files only", a
   assert.match(packager, /manifest\.json/);
   assert.match(packager, /assets/);
   assert.match(packager, /src/);
+  assert.match(packager, /EXCLUDED_ARCHIVE_NAMES/);
   assert.doesNotMatch(packager, /MissionCenter/);
   assert.doesNotMatch(packager, /tests/);
 });

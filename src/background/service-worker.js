@@ -612,12 +612,8 @@ async function setProviderDiagnostic(providerId, patch) {
 }
 
 async function getRuntimeState() {
-  if (runtimeState.status !== "idle" || runtimeState.busy) {
-    return runtimeState;
-  }
-
   const stored = await chrome.storage.local.get(STORAGE_KEY);
-  if (stored?.[STORAGE_KEY]) {
+  if (!runtimeState.busy && runtimeState.status === "idle" && stored?.[STORAGE_KEY]) {
     runtimeState = stored[STORAGE_KEY];
   }
 

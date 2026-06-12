@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INCLUDED_PATHS = ["manifest.json", "assets", "src"];
+const EXCLUDED_ARCHIVE_NAMES = new Set(["src/sidepanel/dev-unlock.js"]);
 
 const crcTable = Array.from({ length: 256 }, (_, index) => {
   let value = index;
@@ -21,7 +22,7 @@ async function main() {
     files.push(...await collectFiles(path.join(rootDir, entryPath)));
   }
 
-  const zip = await createZip(files);
+  const zip = await createZip(files.filter((file) => !EXCLUDED_ARCHIVE_NAMES.has(file.archiveName)));
   const outDir = path.join(rootDir, "dist");
   await mkdir(outDir, { recursive: true });
   const outPath = path.join(outDir, `llmeeting-${manifest.version}.zip`);

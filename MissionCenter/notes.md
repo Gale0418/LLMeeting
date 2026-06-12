@@ -2,7 +2,7 @@
 
 - 補強優先順序：
   1. reload LLMeeting 0.3.0 後手動試跑基礎辯論。
-  2. 確認 Free 狀態下快速鬥技場與總結辯論只顯示 Pro 鎖定提示。
+  2. 在開發版五連點 Free badge 切換 Pro，試跑快速鬥技場與總結辯論。
   3. 依 `store/screenshot-checklist.md` 擷取商店截圖。
   4. 視實機結果補 retry、timeout、provider selector。
   5. 未來再接付款平台與授權後端。

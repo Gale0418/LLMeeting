@@ -49,6 +49,8 @@ providerSelectEls.forEach((el) => {
   el.addEventListener("change", renderProviderSelectionPreview);
 });
 
+loadDevUnlock();
+
 async function startDebate(mode) {
   const question = questionInput.value.trim();
   if ((mode === "basic" || mode === "fast") && !question) {
@@ -111,6 +113,15 @@ loadState();
 async function loadState() {
   const response = await chrome.runtime.sendMessage({ type: "aiDebate:getState" });
   renderState(response?.state);
+}
+
+async function loadDevUnlock() {
+  try {
+    const { attachDevUnlock } = await import("./dev-unlock.js");
+    attachDevUnlock({ planBadge, renderMessage, loadState });
+  } catch (_error) {
+    // The store package omits this local author-only helper.
+  }
 }
 
 function renderState(state) {

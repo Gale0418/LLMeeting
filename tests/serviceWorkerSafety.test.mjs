@@ -35,3 +35,10 @@ test("summary debate starts from the current provider tab and returns the final 
   assert.match(script, /sourceProvider/);
   assert.match(script, /summaryProvider: sourceProvider/);
 });
+
+test("runtime state refreshes entitlements even after a completed debate", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  assert.doesNotMatch(script, /if \(runtimeState\.status !== "idle" \|\| runtimeState\.busy\) \{\s+return runtimeState;\s+\}/);
+  assert.match(script, /entitlements: await getEntitlements\(\)/);
+});

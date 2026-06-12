@@ -16,3 +16,4 @@
 | LLM-T11 | 四家 AI 預設啟用 | Task | LLM-E1 | P1 | Done | Codex |  | 無 | `npm test` 檢查 DEFAULT_ACTIVE_PROVIDER_IDS 與 Claude checkbox | 1 | provider, ui | ChatGPT/Gemini/Grok/Claude 預設皆勾選 |
 | LLM-T12 | Free/Pro 分層軟鎖 | Task | LLM-E1 | P1 | Done | Codex | LLM-T9 | 無 | `npm test` 48/48、service worker / sidepanel / entitlement 語法檢查 | 2 | monetization, ui | Free 保留四家 AI 基礎輪流辯論；Pro 鎖快速與總結 |
 | LLM-T13 | Chrome Web Store 上架準備 | Task | LLM-E1 | P1 | Done | Codex | LLM-T12 | 無 | `npm test` 50/50、`npm run package`、zip 內容檢查 | 2 | webstore, packaging | 已補 package script、store listing、privacy policy、screenshot checklist |
+| LLM-T14 | 作者模式 Pro 解鎖 | Task | LLM-E1 | P2 | Done | Codex | LLM-T12 | 無 | `npm test` 53/53、store zip 內容檢查 | 1 | dev-tool, entitlement | 開發版五連點 Free badge 切換 Free/Pro；商店 zip 排除 dev unlock |
