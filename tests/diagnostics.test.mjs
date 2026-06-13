@@ -51,11 +51,16 @@ test("side panel exposes one main debate button and advanced mutually exclusive 
   assert.match(html, /name="debateMode"[^>]+value="basic"[^>]+checked/);
   assert.match(html, /name="debateMode"[^>]+value="fast"/);
   assert.match(html, /name="debateMode"[^>]+value="summary"/);
+  assert.match(html, /id="debateRoundsInput"/);
+  assert.match(html, /min="1"/);
+  assert.match(html, /max="5"/);
   assert.match(html, /data-pro-feature="fastDebate"/);
   assert.match(html, /data-pro-feature="summaryDebate"/);
   assert.match(html, /value="claude" checked> Claude/);
   assert.match(app, /startSelectedDebate/);
   assert.match(app, /selectedDebateMode/);
+  assert.match(app, /selectedDebateRounds/);
+  assert.match(app, /debateRounds/);
   assert.match(app, /featureForMode/);
   assert.match(app, /renderDebateModeState/);
   assert.match(app, /renderEntitlementState/);

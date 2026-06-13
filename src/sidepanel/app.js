@@ -17,6 +17,7 @@ const chatTranscript = document.querySelector("#chatTranscript");
 const progressBar = document.querySelector("#progressBar");
 
 const summaryProviderSelect = document.querySelector("#summaryProviderSelect");
+const debateRoundsInput = document.querySelector("#debateRoundsInput");
 const providerSelectEls = Array.from(document.querySelectorAll(".provider-select"));
 const debateModeEls = Array.from(document.querySelectorAll(".debate-mode-select"));
 const debateModeOptionEls = Array.from(document.querySelectorAll(".mode-option[data-pro-feature]"));
@@ -44,6 +45,9 @@ providerSelectEls.forEach((el) => {
 debateModeEls.forEach((el) => {
   el.addEventListener("change", renderDebateModeState);
 });
+
+debateRoundsInput?.addEventListener("change", normalizeDebateRoundsInput);
+debateRoundsInput?.addEventListener("blur", normalizeDebateRoundsInput);
 
 loadDevUnlock();
 renderDebateModeState();
@@ -75,6 +79,7 @@ async function startDebate(mode) {
   }
 
   const summaryProvider = summaryProviderSelect.value;
+  const debateRounds = selectedDebateRounds();
 
   setActionButtonsDisabled(true);
   renderMessage(startingMessage(mode));
@@ -85,6 +90,7 @@ async function startDebate(mode) {
     question,
     activeProviders,
     summaryProvider,
+    debateRounds,
   });
 
   if (!response?.ok) {
@@ -144,6 +150,9 @@ function renderState(state) {
     if (state.summaryProvider && summaryProviderSelect.querySelector(`option[value="${state.summaryProvider}"]`)) {
       summaryProviderSelect.value = state.summaryProvider;
     }
+    if (debateRoundsInput) {
+      debateRoundsInput.value = normalizeDebateRounds(state.debateRounds || state.transcript?.debateRounds || 1);
+    }
   }
 
   const transcript = state.transcript;
@@ -184,6 +193,24 @@ function selectedDebateMode() {
   return debateModeEls.find((el) => el.checked)?.value || "basic";
 }
 
+function selectedDebateRounds() {
+  return normalizeDebateRounds(debateRoundsInput?.value || 1);
+}
+
+function normalizeDebateRoundsInput() {
+  if (debateRoundsInput) {
+    debateRoundsInput.value = selectedDebateRounds();
+  }
+}
+
+function normalizeDebateRounds(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return 1;
+  }
+  return Math.min(5, Math.max(1, parsed));
+}
+
 function featureForMode(mode) {
   return {
     fast: "fastDebate",
@@ -194,7 +221,7 @@ function featureForMode(mode) {
 function renderProviderStatuses(state) {
   const transcript = state.transcript;
   const answers = transcript?.answers || {};
-  const critiques = transcript?.critiques || {};
+  const critiques = currentCritiqueMap(state);
   const activeSet = new Set([
     ...(state.activeProviders || fallbackProviderIds),
     state.sourceProvider,
@@ -250,7 +277,11 @@ function updateProgressBar(state) {
   if (state.status === "running") {
     if (state.phase === "source-summary") percent = 15;
     else if (state.phase === "first-round") percent = 30;
-    else if (state.phase === "critique") percent = 65;
+    else if (state.phase === "critique") {
+      const totalRounds = normalizeDebateRounds(state.debateRounds || state.transcript?.debateRounds || 1);
+      const currentRound = normalizeDebateRounds(state.currentCritiqueRound || state.transcript?.currentCritiqueRound || 1);
+      percent = 30 + Math.round((Math.min(currentRound, totalRounds) / totalRounds) * 45);
+    }
     else if (state.phase === "summary") percent = 85;
   } else if (state.status === "done") {
     percent = 100;
@@ -326,15 +357,23 @@ function renderChatBubbles(state) {
     }
   }
 
-  // 3. 第二輪互評
-  const critiques = transcript.critiques || {};
-  const hasCritiqueRound = Array.from(activeSet).some(p => critiques[p] || state.phase === "critique");
-  if (hasCritiqueRound && state.phase !== "first-round") {
-    html += `<div class="round-divider">第二輪：交叉評析 ⚡</div>`;
+  // 3. 多輪互評
+  const critiqueRounds = critiqueRoundMaps(transcript);
+  const activeCritiqueRound = state.phase === "critique"
+    ? normalizeDebateRounds(state.currentCritiqueRound || transcript.currentCritiqueRound || 1)
+    : 0;
+  critiqueRounds.forEach((critiques, index) => {
+    const roundNumber = index + 1;
+    const hasRoundContent = Array.from(activeSet).some((providerId) => critiques[providerId]);
+    const isActiveRound = activeCritiqueRound === roundNumber;
+    if (!hasRoundContent && !isActiveRound) {
+      return;
+    }
+
+    html += `<div class="round-divider">${zhRoundLabel(roundNumber + 1)}：交叉評析 ${critiqueRounds.length > 1 ? `${roundNumber}/${critiqueRounds.length}` : ""} ⚡</div>`;
     for (const providerId of activeSet) {
       const content = critiques[providerId];
-      if (!content && state.phase === "critique") {
-        // 如果第一輪拿到了答案，才需要顯示第二輪思考中
+      if (!content && isActiveRound) {
         if (answers[providerId] && !answers[providerId].startsWith("[錯誤：")) {
           html += `
             <div class="bubble-group assistant ${providerId} loading">
@@ -352,7 +391,7 @@ function renderChatBubbles(state) {
         `;
       }
     }
-  }
+  });
 
   // 4. 總結
   if (state.phase === "summary" && !state.summary) {
@@ -388,6 +427,33 @@ function providerLabel(id) {
     claude: "Claude",
   };
   return labels[id] || id;
+}
+
+function critiqueRoundMaps(transcript) {
+  if (Array.isArray(transcript?.critiqueRounds) && transcript.critiqueRounds.length) {
+    return transcript.critiqueRounds;
+  }
+  if (transcript?.critiques) {
+    return [transcript.critiques];
+  }
+  return [];
+}
+
+function currentCritiqueMap(state) {
+  const rounds = critiqueRoundMaps(state.transcript);
+  if (!rounds.length) {
+    return {};
+  }
+
+  const fallbackRound = state.phase === "done" || state.phase === "summary"
+    ? rounds.length
+    : 1;
+  const roundNumber = normalizeDebateRounds(state.currentCritiqueRound || state.transcript?.currentCritiqueRound || fallbackRound);
+  return rounds[Math.min(rounds.length, roundNumber) - 1] || {};
+}
+
+function zhRoundLabel(roundNumber) {
+  return ["零", "第一輪", "第二輪", "第三輪", "第四輪", "第五輪", "第六輪"][roundNumber] || `第 ${roundNumber} 輪`;
 }
 
 function providerLabelForPhase(provider, state, answers, critiques) {
@@ -503,13 +569,18 @@ function buildTranscriptText(state) {
     speakerBlock("Gemini", transcript.answers?.gemini),
     speakerBlock("Grok", transcript.answers?.grok),
     speakerBlock("Claude", transcript.answers?.claude),
-    "",
-    "第二輪互評:",
-    speakerBlock("ChatGPT", transcript.critiques?.chatgpt),
-    speakerBlock("Gemini", transcript.critiques?.gemini),
-    speakerBlock("Grok", transcript.critiques?.grok),
-    speakerBlock("Claude", transcript.critiques?.claude),
   ];
+
+  critiqueRoundMaps(transcript).forEach((critiques, index) => {
+    lines.push(
+      "",
+      `${zhRoundLabel(index + 2)}互評:`,
+      speakerBlock("ChatGPT", critiques?.chatgpt),
+      speakerBlock("Gemini", critiques?.gemini),
+      speakerBlock("Grok", critiques?.grok),
+      speakerBlock("Claude", critiques?.claude),
+    );
+  });
 
   if (state.summary) {
     lines.push("", `${providerLabel(state.summaryProvider)} 最終總結:`, state.summary);

@@ -12,12 +12,34 @@ function emptyProviderMap(providerIds = PROVIDER_IDS) {
   return Object.fromEntries(providerIds.map((providerId) => [providerId, ""]));
 }
 
-function providerJob(providerId, phase, prompt) {
-  return { provider: providerId, phase, prompt };
+function providerJob(providerId, phase, prompt, extra = {}) {
+  return { provider: providerId, phase, prompt, ...extra };
+}
+
+function emptyCritiqueRounds(providerIds, debateRounds) {
+  return Array.from({ length: debateRounds }, () => emptyProviderMap(providerIds));
+}
+
+function critiquePhase(roundNumber) {
+  return roundNumber <= 1 ? "critique" : `critique-${roundNumber}`;
+}
+
+function critiqueRoundFromPhase(phase) {
+  const match = String(phase || "").match(/^critique(?:-(\d+))?$/);
+  return match ? normalizeDebateRounds(match[1] || 1) : 0;
+}
+
+export function normalizeDebateRounds(value = 1) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return 1;
+  }
+
+  return Math.min(5, Math.max(1, parsed));
 }
 
 export class DebateEngine {
-  constructor(activeProviders = DEFAULT_ACTIVE_PROVIDER_IDS, summaryProvider = "chatgpt") {
+  constructor(activeProviders = DEFAULT_ACTIVE_PROVIDER_IDS, summaryProvider = "chatgpt", debateRounds = 1) {
     this.validateRequestedProviders(activeProviders);
     if (!isProviderId(summaryProvider)) {
       throw new Error(`Unknown provider: ${summaryProvider}`);
@@ -29,22 +51,31 @@ export class DebateEngine {
     }
 
     this.summaryProvider = summaryProvider;
+    this.debateRounds = normalizeDebateRounds(debateRounds);
+    const critiqueRounds = emptyCritiqueRounds(this.activeProviders, this.debateRounds);
     this.state = {
       phase: "idle",
       originalQuestion: "",
-      answers: emptyProviderMap(activeProviders),
-      critiques: emptyProviderMap(activeProviders),
+      debateRounds: this.debateRounds,
+      currentCritiqueRound: 0,
+      answers: emptyProviderMap(this.activeProviders),
+      critiques: critiqueRounds[0],
+      critiqueRounds,
       errors: [],
     };
   }
 
   start(originalQuestion) {
     const question = normalizeText(originalQuestion);
+    const critiqueRounds = emptyCritiqueRounds(this.activeProviders, this.debateRounds);
     this.state = {
       phase: "first-round",
       originalQuestion: question,
+      debateRounds: this.debateRounds,
+      currentCritiqueRound: 0,
       answers: emptyProviderMap(this.activeProviders),
-      critiques: emptyProviderMap(this.activeProviders),
+      critiques: critiqueRounds[0],
+      critiqueRounds,
       errors: [],
     };
 
@@ -58,9 +89,11 @@ export class DebateEngine {
     this.state.answers[providerId] = normalizeText(content);
   }
 
-  recordCritique(providerId, content) {
+  recordCritique(providerId, content, roundNumber = this.state.currentCritiqueRound || 1) {
     this.assertKnownProvider(providerId);
-    this.state.critiques[providerId] = normalizeText(content);
+    const round = Math.min(this.debateRounds, Math.max(1, normalizeDebateRounds(roundNumber)));
+    this.state.critiqueRounds[round - 1][providerId] = normalizeText(content);
+    this.state.critiques = this.state.critiqueRounds[0];
   }
 
   markProviderError(providerId, phase, message) {
@@ -72,31 +105,44 @@ export class DebateEngine {
       this.state.answers[providerId] = content;
     }
 
-    if (phase === "critique") {
-      this.state.critiques[providerId] = content;
+    const critiqueRound = critiqueRoundFromPhase(phase);
+    if (critiqueRound) {
+      this.recordCritique(providerId, content, critiqueRound);
     }
   }
 
-  buildCritiqueJobs() {
-    this.requireComplete(this.state.answers, "first-round");
-    this.state.phase = "critique";
+  buildCritiqueJobs(roundNumber = 1) {
+    const round = Math.min(this.debateRounds, Math.max(1, normalizeDebateRounds(roundNumber)));
+    if (round === 1) {
+      this.requireComplete(this.state.answers, "first-round");
+    } else {
+      this.requireComplete(this.state.critiqueRounds[round - 2], critiquePhase(round - 1));
+    }
+    const phase = critiquePhase(round);
+    this.state.phase = phase;
+    this.state.currentCritiqueRound = round;
 
     return PROVIDERS.filter((p) => this.activeProviders.includes(p.id)).map((provider) =>
       providerJob(
         provider.id,
-        "critique",
+        phase,
         buildCritiquePrompt({
           recipient: provider.id,
           originalQuestion: this.state.originalQuestion,
           answers: this.state.answers,
+          previousCritiques: round > 1 ? this.state.critiqueRounds[round - 2] : undefined,
+          roundNumber: round,
           activeProviders: this.activeProviders,
         }),
+        { round },
       ),
     );
   }
 
   buildFinalJob() {
-    this.requireComplete(this.state.critiques, "critique");
+    for (let round = 1; round <= this.debateRounds; round += 1) {
+      this.requireComplete(this.state.critiqueRounds[round - 1], critiquePhase(round));
+    }
     this.state.phase = "summary";
 
     return providerJob(
@@ -106,6 +152,7 @@ export class DebateEngine {
         originalQuestion: this.state.originalQuestion,
         answers: this.state.answers,
         critiques: this.state.critiques,
+        critiqueRounds: this.state.critiqueRounds,
         activeProviders: this.activeProviders,
       }),
     );

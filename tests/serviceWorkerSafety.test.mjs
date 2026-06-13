@@ -21,6 +21,15 @@ test("free basic debate uses sequential provider jobs while pro workflows are ga
   assert.match(script, /requireProFeature\("summaryDebate"\)/);
 });
 
+test("service worker forwards selected debate round count into the engine", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  assert.match(script, /debateRounds/);
+  assert.match(script, /normalizeDebateRounds/);
+  assert.match(script, /new DebateEngine\(activeProviders, summaryProvider, debateRounds\)/);
+  assert.match(script, /for \(let roundNumber = 1; roundNumber <= engine\.debateRounds; roundNumber \+= 1\)/);
+});
+
 test("new provider tabs open as active pages instead of dormant background tabs", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 

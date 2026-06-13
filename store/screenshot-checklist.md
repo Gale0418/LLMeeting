@@ -3,7 +3,7 @@
 Prepare at least these screenshots before submitting LLMeeting to the Chrome Web Store:
 
 1. Side panel idle state with Free badge, provider checkboxes, and the single main 基礎辯論 button.
-2. Advanced debate settings opened with 基礎辯論, 快速鬥技場 PRO, and 總結辯論 PRO mode choices.
+2. Advanced debate settings opened with 基礎辯論, 快速鬥技場 PRO, 總結辯論 PRO, and 交叉評析輪次 controls.
 3. A running 基礎辯論 with provider status cards showing 回答中 or 已回答.
 4. Transcript view with first-round answers and cross-critiques.
 5. Free locked message after selecting 快速鬥技場 or 總結辯論 and pressing the main button.

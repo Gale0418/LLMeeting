@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DebateEngine } from "../src/background/debateEngine.js";
+import { DebateEngine, normalizeDebateRounds } from "../src/background/debateEngine.js";
 
 test("engine starts a fixed first-round debate for all providers", () => {
   const engine = new DebateEngine();
@@ -57,6 +57,43 @@ test("engine builds final ChatGPT summary job after all critiques are recorded",
   assert.match(job.prompt, /第一輪回答:/);
   assert.match(job.prompt, /第二輪互評:/);
   assert.match(job.prompt, /Gemini 太草率。/);
+});
+
+test("engine can run multiple critique rounds before the final summary", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini", "grok"], "chatgpt", 2);
+  engine.start("天為什麼是藍的？");
+  engine.recordAnswer("chatgpt", "是散射。");
+  engine.recordAnswer("gemini", "大氣讓它看起來藍。");
+  engine.recordAnswer("grok", "短波長散射比較強。");
+
+  const firstCritiqueJobs = engine.buildCritiqueJobs(1);
+  engine.recordCritique("chatgpt", "Gemini 少了瑞利散射。", 1);
+  engine.recordCritique("gemini", "GPT 說法正確但可以更白話。", 1);
+  engine.recordCritique("grok", "兩者都該提到短波長。", 1);
+
+  const secondCritiqueJobs = engine.buildCritiqueJobs(2);
+  engine.recordCritique("chatgpt", "我接受 Gemini 的白話補充。", 2);
+  engine.recordCritique("gemini", "我補上瑞利散射。", 2);
+  engine.recordCritique("grok", "共識是短波長散射。", 2);
+
+  const job = engine.buildFinalJob();
+  const snapshot = engine.snapshot();
+
+  assert.equal(snapshot.debateRounds, 2);
+  assert.equal(snapshot.critiqueRounds.length, 2);
+  assert.equal(firstCritiqueJobs[0].round, 1);
+  assert.equal(secondCritiqueJobs[0].phase, "critique-2");
+  assert.match(secondCritiqueJobs.find((item) => item.provider === "chatgpt").prompt, /上一輪互評/);
+  assert.match(job.prompt, /第二輪互評:/);
+  assert.match(job.prompt, /第三輪互評:/);
+  assert.match(job.prompt, /我補上瑞利散射。/);
+});
+
+test("debate round count is clamped to the supported one through five range", () => {
+  assert.equal(normalizeDebateRounds(-1), 1);
+  assert.equal(normalizeDebateRounds(0), 1);
+  assert.equal(normalizeDebateRounds(3), 3);
+  assert.equal(normalizeDebateRounds(99), 5);
 });
 
 test("engine records provider errors without blocking the next phase", () => {

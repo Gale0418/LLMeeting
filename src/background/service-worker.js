@@ -1,4 +1,4 @@
-import { DebateEngine } from "./debateEngine.js";
+import { DebateEngine, normalizeDebateRounds } from "./debateEngine.js";
 import { isProviderTabReady, setSidePanelOpenOnActionClick } from "./chromeCompat.js";
 import { createProviderDiagnostics, updateProviderDiagnostic } from "./diagnostics.js";
 import {
@@ -47,7 +47,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "aiDebate:start") {
-    const { question, mode = "basic", activeProviders, summaryProvider } = message;
+    const { question, mode = "basic", activeProviders, summaryProvider, debateRounds } = message;
     const startAction = {
       basic: startBasicDebate,
       fast: startFastDebate,
@@ -59,7 +59,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return false;
     }
 
-    startAction(question, { activeProviders, summaryProvider })
+    startAction(question, { activeProviders, summaryProvider, debateRounds })
       .then((state) => sendResponse({ ok: true, state }))
       .catch(async (error) => {
         const isProRequired = error.code === "PRO_REQUIRED";
@@ -105,6 +105,8 @@ function createIdleState(providerIds = DEFAULT_ACTIVE_PROVIDER_IDS) {
     errors: [],
     activeProviders,
     summaryProvider: "chatgpt",
+    debateRounds: 1,
+    currentCritiqueRound: 0,
     entitlements: entitlementsForPlan(),
   };
 }
@@ -143,8 +145,9 @@ async function startQuestionDebate(question, options = {}) {
   const entitlements = await getEntitlements();
   const mode = options.mode || "basic";
   const scheduler = options.scheduler || "sequential";
+  const debateRounds = normalizeDebateRounds(options.debateRounds);
 
-  engine = new DebateEngine(activeProviders, summaryProvider);
+  engine = new DebateEngine(activeProviders, summaryProvider, debateRounds);
   runtimeState = {
     ...createIdleState(activeProviders),
     busy: true,
@@ -155,6 +158,8 @@ async function startQuestionDebate(question, options = {}) {
     question: trimmedQuestion,
     activeProviders,
     summaryProvider,
+    debateRounds,
+    currentCritiqueRound: 0,
     entitlements,
   };
   await publishState();
@@ -174,11 +179,12 @@ async function startSummaryDebate(userNote, options = {}) {
   const requestedProviders = normalizeProviderIds(options.activeProviders);
   const debateProviders = requestedProviders.filter((providerId) => providerId !== sourceProvider);
   const entitlements = await getEntitlements();
+  const debateRounds = normalizeDebateRounds(options.debateRounds);
   if (debateProviders.length < 2) {
     throw new Error(`總結辯論至少需要目前頁面以外的 2 家 AI。現在目前頁面是 ${providerLabel(sourceProvider)}，請再勾選兩家其他 AI。`);
   }
 
-  engine = new DebateEngine(debateProviders, sourceProvider);
+  engine = new DebateEngine(debateProviders, sourceProvider, debateRounds);
   runtimeState = {
     ...createIdleState(debateProviders),
     busy: true,
@@ -191,6 +197,8 @@ async function startSummaryDebate(userNote, options = {}) {
     activeProviders: debateProviders,
     sourceProvider,
     summaryProvider: sourceProvider,
+    debateRounds,
+    currentCritiqueRound: 0,
     entitlements,
   };
   await publishState();
@@ -209,6 +217,7 @@ async function startSummaryDebate(userNote, options = {}) {
     sourceSummary: sourceResult.content,
     phase: "first-round",
     message: "快速辯論：將目前對話總結送給其他 AI",
+    debateRounds,
   };
   await publishState();
 
@@ -230,16 +239,19 @@ async function runDebateRounds(originalQuestion, options = {}) {
   await publishState();
   await runProviderJobs(firstRoundJobs, "answer");
 
-  runtimeState = {
-    ...runtimeState,
-    phase: "critique",
-    message: `第二輪：${schedulerLabel}送出交叉互評`,
-    transcript: engine.snapshot(),
-  };
-  await publishState();
-
-  const critiqueJobs = engine.buildCritiqueJobs();
-  await runProviderJobs(critiqueJobs, "critique");
+  for (let roundNumber = 1; roundNumber <= engine.debateRounds; roundNumber += 1) {
+    const critiqueJobs = engine.buildCritiqueJobs(roundNumber);
+    runtimeState = {
+      ...runtimeState,
+      phase: "critique",
+      currentCritiqueRound: roundNumber,
+      debateRounds: engine.debateRounds,
+      message: `${critiqueRoundLabel(roundNumber, engine.debateRounds)}：${schedulerLabel}送出交叉互評`,
+      transcript: engine.snapshot(),
+    };
+    await publishState();
+    await runProviderJobs(critiqueJobs, "critique");
+  }
 
   runtimeState = {
     ...runtimeState,
@@ -311,7 +323,7 @@ function recordProviderResult(result, target) {
   if (result.ok && target === "answer") {
     engine.recordAnswer(result.provider, result.content);
   } else if (result.ok && target === "critique") {
-    engine.recordCritique(result.provider, result.content);
+    engine.recordCritique(result.provider, result.content, result.round);
   } else {
     engine.markProviderError(result.provider, result.phase, result.error || "unknown error");
     runtimeState.errors = [...runtimeState.errors, result];
@@ -337,7 +349,7 @@ async function submitProviderJob(job) {
     const runId = createRunId(job);
     runtimeState = {
       ...runtimeState,
-      message: `${providerLabel(job.provider)}：${phaseLabel(job.phase)}送出中`,
+      message: `${providerLabel(job.provider)}：${phaseLabel(job.phase, job.round)}送出中`,
       providerTabs: { ...runtimeState.providerTabs, [job.provider]: tab.id },
     };
     runtimeState.providerDiagnostics = updateProviderDiagnostic(runtimeState.providerDiagnostics, job.provider, {
@@ -365,6 +377,7 @@ async function submitProviderJob(job) {
       ok: true,
       provider: job.provider,
       phase: job.phase,
+      round: job.round,
       prompt: job.prompt,
       tabId: tab.id,
       runId: response.runId || runId,
@@ -379,6 +392,7 @@ async function submitProviderJob(job) {
       ok: false,
       provider: job.provider,
       phase: job.phase,
+      round: job.round,
       error: error.message,
     };
   }
@@ -398,7 +412,7 @@ async function collectProviderJob(submitted) {
 
     runtimeState = {
       ...runtimeState,
-      message: `${providerLabel(submitted.provider)}：等待${phaseLabel(submitted.phase)}`,
+      message: `${providerLabel(submitted.provider)}：等待${phaseLabel(submitted.phase, submitted.round)}`,
     };
     runtimeState.providerDiagnostics = updateProviderDiagnostic(runtimeState.providerDiagnostics, submitted.provider, {
       stage: "waiting-response",
@@ -426,6 +440,7 @@ async function collectProviderJob(submitted) {
       ok: true,
       provider: submitted.provider,
       phase: submitted.phase,
+      round: submitted.round,
       content: response.content,
     };
   } catch (error) {
@@ -439,6 +454,7 @@ async function collectProviderJob(submitted) {
       ok: false,
       provider: submitted.provider,
       phase: submitted.phase,
+      round: submitted.round,
       error: error.message,
     };
   }
@@ -461,7 +477,7 @@ async function sendJob(job) {
     await activateProviderTab(tab);
     runtimeState = {
       ...runtimeState,
-      message: `${providerLabel(job.provider)}：${phaseLabel(job.phase)}`,
+      message: `${providerLabel(job.provider)}：${phaseLabel(job.phase, job.round)}`,
       providerTabs: { ...runtimeState.providerTabs, [job.provider]: tab.id },
     };
     runtimeState.providerDiagnostics = updateProviderDiagnostic(runtimeState.providerDiagnostics, job.provider, {
@@ -485,6 +501,7 @@ async function sendJob(job) {
       ok: true,
       provider: job.provider,
       phase: job.phase,
+      round: job.round,
       content: response.content,
     };
   } catch (error) {
@@ -497,6 +514,7 @@ async function sendJob(job) {
       ok: false,
       provider: job.provider,
       phase: job.phase,
+      round: job.round,
       error: error.message,
     };
   }
@@ -563,6 +581,7 @@ async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", ex
     type,
     provider: job.provider,
     phase: job.phase,
+    round: job.round,
     prompt: job.prompt,
     timeoutMs: PROVIDER_TIMEOUT_MS,
     ...extra,
@@ -643,20 +662,31 @@ async function requireProFeature(featureId) {
   throw error;
 }
 
-function phaseLabel(phase) {
+function phaseLabel(phase, round) {
   if (phase === "source-summary") {
     return "總結目前對話";
   }
   if (phase === "first-round") {
     return "回答原始問題";
   }
-  if (phase === "critique") {
-    return "評析其他 AI";
+  if (String(phase).startsWith("critique")) {
+    return `${critiqueRoundLabel(round || critiqueRoundFromPhase(phase), runtimeState.debateRounds)}：評析其他 AI`;
   }
   if (phase === "summary") {
     return "彙整總結";
   }
   return phase;
+}
+
+function critiqueRoundLabel(round, totalRounds = 1) {
+  const normalizedRound = normalizeDebateRounds(round);
+  const total = normalizeDebateRounds(totalRounds);
+  return total > 1 ? `第 ${normalizedRound}/${total} 輪互評` : "第二輪";
+}
+
+function critiqueRoundFromPhase(phase) {
+  const match = String(phase || "").match(/^critique(?:-(\d+))?$/);
+  return normalizeDebateRounds(match?.[1] || 1);
 }
 
 function createRunId(job) {
