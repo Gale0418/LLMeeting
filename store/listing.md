@@ -30,7 +30,7 @@ Planned Pro entries:
 3. Open the LLMeeting side panel from the toolbar icon.
 4. Enter a short question such as `天為什麼是藍的？`.
 5. Run 基礎辯論 and confirm each provider receives the prompt, replies, critiques, and final summary prompt.
-6. Click 快速鬥技場 and 總結辯論 while on Free; they should show a Pro locked message without sending prompts.
+6. In 進階辯論設定, select 快速鬥技場 or 總結辯論 while on Free, then click the main debate button; it should show a Pro locked message without sending prompts.
 
 ## Permissions rationale
 

@@ -254,11 +254,13 @@ textarea:focus {
   gap: 12px;
 }
 
-.providers-fieldset {
+.providers-fieldset,
+.mode-fieldset {
   border: none;
 }
 
-.providers-fieldset legend {
+.providers-fieldset legend,
+.mode-fieldset legend {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
@@ -293,6 +295,40 @@ textarea:focus {
   accent-color: var(--border-focus);
 }
 
+.mode-options {
+  display: grid;
+  gap: 8px;
+}
+
+.mode-option {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 7px 9px;
+  transition: all 0.2s ease;
+}
+
+.mode-option:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.mode-option.is-locked {
+  border-style: dashed;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.mode-option input[type="radio"] {
+  accent-color: var(--border-focus);
+}
+
 .setting-item {
   display: flex;
   flex-direction: column;
@@ -323,7 +359,7 @@ select:focus {
 
 .action-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 
@@ -348,6 +384,13 @@ select:focus {
   border: none;
   color: white;
   box-shadow: 0 4px 15px rgba(88, 86, 214, 0.4);
+}
+
+.primary-action.is-locked {
+  background: linear-gradient(135deg, rgba(88, 86, 214, 0.45), rgba(142, 117, 255, 0.35));
+  box-shadow: none;
+  outline: 1px dashed rgba(255, 255, 255, 0.32);
+  color: rgba(255, 255, 255, 0.76);
 }
 
 .secondary-action {

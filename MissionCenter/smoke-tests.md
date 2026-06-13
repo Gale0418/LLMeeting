@@ -16,4 +16,5 @@
 | 2026-06-11 | LLM-T13 | 商店準備測試 | `npm test` | store prep test 與既有測試全部通過 | 50/50 pass | 通過 | automated |
 | 2026-06-11 | LLM-T13 | Chrome Web Store zip | `npm run package`、`tar -tf dist\llmeeting-0.3.0.zip` | 產生 zip，內容只含 manifest、assets、src | `dist\llmeeting-0.3.0.zip` 1,749,463 bytes；未包含測試與任務文件 | 通過 | automated |
 | 2026-06-12 | LLM-T14 | 作者模式 Pro 解鎖 | `npm test` | dev unlock 測試與既有測試全部通過 | 53/53 pass | 通過 | automated |
-| 2026-06-12 | LLM-T14 | 商店 zip 排除作者模式 | `npm run package`、`tar -tf dist\llmeeting-0.3.0.zip` | zip 不含 `src/sidepanel/dev-unlock.js` | zip 只含 manifest、assets、src 主要檔案；`dev-unlock.js` 未出現；大小 1,749,704 bytes | 通過 | automated |
+| 2026-06-12 | LLM-T14 | 商店 zip 排除作者模式 | `npm run package`、`tar -tf dist\llmeeting-0.3.0.zip` | zip 不含 `src/sidepanel/dev-unlock.js` | 歷史結果：當時未出現；2026-06-14 已由 LLM-T15 改為公開彩蛋保留 | 通過 | automated |
+| 2026-06-14 | LLM-T15 | 進階模式與公開彩蛋驗證 | `npm test`、`node --check src\sidepanel\app.js`、`node --check src\sidepanel\dev-unlock.js`、`node --check scripts\package-extension.mjs`、`node --check src\background\service-worker.js`、`npm run package`、`tar -tf dist\llmeeting-0.3.0.zip`、`git diff --check` | 單一主按鈕、進階模式互斥、彩蛋進 zip、無語法與 whitespace error | 53/53 pass；四個語法檢查 exit 0；zip 1,753,303 bytes 且含 `src/sidepanel/dev-unlock.js`；`git diff --check` 只有 CRLF 提示 | 通過 | automated |

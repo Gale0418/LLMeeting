@@ -41,6 +41,24 @@
                 <label><input type="checkbox" class="provider-select" value="claude" checked> Claude</label>
               </div>
             </fieldset>
+
+            <fieldset class="mode-fieldset">
+              <legend>辯論模式</legend>
+              <div class="mode-options">
+                <label class="mode-option">
+                  <input type="radio" class="debate-mode-select" name="debateMode" value="basic" checked>
+                  <span>基礎辯論</span>
+                </label>
+                <label class="mode-option" data-pro-feature="fastDebate">
+                  <input type="radio" class="debate-mode-select" name="debateMode" value="fast">
+                  <span>快速鬥技場 ⚡ <span class="pro-pill">PRO</span></span>
+                </label>
+                <label class="mode-option" data-pro-feature="summaryDebate">
+                  <input type="radio" class="debate-mode-select" name="debateMode" value="summary">
+                  <span>總結辯論 ✦ <span class="pro-pill">PRO</span></span>
+                </label>
+              </div>
+            </fieldset>
             
             <div class="setting-item">
               <label for="summaryProviderSelect">由誰擔任裁判總結：</label>
@@ -56,12 +74,6 @@
 
         <div class="action-row">
           <button id="basicDebateButton" class="primary-action" type="submit">基礎辯論</button>
-          <button id="quickDebateButton" class="secondary-action pro-action" type="button" data-pro-feature="fastDebate">
-            快速鬥技場 ⚡ <span class="pro-pill">PRO</span>
-          </button>
-          <button id="summaryDebateButton" class="secondary-action pro-action" type="button" data-pro-feature="summaryDebate">
-            總結辯論 ✦ <span class="pro-pill">PRO</span>
-          </button>
         </div>
       </form>
 

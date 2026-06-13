@@ -8,8 +8,6 @@ import {
 const form = document.querySelector("#debateForm");
 const questionInput = document.querySelector("#questionInput");
 const basicDebateButton = document.querySelector("#basicDebateButton");
-const quickDebateButton = document.querySelector("#quickDebateButton");
-const summaryDebateButton = document.querySelector("#summaryDebateButton");
 const resetButton = document.querySelector("#resetButton");
 const statusText = document.querySelector("#statusText");
 const planBadge = document.querySelector("#planBadge");
@@ -20,6 +18,8 @@ const progressBar = document.querySelector("#progressBar");
 
 const summaryProviderSelect = document.querySelector("#summaryProviderSelect");
 const providerSelectEls = Array.from(document.querySelectorAll(".provider-select"));
+const debateModeEls = Array.from(document.querySelectorAll(".debate-mode-select"));
+const debateModeOptionEls = Array.from(document.querySelectorAll(".mode-option[data-pro-feature]"));
 
 const providerStateEls = {
   chatgpt: document.querySelector("#chatgptState"),
@@ -34,22 +34,31 @@ const fallbackProviderIds = ["chatgpt", "gemini", "grok", "claude"];
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  await startDebate("basic");
-});
-
-quickDebateButton.addEventListener("click", async () => {
-  await startProDebate("fast", "fastDebate");
-});
-
-summaryDebateButton.addEventListener("click", async () => {
-  await startProDebate("summary", "summaryDebate");
+  await startSelectedDebate();
 });
 
 providerSelectEls.forEach((el) => {
   el.addEventListener("change", renderProviderSelectionPreview);
 });
 
+debateModeEls.forEach((el) => {
+  el.addEventListener("change", renderDebateModeState);
+});
+
 loadDevUnlock();
+renderDebateModeState();
+
+async function startSelectedDebate() {
+  const mode = selectedDebateMode();
+  const featureId = featureForMode(mode);
+  if (featureId && !canUseFeature(currentEntitlements, featureId)) {
+    renderLockedFeatureMessage(featureId);
+    renderDebateModeState();
+    return;
+  }
+
+  await startDebate(mode);
+}
 
 async function startDebate(mode) {
   const question = questionInput.value.trim();
@@ -88,15 +97,6 @@ async function startDebate(mode) {
   renderState(response?.state);
 }
 
-async function startProDebate(mode, featureId) {
-  if (!canUseFeature(currentEntitlements, featureId)) {
-    renderLockedFeatureMessage(featureId);
-    return;
-  }
-
-  await startDebate(mode);
-}
-
 resetButton.addEventListener("click", async () => {
   const response = await chrome.runtime.sendMessage({ type: "aiDebate:reset" });
   renderState(response?.state);
@@ -120,7 +120,7 @@ async function loadDevUnlock() {
     const { attachDevUnlock } = await import("./dev-unlock.js");
     attachDevUnlock({ planBadge, renderMessage, loadState });
   } catch (_error) {
-    // The store package omits this local author-only helper.
+    // Custom builds may omit this author convenience helper.
   }
 }
 
@@ -178,6 +178,17 @@ function selectedProviderIds() {
   return providerSelectEls
     .filter((el) => el.checked)
     .map((el) => el.value);
+}
+
+function selectedDebateMode() {
+  return debateModeEls.find((el) => el.checked)?.value || "basic";
+}
+
+function featureForMode(mode) {
+  return {
+    fast: "fastDebate",
+    summary: "summaryDebate",
+  }[mode] || "";
 }
 
 function renderProviderStatuses(state) {
@@ -409,8 +420,6 @@ function providerLabelForPhase(provider, state, answers, critiques) {
 
 function setActionButtonsDisabled(disabled) {
   basicDebateButton.disabled = disabled;
-  quickDebateButton.disabled = disabled;
-  summaryDebateButton.disabled = disabled;
 }
 
 function renderEntitlementState() {
@@ -419,18 +428,48 @@ function renderEntitlementState() {
     planBadge.className = `plan-badge ${currentEntitlements.isPro ? "is-pro" : "is-free"}`;
   }
 
-  renderProActionState(quickDebateButton, "fastDebate");
-  renderProActionState(summaryDebateButton, "summaryDebate");
+  renderDebateModeState();
 }
 
-function renderProActionState(button, featureId) {
-  if (!button) {
+function renderDebateModeState() {
+  if (!basicDebateButton) {
     return;
   }
 
-  const locked = !canUseFeature(currentEntitlements, featureId);
-  button.classList.toggle("is-locked", locked);
-  button.title = locked ? proRequiredMessage(featureId) : featureLabel(featureId);
+  const mode = selectedDebateMode();
+  const featureId = featureForMode(mode);
+  const locked = Boolean(featureId && !canUseFeature(currentEntitlements, featureId));
+  basicDebateButton.textContent = debateModeButtonLabel(mode);
+  basicDebateButton.classList.toggle("is-locked", locked);
+  basicDebateButton.title = locked ? proRequiredMessage(featureId) : debateModeButtonTitle(mode);
+  renderDebateModeOptionStates();
+}
+
+function renderDebateModeOptionStates() {
+  for (const optionEl of debateModeOptionEls) {
+    const featureId = optionEl.dataset.proFeature;
+    const locked = !canUseFeature(currentEntitlements, featureId);
+    optionEl.classList.toggle("is-locked", locked);
+    optionEl.title = locked ? proRequiredMessage(featureId) : featureLabel(featureId);
+  }
+}
+
+function debateModeButtonLabel(mode) {
+  if (mode === "fast") {
+    return "快速鬥技場 ⚡";
+  }
+  if (mode === "summary") {
+    return "總結辯論 ✦";
+  }
+  return "基礎辯論";
+}
+
+function debateModeButtonTitle(mode) {
+  const featureId = featureForMode(mode);
+  if (featureId) {
+    return featureLabel(featureId);
+  }
+  return "開始基礎辯論";
 }
 
 function renderLockedFeatureMessage(featureId) {
