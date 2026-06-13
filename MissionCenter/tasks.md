@@ -18,4 +18,4 @@
 | LLM-T13 | Chrome Web Store 上架準備 | Task | LLM-E1 | P1 | Done | Codex | LLM-T12 | 無 | `npm test` 50/50、`npm run package`、zip 內容檢查 | 2 | webstore, packaging | 已補 package script、store listing、privacy policy、screenshot checklist |
 | LLM-T14 | 作者模式 Pro 解鎖 | Task | LLM-E1 | P2 | Done | Codex | LLM-T12 | 無 | `npm test` 53/53、store zip 內容檢查 | 1 | dev-tool, entitlement | 五連點 Free badge 切換 Free/Pro；依主人要求作為公開彩蛋保留進商店 zip |
 | LLM-T15 | 進階辯論模式收納 | Task | LLM-E1 | P1 | Done | Codex | LLM-T12 | 無 | `npm test`、side panel 語法檢查、store zip 內容檢查 | 1 | ui, monetization | 外層只留單一主按鈕；快速鬥技場與總結辯論改為進階設定互斥選項 |
-| LLM-T16 | 辯論輪次設定 | Task | LLM-E1 | P1 | Review | Codex | LLM-T15 | 等主人在知情第三方資料傳輸風險後再次確認 CodeRabbit review | `npm test`、語法檢查、CodeRabbit review | 2 | ui, debate-engine, review | 1-5 輪交叉評析已完成；CodeRabbit review 被執行環境擋下 |
+| LLM-T16 | 辯論輪次設定 | Task | LLM-E1 | P1 | Done | Codex | LLM-T15 | 無 | `npm test`、語法檢查、CodeRabbit review | 2 | ui, debate-engine, review | 1-5 輪交叉評析已完成；CodeRabbit raised 2 minor issues 並已修正 |

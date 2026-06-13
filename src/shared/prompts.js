@@ -1,4 +1,4 @@
-import { providerLabel, PROVIDERS } from "./providers.js";
+import { PROVIDERS } from "./providers.js";
 import { formatSpeakerBlock, normalizeText } from "./text.js";
 
 export function buildFirstRoundPrompt(originalQuestion) {
@@ -88,7 +88,7 @@ export function buildFinalSummaryPrompt({
     : [critiques || {}];
   const critiqueSections = rounds.map((roundCritiques, index) => {
     const critiqueBlocks = providersList.map((provider) =>
-      formatSpeakerBlock(providerLabel(provider.id), roundCritiques[provider.id] || "[沒有取得互評]", { maxChars }),
+      formatSpeakerBlock(provider.label, roundCritiques[provider.id] || "[沒有取得互評]", { maxChars }),
     ).join("\n\n");
     return `${zhRoundLabel(index + 2)}互評:\n${critiqueBlocks}`;
   }).join("\n\n");
