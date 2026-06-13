@@ -2,7 +2,7 @@
 
 | ID | 標題 | 類型 | 上層 | 優先級 | 狀態 | 負責人 | 依賴 | 下一步 | 驗證方式 | 估算 | 標籤 | 備註 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| LLM-E1 | LLMeeting MVP 收尾 | Epic |  | P1 | Review | Codex |  | 上架前擷取實際 Chrome Web Store 截圖 | 自動測試、語法檢查、Chrome 實機試跑、CodeRabbit review | 12 | chrome-extension, ai-debate | 0.3.0 已完成 Free/Pro 軟鎖、商店準備與進階模式收納 |
+| LLM-E1 | LLMeeting MVP 收尾 | Epic |  | P1 | Review | Codex |  | 上架前擷取實際 Chrome Web Store 截圖 | 自動測試、語法檢查、Chrome 實機試跑、CodeRabbit review | 12 | chrome-extension, ai-debate | 0.4.0 已完成 Free/Pro 軟鎖、商店準備、進階模式收納與辯論輪次 |
 | LLM-T1 | 多 AI 辯論基礎流程 | Task | LLM-E1 | P1 | Done | Codex |  | 無 | 使用 ChatGPT/Gemini/Grok 實際試跑，主人回報可運行 | 2 | mvp | 已完成 |
 | LLM-T2 | Claude 參與者支援 | Task | LLM-E1 | P2 | Done | Codex |  | 無 | 主人 Chrome 實機跑四家 AI 辯論，Claude 可參與 | 2 | provider, claude | 主人回報四家 AI 實機辯論正常 |
 | LLM-T3 | 快速鬥技場排程 | Task | LLM-E1 | P1 | Done | Codex |  | 無 | `npm test`、service worker 語法檢查 | 3 | pro-feature, scheduler | 已改成先送出再收回 |

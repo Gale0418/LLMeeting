@@ -1,7 +1,7 @@
 # 筆記
 
 - 補強優先順序：
-  1. reload LLMeeting 0.3.0 後手動試跑基礎辯論。
+  1. reload LLMeeting 0.4.0 後手動試跑基礎辯論與多輪互評。
   2. 五連點 Free badge 切換 Pro，試跑進階辯論設定裡的快速鬥技場與總結辯論。
   3. 依 `store/screenshot-checklist.md` 擷取商店截圖。
   4. 視實機結果補 retry、timeout、provider selector。
