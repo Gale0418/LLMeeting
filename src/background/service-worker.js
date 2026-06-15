@@ -160,7 +160,8 @@ async function startChatDebate(question, options = {}) {
   if (runtimeState.busy) throw new Error("目前已有辯論正在進行");
 
   const activeProviders = normalizeProviderIds(options.activeProviders);
-  engine = new DebateEngine(activeProviders, options.summaryProvider, 1, {
+  const debateRounds = normalizeDebateRounds(options.debateRounds);
+  engine = new DebateEngine(activeProviders, options.summaryProvider, debateRounds, {
     interactionStyle: options.interactionStyle,
   });
   runtimeState = {
@@ -173,7 +174,7 @@ async function startChatDebate(question, options = {}) {
     question: trimmedQuestion,
     activeProviders,
     summaryProvider: options.summaryProvider || "chatgpt",
-    debateRounds: 1,
+    debateRounds: debateRounds,
     currentCritiqueRound: 0,
     entitlements: await getEntitlements(),
     skipSummary: true,
@@ -185,6 +186,19 @@ async function startChatDebate(question, options = {}) {
   runtimeState = { ...runtimeState, transcript: engine.snapshot() };
   await publishState();
   await runFastProviderJobs(firstRoundJobs, "answer");
+
+  for (let round = 1; round <= debateRounds; round += 1) {
+    const jobs = engine.buildCritiqueJobs(round);
+    runtimeState = {
+      ...runtimeState,
+      phase: round === 1 ? "critique" : `critique-${round}`,
+      currentCritiqueRound: round,
+      message: `第 ${round} 輪：等待 AI 交叉互評`,
+      transcript: engine.snapshot(),
+    };
+    await publishState();
+    await runFastProviderJobs(jobs, "critique");
+  }
 
   runtimeState = {
     ...runtimeState,
@@ -204,7 +218,8 @@ async function startTheaterDebate(question, options = {}) {
   if (runtimeState.busy) throw new Error("目前已有辯論正在進行");
 
   const activeProviders = normalizeProviderIds(options.activeProviders);
-  engine = new DebateEngine(activeProviders, options.summaryProvider, 1, {
+  const debateRounds = normalizeDebateRounds(options.debateRounds);
+  engine = new DebateEngine(activeProviders, options.summaryProvider, debateRounds, {
     isTheaterMode: true,
     customPersonas: options.customPersonas,
     interactionStyle: options.interactionStyle,
@@ -219,7 +234,7 @@ async function startTheaterDebate(question, options = {}) {
     question: trimmedQuestion,
     activeProviders,
     summaryProvider: options.summaryProvider || "chatgpt",
-    debateRounds: 1,
+    debateRounds: debateRounds,
     currentCritiqueRound: 0,
     entitlements: await getEntitlements(),
     skipSummary: true,
@@ -231,6 +246,19 @@ async function startTheaterDebate(question, options = {}) {
   runtimeState = { ...runtimeState, transcript: engine.snapshot() };
   await publishState();
   await runFastProviderJobs(firstRoundJobs, "answer");
+
+  for (let round = 1; round <= debateRounds; round += 1) {
+    const jobs = engine.buildCritiqueJobs(round);
+    runtimeState = {
+      ...runtimeState,
+      phase: round === 1 ? "critique" : `critique-${round}`,
+      currentCritiqueRound: round,
+      message: `第 ${round} 輪：等待 AI 交叉互評`,
+      transcript: engine.snapshot(),
+    };
+    await publishState();
+    await runFastProviderJobs(jobs, "critique");
+  }
 
   runtimeState = {
     ...runtimeState,
