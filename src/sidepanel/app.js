@@ -146,13 +146,19 @@ async function startDebate(mode) {
     customPersonas.gemini = document.querySelector("#personaGemini")?.value || "";
   }
 
+  const tabHookingSettings = document.getElementById("tabHookingSettings");
   const hookedTabs = {};
-  for (const providerId of Object.keys(hookSelects)) {
-    const selectEl = hookSelects[providerId];
-    if (selectEl && selectEl.value) {
-      hookedTabs[providerId] = parseInt(selectEl.value, 10);
+  if (tabHookingSettings && tabHookingSettings.open) {
+    for (const providerId of Object.keys(hookSelects)) {
+      const selectEl = hookSelects[providerId];
+      if (selectEl && selectEl.value) {
+        hookedTabs[providerId] = parseInt(selectEl.value, 10);
+      }
     }
   }
+
+  const interactiveModeSettings = document.getElementById("interactiveModeSettings");
+  const interactiveMode = interactiveModeSettings ? interactiveModeSettings.open : false;
 
   setActionButtonsDisabled(true);
   renderMessage(startingMessage(mode));
@@ -168,6 +174,7 @@ async function startDebate(mode) {
     customPersonas,
     hookedTabs,
     interactionStyle,
+    interactiveMode,
   });
 
   if (!response?.ok) {

@@ -124,10 +124,10 @@
             </div>
 
             <!-- 分頁掛勾設定 -->
-            <div id="tabHookingSettings" style="margin-top: 12px; border-top: 1px solid #e5e7eb; padding-top: 12px;">
-              <legend style="font-weight: 500; font-size: 0.875rem; color: #111827; margin-bottom: 8px;">🔗 指定連線分頁</legend>
-              <div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 8px;">選擇要掛勾的既有分頁，若選自動將尋找或開新分頁。</div>
-              <div style="display: flex; flex-direction: column; gap: 8px;">
+            <details id="tabHookingSettings" style="margin-top: 12px; border-top: 1px solid #e5e7eb; padding-top: 12px;">
+              <summary style="font-weight: 500; font-size: 0.875rem; color: #111827; margin-bottom: 8px; cursor: pointer; outline: none;">🔗 指定連線分頁</summary>
+              <div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 8px;">展開以選擇要掛勾的分頁。若收起則會自動尋找或開新分頁。</div>
+              <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
                 <div>
                   <label for="hookChatgpt" style="font-size: 0.75rem; font-weight: 600; color: #374151;">ChatGPT</label>
                   <select id="hookChatgpt" style="width: 100%; margin-top: 2px;">
@@ -154,7 +154,14 @@
                 </div>
               </div>
               <button type="button" id="refreshHooksBtn" style="margin-top: 8px; font-size: 0.75rem; padding: 4px 8px;">重新掃描分頁 🔄</button>
-            </div>
+            </details>
+            <!-- 互動模式設定 -->
+            <details id="interactiveModeSettings" style="margin-top: 12px; border-top: 1px solid #e5e7eb; padding-top: 12px;">
+              <summary style="font-weight: 500; font-size: 0.875rem; color: #111827; margin-bottom: 8px; cursor: pointer; outline: none;">💬 互動聊天 (等待主人)</summary>
+              <div style="font-size: 0.75rem; color: #6b7280;">
+                展開此區塊時，自由群聊與劇場大亂鬥在跑完輪次後會停下來等你說話。若收起，則會自動總結並結束。
+              </div>
+            </details>
           </div>
         </details>
 

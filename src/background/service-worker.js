@@ -177,7 +177,7 @@ async function startChatDebate(question, options = {}) {
     debateRounds: debateRounds,
     currentCritiqueRound: 0,
     entitlements: await getEntitlements(),
-    skipSummary: true,
+    skipSummary: options.skipSummary || false,
     providerTabs: options.hookedTabs || {},
   };
   await publishState();
@@ -200,13 +200,54 @@ async function startChatDebate(question, options = {}) {
     await runFastProviderJobs(jobs, "critique");
   }
 
+  if (options.interactiveMode) {
+    runtimeState = {
+      ...runtimeState,
+      busy: false,
+      status: "waiting_for_user",
+      phase: "waiting_for_user",
+      message: "等待主人發言或選擇下一步...",
+      transcript: engine.snapshot(),
+    };
+    await publishState();
+    return runtimeState;
+  }
+
+  if (options.skipSummary) {
+    runtimeState = {
+      ...runtimeState,
+      busy: false,
+      status: "done",
+      phase: "done",
+      message: "對話完成 (略過總結)",
+      transcript: engine.snapshot(),
+      summary: "",
+    };
+    await publishState();
+    return runtimeState;
+  }
+
+  runtimeState = {
+    ...runtimeState,
+    phase: "summary",
+    message: `最終回合：請 ${providerLabel(runtimeState.summaryProvider)} 總結`,
+    transcript: engine.snapshot(),
+  };
+  await publishState();
+
+  const finalResult = await sendJob(engine.buildFinalJob());
+  if (!finalResult.ok) {
+    return finishWithError(finalResult);
+  }
+
   runtimeState = {
     ...runtimeState,
     busy: false,
-    status: "waiting_for_user",
-    phase: "waiting_for_user",
-    message: "等待主人發言或選擇下一步...",
+    status: "done",
+    phase: "done",
+    message: "辯論完成",
     transcript: engine.snapshot(),
+    summary: finalResult.content,
   };
   await publishState();
   return runtimeState;
@@ -237,7 +278,7 @@ async function startTheaterDebate(question, options = {}) {
     debateRounds: debateRounds,
     currentCritiqueRound: 0,
     entitlements: await getEntitlements(),
-    skipSummary: true,
+    skipSummary: options.skipSummary || false,
     providerTabs: options.hookedTabs || {},
   };
   await publishState();
@@ -260,13 +301,54 @@ async function startTheaterDebate(question, options = {}) {
     await runFastProviderJobs(jobs, "critique");
   }
 
+  if (options.interactiveMode) {
+    runtimeState = {
+      ...runtimeState,
+      busy: false,
+      status: "waiting_for_user",
+      phase: "waiting_for_user",
+      message: "等待主人發言或選擇下一步...",
+      transcript: engine.snapshot(),
+    };
+    await publishState();
+    return runtimeState;
+  }
+
+  if (options.skipSummary) {
+    runtimeState = {
+      ...runtimeState,
+      busy: false,
+      status: "done",
+      phase: "done",
+      message: "對話完成 (略過總結)",
+      transcript: engine.snapshot(),
+      summary: "",
+    };
+    await publishState();
+    return runtimeState;
+  }
+
+  runtimeState = {
+    ...runtimeState,
+    phase: "summary",
+    message: `最終回合：請 ${providerLabel(runtimeState.summaryProvider)} 總結`,
+    transcript: engine.snapshot(),
+  };
+  await publishState();
+
+  const finalResult = await sendJob(engine.buildFinalJob());
+  if (!finalResult.ok) {
+    return finishWithError(finalResult);
+  }
+
   runtimeState = {
     ...runtimeState,
     busy: false,
-    status: "waiting_for_user",
-    phase: "waiting_for_user",
-    message: "等待主人發言或選擇下一步...",
+    status: "done",
+    phase: "done",
+    message: "辯論完成",
     transcript: engine.snapshot(),
+    summary: finalResult.content,
   };
   await publishState();
   return runtimeState;
