@@ -1,4 +1,4 @@
-import { buildCritiquePrompt, buildFinalSummaryPrompt, buildFirstRoundPrompt } from "../shared/prompts.js";
+import { buildCritiquePrompt, buildFinalSummaryPrompt, buildFirstRoundPrompt, getPersonaPrompt } from "../shared/prompts.js";
 import {
   DEFAULT_ACTIVE_PROVIDER_IDS,
   PROVIDERS,
@@ -39,7 +39,7 @@ export function normalizeDebateRounds(value = 1) {
 }
 
 export class DebateEngine {
-  constructor(activeProviders = DEFAULT_ACTIVE_PROVIDER_IDS, summaryProvider = "chatgpt", debateRounds = 1) {
+  constructor(activeProviders = DEFAULT_ACTIVE_PROVIDER_IDS, summaryProvider = "chatgpt", debateRounds = 1, options = {}) {
     this.validateRequestedProviders(activeProviders);
     if (!isProviderId(summaryProvider)) {
       throw new Error(`Unknown provider: ${summaryProvider}`);
@@ -52,6 +52,10 @@ export class DebateEngine {
 
     this.summaryProvider = summaryProvider;
     this.debateRounds = normalizeDebateRounds(debateRounds);
+    this.isTheaterMode = options.isTheaterMode || false;
+    this.customPersonas = options.customPersonas || {};
+    this.interactionStyle = options.interactionStyle || "critique";
+    
     const critiqueRounds = emptyCritiqueRounds(this.activeProviders, this.debateRounds);
     this.state = {
       phase: "idle",
@@ -62,6 +66,7 @@ export class DebateEngine {
       critiques: critiqueRounds[0],
       critiqueRounds,
       errors: [],
+      userMessages: [],
     };
   }
 
@@ -77,11 +82,31 @@ export class DebateEngine {
       critiques: critiqueRounds[0],
       critiqueRounds,
       errors: [],
+      userMessages: [],
     };
+    this.state.originalQuestion = normalizeText(question);
+    this.state.phase = "first-round";
+    this.state.status = "running";
 
-    return PROVIDERS.filter((p) => this.activeProviders.includes(p.id)).map((provider) =>
-      providerJob(provider.id, "first-round", buildFirstRoundPrompt(question)),
-    );
+    // Imposter logic
+    if (this.interactionStyle === "imposter") {
+      const candidates = this.activeProviders;
+      this.state.imposterProvider = candidates[Math.floor(Math.random() * candidates.length)];
+    }
+
+    return PROVIDERS.filter((p) => this.activeProviders.includes(p.id)).map((provider) => {
+      let prompt = buildFirstRoundPrompt(question);
+
+      if (this.interactionStyle === "imposter" && provider.id === this.state.imposterProvider) {
+        prompt = "【🤫 秘密任務】你是這次討論的內鬼。請在你的回答中，故意混入一個看似合理但實際上是捏造的假資訊或錯誤邏輯。絕對不要暴露你的身分！\n\n" + prompt;
+      }
+
+      if (this.isTheaterMode) {
+        const persona = this.customPersonas[provider.id] || getPersonaPrompt(provider.id);
+        prompt = persona + "\n\n" + prompt;
+      }
+      return providerJob(provider.id, "first-round", prompt);
+    });
   }
 
   recordAnswer(providerId, content) {
@@ -122,21 +147,46 @@ export class DebateEngine {
     this.state.phase = phase;
     this.state.currentCritiqueRound = round;
 
-    return PROVIDERS.filter((p) => this.activeProviders.includes(p.id)).map((provider) =>
-      providerJob(
-        provider.id,
-        phase,
-        buildCritiquePrompt({
-          recipient: provider.id,
-          originalQuestion: this.state.originalQuestion,
-          answers: this.state.answers,
-          previousCritiques: round > 1 ? this.state.critiqueRounds[round - 2] : undefined,
-          roundNumber: round,
-          activeProviders: this.activeProviders,
-        }),
-        { round },
-      ),
-    );
+    return PROVIDERS.filter((p) => this.activeProviders.includes(p.id)).map((provider) => {
+      let prompt = buildInteractionPrompt({
+        recipient: provider.id,
+        originalQuestion: this.state.originalQuestion,
+        answers: this.state.answers,
+        previousCritiques: round > 1 ? this.state.critiqueRounds[round - 2] : undefined,
+        roundNumber: round,
+        activeProviders: this.activeProviders,
+        interactionStyle: this.interactionStyle,
+      });
+      if (this.isTheaterMode) {
+        const persona = this.customPersonas[provider.id] || getPersonaPrompt(provider.id);
+        prompt = persona + "\n\n" + prompt;
+      }
+      return providerJob(provider.id, phase, prompt, { round });
+    });
+  }
+
+  addChatRound(userMessage = "") {
+    this.debateRounds += 1;
+    this.state.debateRounds = this.debateRounds;
+    this.state.critiqueRounds.push(emptyProviderMap(this.activeProviders));
+    this.state.userMessages.push(normalizeText(userMessage));
+    return this.debateRounds;
+  }
+
+  buildUserMessageJobs(text, roundNumber) {
+    const round = Math.min(this.debateRounds, Math.max(1, normalizeDebateRounds(roundNumber)));
+    const phase = critiquePhase(round);
+    this.state.phase = phase;
+    this.state.currentCritiqueRound = round;
+
+    return PROVIDERS.filter((p) => this.activeProviders.includes(p.id)).map((provider) => {
+      let prompt = `主人發言/補充：\n${normalizeText(text)}\n\n請直接回應主人的話。`;
+      if (this.isTheaterMode) {
+        const persona = this.customPersonas[provider.id] || getPersonaPrompt(provider.id);
+        prompt = persona + "\n\n" + prompt;
+      }
+      return providerJob(provider.id, phase, prompt, { round });
+    });
   }
 
   buildFinalJob() {

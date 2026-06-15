@@ -17,7 +17,7 @@ import {
 } from "../shared/providers.js";
 
 const STORAGE_KEY = "aiDebate.currentState";
-const PROVIDER_TIMEOUT_MS = 120000;
+const PROVIDER_TIMEOUT_MS = 240000; // 4分鐘，防話癆
 
 let engine = new DebateEngine();
 let runtimeState = createIdleState();
@@ -47,11 +47,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "aiDebate:start") {
-    const { question, mode = "basic", activeProviders, summaryProvider, debateRounds } = message;
+    const { question, mode = "basic", activeProviders, summaryProvider, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle } = message;
     const startAction = {
       basic: startBasicDebate,
       fast: startFastDebate,
       summary: startSummaryDebate,
+      chat: startChatDebate,
+      theater: startTheaterDebate,
     }[mode];
 
     if (!startAction) {
@@ -59,7 +61,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return false;
     }
 
-    startAction(question, { activeProviders, summaryProvider, debateRounds })
+    startAction(question, { activeProviders, summaryProvider, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle })
       .then((state) => sendResponse({ ok: true, state }))
       .catch(async (error) => {
         const isProRequired = error.code === "PRO_REQUIRED";
@@ -80,6 +82,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           error: error.message,
           state: runtimeState,
         });
+      });
+    return true;
+  }
+
+  if (message.type === "aiDebate:nextRound") {
+    handleNextRound(message.action, message.text)
+      .then((state) => sendResponse({ ok: true, state }))
+      .catch(async (error) => {
+        runtimeState = {
+          ...runtimeState,
+          busy: false,
+          status: "waiting_for_user",
+          phase: "waiting_for_user",
+          message: `發送失敗：${error.message}`,
+        };
+        await publishState();
+        sendResponse({ ok: false, error: error.message, state: runtimeState });
       });
     return true;
   }
@@ -108,6 +127,7 @@ function createIdleState(providerIds = DEFAULT_ACTIVE_PROVIDER_IDS) {
     debateRounds: 1,
     currentCritiqueRound: 0,
     entitlements: entitlementsForPlan(),
+    skipSummary: false,
   };
 }
 
@@ -117,6 +137,8 @@ async function startBasicDebate(question, options = {}) {
     mode: "basic",
     scheduler: "sequential",
     openingMessage: "基礎辯論：準備逐家送出原始問題",
+    hookedTabs: options.hookedTabs,
+    interactionStyle: options.interactionStyle,
   });
 }
 
@@ -127,7 +149,99 @@ async function startFastDebate(question, options = {}) {
     mode: "fast",
     scheduler: "fast",
     openingMessage: "快速鬥技場：準備送出原始問題",
+    hookedTabs: options.hookedTabs,
+    interactionStyle: options.interactionStyle,
   });
+}
+
+async function startChatDebate(question, options = {}) {
+  const trimmedQuestion = String(question || "").trim();
+  if (!trimmedQuestion) throw new Error("請先輸入問題");
+  if (runtimeState.busy) throw new Error("目前已有辯論正在進行");
+
+  const activeProviders = normalizeProviderIds(options.activeProviders);
+  engine = new DebateEngine(activeProviders, options.summaryProvider, 1, {
+    interactionStyle: options.interactionStyle,
+  });
+  runtimeState = {
+    ...createIdleState(activeProviders),
+    busy: true,
+    status: "running",
+    mode: "chat",
+    phase: "first-round",
+    message: "自由群聊開始：各就各位，準備送出第一句話",
+    question: trimmedQuestion,
+    activeProviders,
+    summaryProvider: options.summaryProvider,
+    debateRounds: 1,
+    currentCritiqueRound: 0,
+    entitlements: await getEntitlements(),
+    skipSummary: true,
+    providerTabs: options.hookedTabs || {},
+  };
+  await publishState();
+
+  const firstRoundJobs = engine.start(trimmedQuestion);
+  runtimeState = { ...runtimeState, transcript: engine.snapshot() };
+  await publishState();
+  await runFastProviderJobs(firstRoundJobs, "answer");
+
+  runtimeState = {
+    ...runtimeState,
+    busy: false,
+    status: "waiting_for_user",
+    phase: "waiting_for_user",
+    message: "等待主人發言或選擇下一步...",
+    transcript: engine.snapshot(),
+  };
+  await publishState();
+  return runtimeState;
+}
+
+async function startTheaterDebate(question, options = {}) {
+  const trimmedQuestion = String(question || "").trim();
+  if (!trimmedQuestion) throw new Error("請先輸入問題");
+  if (runtimeState.busy) throw new Error("目前已有辯論正在進行");
+
+  const activeProviders = normalizeProviderIds(options.activeProviders);
+  engine = new DebateEngine(activeProviders, options.summaryProvider, 1, {
+    isTheaterMode: true,
+    customPersonas: options.customPersonas,
+    interactionStyle: options.interactionStyle,
+  });
+  runtimeState = {
+    ...createIdleState(activeProviders),
+    busy: true,
+    status: "running",
+    mode: "theater",
+    phase: "first-round",
+    message: "劇場大亂鬥：各就各位，準備送出第一句話",
+    question: trimmedQuestion,
+    activeProviders,
+    summaryProvider: options.summaryProvider,
+    debateRounds: 1,
+    currentCritiqueRound: 0,
+    entitlements: await getEntitlements(),
+    skipSummary: true,
+    providerTabs: options.hookedTabs || {},
+  };
+  await publishState();
+
+  const firstRoundJobs = engine.start(trimmedQuestion);
+  runtimeState = { ...runtimeState, transcript: engine.snapshot() };
+  await publishState();
+  await runFastProviderJobs(firstRoundJobs, "answer");
+
+  runtimeState = {
+    ...runtimeState,
+    busy: false,
+    status: "waiting_for_user",
+    phase: "waiting_for_user",
+    message: "等待主人發言或選擇下一步...",
+    transcript: engine.snapshot(),
+  };
+  await publishState();
+  return runtimeState;
 }
 
 async function startQuestionDebate(question, options = {}) {
@@ -147,7 +261,9 @@ async function startQuestionDebate(question, options = {}) {
   const scheduler = options.scheduler || "sequential";
   const debateRounds = normalizeDebateRounds(options.debateRounds);
 
-  engine = new DebateEngine(activeProviders, summaryProvider, debateRounds);
+  engine = new DebateEngine(activeProviders, summaryProvider, debateRounds, {
+    interactionStyle: options.interactionStyle,
+  });
   runtimeState = {
     ...createIdleState(activeProviders),
     busy: true,
@@ -161,6 +277,8 @@ async function startQuestionDebate(question, options = {}) {
     debateRounds,
     currentCritiqueRound: 0,
     entitlements,
+    skipSummary: options.skipSummary || false,
+    providerTabs: options.hookedTabs || {},
   };
   await publishState();
 
@@ -184,7 +302,9 @@ async function startSummaryDebate(userNote, options = {}) {
     throw new Error(`總結辯論至少需要目前頁面以外的 2 家 AI。現在目前頁面是 ${providerLabel(sourceProvider)}，請再勾選兩家其他 AI。`);
   }
 
-  engine = new DebateEngine(debateProviders, sourceProvider, debateRounds);
+  engine = new DebateEngine(debateProviders, sourceProvider, debateRounds, {
+    interactionStyle: options.interactionStyle,
+  });
   runtimeState = {
     ...createIdleState(debateProviders),
     busy: true,
@@ -193,13 +313,14 @@ async function startSummaryDebate(userNote, options = {}) {
     phase: "source-summary",
     message: `請 ${providerLabel(sourceProvider)} 總結目前對話`,
     question: String(userNote || "").trim(),
-    providerTabs: { [sourceProvider]: sourceTab.id },
+    providerTabs: { ...(options.hookedTabs || {}), [sourceProvider]: sourceTab.id },
     activeProviders: debateProviders,
     sourceProvider,
     summaryProvider: sourceProvider,
     debateRounds,
     currentCritiqueRound: 0,
     entitlements,
+    skipSummary: options.skipSummary || false,
   };
   await publishState();
 
@@ -253,6 +374,20 @@ async function runDebateRounds(originalQuestion, options = {}) {
     await runProviderJobs(critiqueJobs, "critique");
   }
 
+  if (runtimeState.skipSummary) {
+    runtimeState = {
+      ...runtimeState,
+      busy: false,
+      status: "done",
+      phase: "done",
+      message: "對話完成 (略過總結)",
+      transcript: engine.snapshot(),
+      summary: "",
+    };
+    await publishState();
+    return runtimeState;
+  }
+
   runtimeState = {
     ...runtimeState,
     phase: "summary",
@@ -277,6 +412,75 @@ async function runDebateRounds(originalQuestion, options = {}) {
   };
   await publishState();
 
+  return runtimeState;
+}
+
+async function handleNextRound(action, text) {
+  if (runtimeState.busy) throw new Error("目前忙碌中");
+  if (runtimeState.mode !== "chat" && runtimeState.mode !== "theater") throw new Error("只有自由群聊與劇場模式支援此操作");
+
+  runtimeState = { ...runtimeState, busy: true, status: "running" };
+  await publishState();
+
+  if (action === "user_message") {
+    const newRound = engine.addChatRound(text);
+    const jobs = engine.buildUserMessageJobs(text, newRound);
+    runtimeState = {
+      ...runtimeState,
+      phase: "critique",
+      currentCritiqueRound: newRound,
+      debateRounds: newRound,
+      message: `送出主人的補充發言`,
+      transcript: engine.snapshot(),
+    };
+    await publishState();
+    await runFastProviderJobs(jobs, "critique");
+  } else if (action === "critique") {
+    const newRound = engine.addChatRound();
+    const jobs = engine.buildCritiqueJobs(newRound);
+    runtimeState = {
+      ...runtimeState,
+      phase: "critique",
+      currentCritiqueRound: newRound,
+      debateRounds: newRound,
+      message: `第 ${newRound} 輪：送出交叉互評`,
+      transcript: engine.snapshot(),
+    };
+    await publishState();
+    await runFastProviderJobs(jobs, "critique");
+  } else if (action === "summarize") {
+    runtimeState = {
+      ...runtimeState,
+      phase: "summary",
+      message: `請 ${providerLabel(runtimeState.summaryProvider)} 總結`,
+      transcript: engine.snapshot(),
+    };
+    await publishState();
+    const finalResult = await sendJob(engine.buildFinalJob());
+    if (!finalResult.ok) return finishWithError(finalResult);
+    
+    runtimeState = {
+      ...runtimeState,
+      busy: false,
+      status: "done",
+      phase: "done",
+      message: "對話結束並已總結",
+      transcript: engine.snapshot(),
+      summary: finalResult.content,
+    };
+    await publishState();
+    return runtimeState;
+  }
+
+  runtimeState = {
+    ...runtimeState,
+    busy: false,
+    status: "waiting_for_user",
+    phase: "waiting_for_user",
+    message: "等待主人發言或選擇下一步...",
+    transcript: engine.snapshot(),
+  };
+  await publishState();
   return runtimeState;
 }
 

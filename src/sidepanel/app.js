@@ -4,6 +4,7 @@ import {
   featureLabel,
   proRequiredMessage,
 } from "../shared/entitlements.js";
+import { PROVIDERS } from "../shared/providers.js";
 
 const form = document.querySelector("#debateForm");
 const questionInput = document.querySelector("#questionInput");
@@ -18,9 +19,26 @@ const progressBar = document.querySelector("#progressBar");
 
 const summaryProviderSelect = document.querySelector("#summaryProviderSelect");
 const debateRoundsInput = document.querySelector("#debateRoundsInput");
+const interactionStyleSelect = document.querySelector("#interactionStyleSelect");
 const providerSelectEls = Array.from(document.querySelectorAll(".provider-select"));
 const debateModeEls = Array.from(document.querySelectorAll(".debate-mode-select"));
 const debateModeOptionEls = Array.from(document.querySelectorAll(".mode-option[data-pro-feature]"));
+const skipSummaryCheckbox = document.querySelector("#skipSummaryCheckbox");
+
+const chatControls = document.querySelector("#chatControls");
+const chatInput = document.querySelector("#chatInput");
+const chatSendBtn = document.querySelector("#chatSendBtn");
+const chatCritiqueBtn = document.querySelector("#chatCritiqueBtn");
+const chatSummarizeBtn = document.querySelector("#chatSummarizeBtn");
+const theaterSettings = document.querySelector("#theaterSettings");
+const refreshHooksBtn = document.querySelector("#refreshHooksBtn");
+
+const hookSelects = {
+  chatgpt: document.querySelector("#hookChatgpt"),
+  claude: document.querySelector("#hookClaude"),
+  grok: document.querySelector("#hookGrok"),
+  gemini: document.querySelector("#hookGemini"),
+};
 
 const providerStateEls = {
   chatgpt: document.querySelector("#chatgptState"),
@@ -49,8 +67,45 @@ debateModeEls.forEach((el) => {
 debateRoundsInput?.addEventListener("change", normalizeDebateRoundsInput);
 debateRoundsInput?.addEventListener("blur", normalizeDebateRoundsInput);
 
+refreshHooksBtn?.addEventListener("click", scanAndPopulateHookTabs);
+
 loadDevUnlock();
 renderDebateModeState();
+scanAndPopulateHookTabs();
+
+async function scanAndPopulateHookTabs() {
+  for (const provider of PROVIDERS) {
+    const selectEl = hookSelects[provider.id];
+    if (!selectEl) continue;
+
+    // 保留第一個選項
+    selectEl.innerHTML = '<option value="">[自動] 尋找或開新分頁</option>';
+
+    try {
+      // 在 background 腳本中我們是用 tabs.query { url: provider.urlPattern } 或 matchPatterns
+      // 這裡簡單把 matchPatterns 轉成查詢條件
+      const tabs = [];
+      for (const pattern of provider.matchPatterns) {
+        const queryTabs = await chrome.tabs.query({ url: pattern });
+        tabs.push(...queryTabs);
+      }
+      
+      // 去重
+      const uniqueTabs = Array.from(new Map(tabs.map((t) => [t.id, t])).values());
+      uniqueTabs.sort((a, b) => b.windowId - a.windowId);
+
+      for (const tab of uniqueTabs) {
+        const option = document.createElement("option");
+        option.value = tab.id.toString();
+        const title = tab.title ? (tab.title.length > 30 ? tab.title.substring(0, 30) + "..." : tab.title) : "未命名分頁";
+        option.textContent = `[分頁] ${title}`;
+        selectEl.appendChild(option);
+      }
+    } catch (error) {
+      console.error("Failed to query tabs for", provider.id, error);
+    }
+  }
+}
 
 async function startSelectedDebate() {
   const mode = selectedDebateMode();
@@ -78,19 +133,41 @@ async function startDebate(mode) {
     return;
   }
 
-  const summaryProvider = summaryProviderSelect.value;
-  const debateRounds = selectedDebateRounds();
+  const summaryProvider = document.querySelector("#summaryProviderSelect").value;
+  const skipSummary = document.querySelector("#skipSummaryCheckbox").checked;
+  const debateRounds = parseInt(debateRoundsInput?.value, 10) || 1;
+  const interactionStyle = interactionStyleSelect?.value || "critique";
+
+  const customPersonas = {};
+  if (mode === "theater") {
+    customPersonas.chatgpt = document.querySelector("#personaChatgpt")?.value || "";
+    customPersonas.claude = document.querySelector("#personaClaude")?.value || "";
+    customPersonas.grok = document.querySelector("#personaGrok")?.value || "";
+    customPersonas.gemini = document.querySelector("#personaGemini")?.value || "";
+  }
+
+  const hookedTabs = {};
+  for (const providerId of Object.keys(hookSelects)) {
+    const selectEl = hookSelects[providerId];
+    if (selectEl && selectEl.value) {
+      hookedTabs[providerId] = parseInt(selectEl.value, 10);
+    }
+  }
 
   setActionButtonsDisabled(true);
   renderMessage(startingMessage(mode));
   
   const response = await chrome.runtime.sendMessage({
     type: "aiDebate:start",
-    mode,
     question,
+    mode,
     activeProviders,
     summaryProvider,
+    skipSummary,
     debateRounds,
+    customPersonas,
+    hookedTabs,
+    interactionStyle,
   });
 
   if (!response?.ok) {
@@ -106,6 +183,27 @@ async function startDebate(mode) {
 resetButton.addEventListener("click", async () => {
   const response = await chrome.runtime.sendMessage({ type: "aiDebate:reset" });
   renderState(response?.state);
+});
+
+chatSendBtn?.addEventListener("click", async () => {
+  const text = chatInput.value.trim();
+  if (!text) return;
+  chatInput.value = "";
+  chatControls.style.display = "none";
+  const response = await chrome.runtime.sendMessage({ type: "aiDebate:nextRound", action: "user_message", text });
+  if (response?.state) renderState(response.state);
+});
+
+chatCritiqueBtn?.addEventListener("click", async () => {
+  chatControls.style.display = "none";
+  const response = await chrome.runtime.sendMessage({ type: "aiDebate:nextRound", action: "critique" });
+  if (response?.state) renderState(response.state);
+});
+
+chatSummarizeBtn?.addEventListener("click", async () => {
+  chatControls.style.display = "none";
+  const response = await chrome.runtime.sendMessage({ type: "aiDebate:nextRound", action: "summarize" });
+  if (response?.state) renderState(response.state);
 });
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -153,6 +251,9 @@ function renderState(state) {
     if (debateRoundsInput) {
       debateRoundsInput.value = normalizeDebateRounds(state.debateRounds || state.transcript?.debateRounds || 1);
     }
+    if (skipSummaryCheckbox && state.skipSummary !== undefined) {
+      skipSummaryCheckbox.checked = state.skipSummary;
+    }
   }
 
   const transcript = state.transcript;
@@ -163,6 +264,16 @@ function renderState(state) {
 
   // 渲染氣泡式對話框
   renderChatBubbles(state);
+
+  // 控制 Chat 介面
+  if (chatControls) {
+    if (state.phase === "waiting_for_user") {
+      chatControls.style.display = "block";
+      chatInput.focus();
+    } else {
+      chatControls.style.display = "none";
+    }
+  }
 
   // 傳統文字 Transcript（備用與除錯）
   transcriptOutput.textContent = buildTranscriptText(state);
@@ -276,11 +387,13 @@ function updateProgressBar(state) {
   let percent = 0;
   if (state.status === "running") {
     if (state.phase === "source-summary") percent = 15;
-    else if (state.phase === "first-round") percent = 30;
+    else if (state.phase === "first-round") percent = state.skipSummary ? 50 : 30;
     else if (state.phase === "critique") {
       const totalRounds = normalizeDebateRounds(state.debateRounds || state.transcript?.debateRounds || 1);
       const currentRound = normalizeDebateRounds(state.currentCritiqueRound || state.transcript?.currentCritiqueRound || 1);
-      percent = 30 + Math.round((Math.min(currentRound, totalRounds) / totalRounds) * 45);
+      const base = state.skipSummary ? 50 : 30;
+      const roundAlloc = state.skipSummary ? 50 : 45;
+      percent = base + Math.round((Math.min(currentRound, totalRounds) / totalRounds) * roundAlloc);
     }
     else if (state.phase === "summary") percent = 85;
   } else if (state.status === "done") {
@@ -357,7 +470,7 @@ function renderChatBubbles(state) {
     }
   }
 
-  // 3. 多輪互評
+  // 3. 多輪互評與主人發言
   const critiqueRounds = critiqueRoundMaps(transcript);
   const activeCritiqueRound = state.phase === "critique"
     ? normalizeDebateRounds(state.currentCritiqueRound || transcript.currentCritiqueRound || 1)
@@ -370,6 +483,16 @@ function renderChatBubbles(state) {
       return;
     }
 
+    const userMessage = transcript.userMessages?.[roundNumber - 1];
+    if (userMessage) {
+      html += `
+        <div class="bubble-group user">
+          <div class="bubble-meta">主人插話 🙋‍♂️</div>
+          <div class="bubble-content">${formatContent(userMessage)}</div>
+        </div>
+      `;
+    }
+
     html += `<div class="round-divider">${zhRoundLabel(roundNumber + 1)}：交叉評析 ${critiqueRounds.length > 1 ? `${roundNumber}/${critiqueRounds.length}` : ""} ⚡</div>`;
     for (const providerId of activeSet) {
       const content = critiques[providerId];
@@ -377,15 +500,15 @@ function renderChatBubbles(state) {
         if (answers[providerId] && !answers[providerId].startsWith("[錯誤：")) {
           html += `
             <div class="bubble-group assistant ${providerId} loading">
-              <div class="bubble-meta">${providerLabel(providerId)} 評析中</div>
-              <div class="bubble-content"><span class="loading-dots">撰寫互評中<span>.</span><span>.</span><span>.</span></span></div>
+              <div class="bubble-meta">${providerLabel(providerId)} ${userMessage ? '回應中' : '評析中'}</div>
+              <div class="bubble-content"><span class="loading-dots">${userMessage ? '思考生成中' : '撰寫互評中'}<span>.</span><span>.</span><span>.</span></span></div>
             </div>
           `;
         }
       } else if (content) {
         html += `
           <div class="bubble-group assistant ${providerId} critique">
-            <div class="bubble-meta">${providerLabel(providerId)} 評析</div>
+            <div class="bubble-meta">${providerLabel(providerId)} ${userMessage ? '回應' : '評析'}</div>
             <div class="bubble-content">${formatContent(content)}</div>
           </div>
         `;
@@ -509,6 +632,10 @@ function renderDebateModeState() {
   basicDebateButton.classList.toggle("is-locked", locked);
   basicDebateButton.title = locked ? proRequiredMessage(featureId) : debateModeButtonTitle(mode);
   renderDebateModeOptionStates();
+
+  if (theaterSettings) {
+    theaterSettings.style.display = mode === "theater" ? "block" : "none";
+  }
 }
 
 function renderDebateModeOptionStates() {
@@ -526,6 +653,12 @@ function debateModeButtonLabel(mode) {
   }
   if (mode === "summary") {
     return "總結辯論 ✦";
+  }
+  if (mode === "chat") {
+    return "開啟群聊 💬";
+  }
+  if (mode === "theater") {
+    return "劇場大亂鬥 🎭";
   }
   return "基礎辯論";
 }

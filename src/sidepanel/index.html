@@ -28,6 +28,7 @@
         <label for="questionInput" class="sr-only">問題</label>
         <textarea id="questionInput" rows="4" placeholder="輸入題目，或留空後從目前 AI 分頁總結..."></textarea>
 
+
         <!-- 進階自訂面板 -->
         <details class="settings-panel">
           <summary>⚙️ 進階辯論設定</summary>
@@ -53,6 +54,14 @@
                   <input type="radio" class="debate-mode-select" name="debateMode" value="fast">
                   <span>快速鬥技場 ⚡ <span class="pro-pill">PRO</span></span>
                 </label>
+                <label class="mode-option" data-pro-feature="chatMode">
+                  <input type="radio" class="debate-mode-select" name="debateMode" value="chat">
+                  <span>自由群聊 💬 <span class="pro-pill">PRO</span></span>
+                </label>
+                <label class="mode-option" data-pro-feature="chatMode">
+                  <input type="radio" class="debate-mode-select" name="debateMode" value="theater">
+                  <span>劇場大亂鬥 🎭 <span class="pro-pill">PRO</span></span>
+                </label>
                 <label class="mode-option" data-pro-feature="summaryDebate">
                   <input type="radio" class="debate-mode-select" name="debateMode" value="summary">
                   <span>總結辯論 ✦ <span class="pro-pill">PRO</span></span>
@@ -69,13 +78,95 @@
                 <option value="claude">Claude</option>
               </select>
             </div>
+            
+            <div class="setting-item">
+              <label><input type="checkbox" id="skipSummaryCheckbox"> 略過最後的總結裁決 (放空模式)</label>
+            </div>
 
             <div class="setting-item compact-setting">
               <label for="debateRoundsInput">交叉評析輪次：</label>
               <input id="debateRoundsInput" type="number" min="1" max="5" step="1" value="1">
             </div>
+
+            <!-- 互動風格設定 -->
+            <div class="setting-item compact-setting" style="margin-top: 12px;">
+              <label for="interactionStyleSelect">🎬 互動風格：</label>
+              <select id="interactionStyleSelect" style="flex: 1;">
+                <option value="critique">⚖️ 嚴肅互評 (預設)</option>
+                <option value="casual">🍻 酒吧閒聊</option>
+                <option value="brawl">🥊 無差別格鬥</option>
+                <option value="yesand">🤝 共識接龍 (Yes, and...)</option>
+                <option value="imposter">🕵️‍♂️ 抓內鬼模式</option>
+              </select>
+            </div>
+
+            <!-- 劇場模式專用自定義人設 -->
+            <div id="theaterSettings" style="display: none; margin-top: 12px; border-top: 1px solid #e5e7eb; padding-top: 12px;">
+              <legend style="font-weight: 500; font-size: 0.875rem; color: #111827; margin-bottom: 8px;">🎭 自定義劇場人設</legend>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <div>
+                  <label for="personaChatgpt" style="font-size: 0.75rem; color: #6b7280;">ChatGPT (預設: 正經分析)</label>
+                  <textarea id="personaChatgpt" rows="2" style="width:100%; border-radius:4px; padding:4px; font-size:0.875rem;" placeholder="輸入 ChatGPT 的人設...">【強制人設】你現在負責「正經分析」，請專注於邏輯、可行性與全方位視角，提供正規嚴謹的建議。</textarea>
+                </div>
+                <div>
+                  <label for="personaClaude" style="font-size: 0.75rem; color: #6b7280;">Claude (預設: 盲點揭露)</label>
+                  <textarea id="personaClaude" rows="2" style="width:100%; border-radius:4px; padding:4px; font-size:0.875rem;" placeholder="輸入 Claude 的人設...">【強制人設】你現在負責「盲點揭露」，專門找漏洞、提出反常識思考與潛在風險，挑戰現有方案的合理性。</textarea>
+                </div>
+                <div>
+                  <label for="personaGrok" style="font-size: 0.75rem; color: #6b7280;">Grok (預設: 效率吐槽)</label>
+                  <textarea id="personaGrok" rows="2" style="width:100%; border-radius:4px; padding:4px; font-size:0.875rem;" placeholder="輸入 Grok 的人設...">【強制人設】你現在負責「效率吐槽」，講求極致效率，專門吐槽拖泥帶水的廢話和糟糕的架構，說話酸辣。</textarea>
+                </div>
+                <div>
+                  <label for="personaGemini" style="font-size: 0.75rem; color: #6b7280;">Gemini (預設: 腦洞鬧場)</label>
+                  <textarea id="personaGemini" rows="2" style="width:100%; border-radius:4px; padding:4px; font-size:0.875rem;" placeholder="輸入 Gemini 的人設...">【強制人設】你現在負責「腦洞鬧場」，專門提出荒謬創新但確有可行性觀點的創意怪咖，不受傳統思維限制。說話必須大量使用顏文字(如 ヾ(•ω•`)o 等等)，這才是你的靈魂！</textarea>
+                </div>
+              </div>
+            </div>
+
+            <!-- 分頁掛勾設定 -->
+            <div id="tabHookingSettings" style="margin-top: 12px; border-top: 1px solid #e5e7eb; padding-top: 12px;">
+              <legend style="font-weight: 500; font-size: 0.875rem; color: #111827; margin-bottom: 8px;">🔗 指定連線分頁</legend>
+              <div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 8px;">選擇要掛勾的既有分頁，若選自動將尋找或開新分頁。</div>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <div>
+                  <label for="hookChatgpt" style="font-size: 0.75rem; font-weight: 600; color: #374151;">ChatGPT</label>
+                  <select id="hookChatgpt" style="width: 100%; margin-top: 2px;">
+                    <option value="">[自動] 尋找或開新分頁</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="hookClaude" style="font-size: 0.75rem; font-weight: 600; color: #374151;">Claude</label>
+                  <select id="hookClaude" style="width: 100%; margin-top: 2px;">
+                    <option value="">[自動] 尋找或開新分頁</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="hookGrok" style="font-size: 0.75rem; font-weight: 600; color: #374151;">Grok</label>
+                  <select id="hookGrok" style="width: 100%; margin-top: 2px;">
+                    <option value="">[自動] 尋找或開新分頁</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="hookGemini" style="font-size: 0.75rem; font-weight: 600; color: #374151;">Gemini</label>
+                  <select id="hookGemini" style="width: 100%; margin-top: 2px;">
+                    <option value="">[自動] 尋找或開新分頁</option>
+                  </select>
+                </div>
+              </div>
+              <button type="button" id="refreshHooksBtn" style="margin-top: 8px; font-size: 0.75rem; padding: 4px 8px;">重新掃描分頁 🔄</button>
+            </div>
           </div>
         </details>
+
+        <!-- 群聊控制台 -->
+        <div id="chatControls" class="chat-controls" style="display: none; margin-top: 12px;">
+          <textarea id="chatInput" rows="2" placeholder="主人請發言..." style="width:100%; border-radius:6px; padding:8px; font-family:inherit;"></textarea>
+          <div class="chat-buttons" style="display:flex; gap:8px; margin-top:8px;">
+            <button type="button" id="chatSendBtn" style="flex:1; padding:8px; background:#4f46e5; color:white; border:none; border-radius:6px; cursor:pointer;">送出我的發言</button>
+            <button type="button" id="chatCritiqueBtn" style="flex:1; padding:8px; background:#e5e7eb; color:#374151; border:none; border-radius:6px; cursor:pointer;">讓 AI 互評</button>
+            <button type="button" id="chatSummarizeBtn" style="flex:1; padding:8px; background:#f3f4f6; color:#374151; border:none; border-radius:6px; cursor:pointer;">結案總結</button>
+          </div>
+        </div>
 
         <div class="action-row">
           <button id="basicDebateButton" class="primary-action" type="submit">基礎辯論</button>

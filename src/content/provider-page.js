@@ -36,6 +36,8 @@
         "[data-message-author-role='assistant']",
         "article .markdown",
         "main .markdown",
+        "div.agent-turn",
+        "div[data-message-role='assistant']"
       ],
     },
     gemini: {
@@ -57,10 +59,13 @@
         "button[aria-label*='停止']",
       ],
       responseSelectors: [
+        "model-response",
         "message-content",
         "[id^='model-response-message-content']",
         ".model-response-text",
         "[data-response-index]",
+        "response-container",
+        "div[data-message-author='model']"
       ],
     },
     grok: {
@@ -85,6 +90,8 @@
         ".markdown",
         "article",
         "main [role='article']",
+        "div.grok-message",
+        "[data-message-author='assistant']"
       ],
     },
     claude: {
@@ -113,6 +120,7 @@
         "[data-testid='message-bubble']",
         ".prose",
         "article",
+        "div.claude-message"
       ],
     },
   };
@@ -328,8 +336,14 @@
   }
 
   function isGenerating(config) {
-    return collectElements(config.stopSelectors).some(isVisible) ||
-      Array.from(document.querySelectorAll("[aria-busy='true']")).some(isVisible);
+    const stopVisible = collectElements(config.stopSelectors)
+      .some((el) => isVisible(el) && !el.disabled && el.getAttribute("aria-disabled") !== "true");
+    
+    // Some sites leave aria-busy="true" on random hidden elements or disabled buttons
+    const busyVisible = Array.from(document.querySelectorAll("main [aria-busy='true'], article [aria-busy='true'], .prose [aria-busy='true']"))
+      .some((el) => isVisible(el));
+      
+    return stopVisible || busyVisible;
   }
 
   function readLastAssistantMessage(config) {
