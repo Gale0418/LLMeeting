@@ -136,13 +136,19 @@ export class DebateEngine {
     }
   }
 
+  getLastCompletedRoundData() {
+    for (let i = this.debateRounds - 1; i >= 0; i--) {
+      if (this.activeProviders.every(p => this.state.critiqueRounds[i] && this.state.critiqueRounds[i][p])) {
+        return { data: this.state.critiqueRounds[i], phase: critiquePhase(i + 1), isCritique: true };
+      }
+    }
+    return { data: this.state.answers, phase: "first-round", isCritique: false };
+  }
+
   buildCritiqueJobs(roundNumber = 1) {
     const round = Math.min(this.debateRounds, Math.max(1, normalizeDebateRounds(roundNumber)));
-    if (round === 1) {
-      this.requireComplete(this.state.answers, "first-round");
-    } else {
-      this.requireComplete(this.state.critiqueRounds[round - 2], critiquePhase(round - 1));
-    }
+    const lastCompleted = this.getLastCompletedRoundData();
+    this.requireComplete(lastCompleted.data, lastCompleted.phase);
     const phase = critiquePhase(round);
     this.state.phase = phase;
     this.state.currentCritiqueRound = round;
@@ -152,7 +158,7 @@ export class DebateEngine {
         recipient: provider.id,
         originalQuestion: this.state.originalQuestion,
         answers: this.state.answers,
-        previousCritiques: round > 1 ? this.state.critiqueRounds[round - 2] : undefined,
+        previousCritiques: lastCompleted.data,
         roundNumber: round,
         activeProviders: this.activeProviders,
         interactionStyle: this.interactionStyle,
@@ -175,12 +181,24 @@ export class DebateEngine {
 
   buildUserMessageJobs(text, roundNumber) {
     const round = Math.min(this.debateRounds, Math.max(1, normalizeDebateRounds(roundNumber)));
+    const lastCompleted = this.getLastCompletedRoundData();
     const phase = critiquePhase(round);
     this.state.phase = phase;
     this.state.currentCritiqueRound = round;
 
     return PROVIDERS.filter((p) => this.activeProviders.includes(p.id)).map((provider) => {
-      let prompt = `主人發言/補充：\n${normalizeText(text)}\n\n請直接回應主人的話。`;
+      let prompt = buildInteractionPrompt({
+        recipient: provider.id,
+        originalQuestion: this.state.originalQuestion,
+        answers: this.state.answers,
+        previousCritiques: lastCompleted.data,
+        roundNumber: round,
+        activeProviders: this.activeProviders,
+        interactionStyle: this.interactionStyle,
+      });
+
+      prompt += `\n\n【來自主人的插話 / 補充】\n${normalizeText(text)}\n\n請綜合上述其他 AI 的發言與主人的補充進行回應。`;
+
       if (this.isTheaterMode) {
         const persona = this.customPersonas[provider.id] || getPersonaPrompt(provider.id);
         prompt = persona + "\n\n" + prompt;
