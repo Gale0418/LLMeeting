@@ -172,7 +172,7 @@ async function startChatDebate(question, options = {}) {
     message: "自由群聊開始：各就各位，準備送出第一句話",
     question: trimmedQuestion,
     activeProviders,
-    summaryProvider: options.summaryProvider,
+    summaryProvider: options.summaryProvider || "chatgpt",
     debateRounds: 1,
     currentCritiqueRound: 0,
     entitlements: await getEntitlements(),
@@ -218,7 +218,7 @@ async function startTheaterDebate(question, options = {}) {
     message: "劇場大亂鬥：各就各位，準備送出第一句話",
     question: trimmedQuestion,
     activeProviders,
-    summaryProvider: options.summaryProvider,
+    summaryProvider: options.summaryProvider || "chatgpt",
     debateRounds: 1,
     currentCritiqueRound: 0,
     entitlements: await getEntitlements(),
@@ -418,6 +418,9 @@ async function runDebateRounds(originalQuestion, options = {}) {
 async function handleNextRound(action, text) {
   if (runtimeState.busy) throw new Error("目前忙碌中");
   if (runtimeState.mode !== "chat" && runtimeState.mode !== "theater") throw new Error("只有自由群聊與劇場模式支援此操作");
+  if (!["user_message", "critique", "summarize"].includes(action)) {
+    throw new Error(`未知的操作: ${action}`);
+  }
 
   runtimeState = { ...runtimeState, busy: true, status: "running" };
   await publishState();

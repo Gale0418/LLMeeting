@@ -1,4 +1,4 @@
-import { buildCritiquePrompt, buildFinalSummaryPrompt, buildFirstRoundPrompt, getPersonaPrompt } from "../shared/prompts.js";
+import { buildInteractionPrompt, buildFinalSummaryPrompt, buildFirstRoundPrompt, getPersonaPrompt } from "../shared/prompts.js";
 import {
   DEFAULT_ACTIVE_PROVIDER_IDS,
   PROVIDERS,

@@ -188,10 +188,14 @@ resetButton.addEventListener("click", async () => {
 chatSendBtn?.addEventListener("click", async () => {
   const text = chatInput.value.trim();
   if (!text) return;
-  chatInput.value = "";
   chatControls.style.display = "none";
   const response = await chrome.runtime.sendMessage({ type: "aiDebate:nextRound", action: "user_message", text });
-  if (response?.state) renderState(response.state);
+  if (response?.state) {
+    chatInput.value = "";
+    renderState(response.state);
+  } else {
+    chatControls.style.display = "block";
+  }
 });
 
 chatCritiqueBtn?.addEventListener("click", async () => {
