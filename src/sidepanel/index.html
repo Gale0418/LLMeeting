@@ -155,25 +155,21 @@
               </div>
               <button type="button" id="refreshHooksBtn" style="margin-top: 8px; font-size: 0.75rem; padding: 4px 8px;">重新掃描分頁 🔄</button>
             </details>
-            <!-- 互動模式設定 -->
-            <details id="interactiveModeSettings" style="margin-top: 12px; border-top: 1px solid #e5e7eb; padding-top: 12px;">
-              <summary style="font-weight: 500; font-size: 0.875rem; color: #111827; margin-bottom: 8px; cursor: pointer; outline: none;">💬 互動聊天 (等待主人)</summary>
-              <div style="font-size: 0.75rem; color: #6b7280;">
-                展開此區塊時，自由群聊與劇場大亂鬥在跑完輪次後會停下來等你說話。若收起，則會自動總結並結束。
-              </div>
-            </details>
           </div>
         </details>
 
-        <!-- 群聊控制台 -->
-        <div id="chatControls" class="chat-controls" style="display: none; margin-top: 12px;">
-          <textarea id="chatInput" rows="2" placeholder="主人請發言..." style="width:100%; border-radius:6px; padding:8px; font-family:inherit;"></textarea>
-          <div class="chat-buttons" style="display:flex; gap:8px; margin-top:8px;">
-            <button type="button" id="chatSendBtn" style="flex:1; padding:8px; background:#4f46e5; color:white; border:none; border-radius:6px; cursor:pointer;">送出我的發言</button>
-            <button type="button" id="chatCritiqueBtn" style="flex:1; padding:8px; background:#e5e7eb; color:#374151; border:none; border-radius:6px; cursor:pointer;">讓 AI 互評</button>
-            <button type="button" id="chatSummarizeBtn" style="flex:1; padding:8px; background:#f3f4f6; color:#374151; border:none; border-radius:6px; cursor:pointer;">結案總結</button>
+        <!-- 互動聊天控制台 -->
+        <details id="chatControls" class="chat-controls" style="margin-top: 12px; border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px; background: #f9fafb;">
+          <summary style="font-weight: 600; font-size: 0.875rem; color: #111827; cursor: pointer; outline: none;">💬 互動聊天 (展開以允許對話暫停)</summary>
+          <div style="margin-top: 8px;">
+            <textarea id="chatInput" rows="2" placeholder="使用者補充..." style="width:100%; border-radius:6px; padding:8px; font-family:inherit; border: 1px solid #d1d5db;"></textarea>
+            <div class="chat-buttons" style="display:flex; gap:8px; margin-top:8px;">
+              <button type="button" id="chatSendBtn" style="flex:1; padding:8px; background:#4f46e5; color:white; border:none; border-radius:6px; cursor:pointer;">送出補充</button>
+              <button type="button" id="chatCritiqueBtn" style="flex:1; padding:8px; background:#e5e7eb; color:#374151; border:none; border-radius:6px; cursor:pointer;">讓 AI 互評</button>
+              <button type="button" id="chatSummarizeBtn" style="flex:1; padding:8px; background:#f3f4f6; color:#374151; border:none; border-radius:6px; cursor:pointer;">結案總結</button>
+            </div>
           </div>
-        </div>
+        </details>
 
         <div class="action-row">
           <button id="basicDebateButton" class="primary-action" type="submit">基礎辯論</button>

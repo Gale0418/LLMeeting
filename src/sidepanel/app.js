@@ -157,8 +157,8 @@ async function startDebate(mode) {
     }
   }
 
-  const interactiveModeSettings = document.getElementById("interactiveModeSettings");
-  const interactiveMode = interactiveModeSettings ? interactiveModeSettings.open : false;
+  const chatControls = document.getElementById("chatControls");
+  const interactiveMode = chatControls ? chatControls.open : false;
 
   setActionButtonsDisabled(true);
   renderMessage(startingMessage(mode));
@@ -278,11 +278,15 @@ function renderState(state) {
 
   // 控制 Chat 介面
   if (chatControls) {
-    if (state.phase === "waiting_for_user") {
-      chatControls.style.display = "block";
+    const isWaiting = state.phase === "waiting_for_user";
+    chatInput.disabled = !isWaiting;
+    
+    const chatButtons = document.querySelectorAll(".chat-buttons button");
+    chatButtons.forEach(btn => btn.disabled = !isWaiting);
+
+    if (isWaiting) {
+      chatControls.open = true;
       chatInput.focus();
-    } else {
-      chatControls.style.display = "none";
     }
   }
 
