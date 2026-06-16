@@ -171,12 +171,18 @@ export class DebateEngine {
     });
   }
 
-  addChatRound(userMessage = "") {
-    this.debateRounds += 1;
-    this.state.debateRounds = this.debateRounds;
-    this.state.critiqueRounds.push(emptyProviderMap(this.activeProviders));
-    this.state.userMessages.push(normalizeText(userMessage));
-    return this.debateRounds;
+  addChatRound(userText = null) {
+    if (userText) {
+      this.state.userMessages.push(userText);
+    }
+    const newRoundIndex = this.state.critiqueRounds.length;
+    const newCritiqueRound = emptyProviderMap(this.activeProviders);
+    if (userText) {
+      newCritiqueRound.USER = userText;
+    }
+    this.state.critiqueRounds.push(newCritiqueRound);
+    this.state.debateRounds = this.state.critiqueRounds.length;
+    return this.state.debateRounds;
   }
 
   buildUserMessageJobs(text, roundNumber) {

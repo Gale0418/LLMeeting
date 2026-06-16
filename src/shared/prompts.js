@@ -135,10 +135,15 @@ export function buildFinalSummaryPrompt({
     ? critiqueRounds
     : [critiques || {}];
   const critiqueSections = rounds.map((roundCritiques, index) => {
+    let text = `${zhRoundLabel(index + 2)}互評:\n`;
+    if (roundCritiques.USER) {
+      text += `[人類補充發言]:\n${normalizeText(roundCritiques.USER)}\n\n`;
+    }
     const critiqueBlocks = providersList.map((provider) =>
       formatSpeakerBlock(provider.label, roundCritiques[provider.id] || "[沒有取得互評]", { maxChars }),
     ).join("\n\n");
-    return `${zhRoundLabel(index + 2)}互評:\n${critiqueBlocks}`;
+    text += critiqueBlocks;
+    return text;
   }).join("\n\n");
 
   return [

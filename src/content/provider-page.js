@@ -355,6 +355,7 @@
     const texts = elements
       .filter(isVisible)
       .map((element) => element.innerText || element.textContent || "")
+      .map((text) => text.replace(/(?:\r?\n)?\s*image\s*$/i, ""))
       .map((text) => text.trim())
       .filter((text) => text.length > 0);
 
