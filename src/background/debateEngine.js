@@ -181,8 +181,9 @@ export class DebateEngine {
       newCritiqueRound.USER = userText;
     }
     this.state.critiqueRounds.push(newCritiqueRound);
-    this.state.debateRounds = this.state.critiqueRounds.length;
-    return this.state.debateRounds;
+    this.debateRounds = this.state.critiqueRounds.length;
+    this.state.debateRounds = this.debateRounds;
+    return this.debateRounds;
   }
 
   buildUserMessageJobs(text, roundNumber) {
