@@ -21,6 +21,7 @@ const PROVIDER_TIMEOUT_MS = 240000; // 4分鐘，防話癆
 
 let engine = new DebateEngine();
 let runtimeState = createIdleState();
+let isAborted = false;
 
 chrome.runtime.onInstalled.addListener(() => {
   setSidePanelOpenOnActionClick(chrome);
@@ -47,6 +48,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "aiDebate:start") {
+    isAborted = false;
     const { question, mode = "basic", activeProviders, summaryProvider, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle } = message;
     const startAction = {
       basic: startBasicDebate,
@@ -87,6 +89,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "aiDebate:nextRound") {
+    isAborted = false;
     handleNextRound(message.action, message.text)
       .then((state) => sendResponse({ ok: true, state }))
       .catch(async (error) => {
@@ -101,6 +104,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ ok: false, error: error.message, state: runtimeState });
       });
     return true;
+  }
+
+  if (message.type === "aiDebate:stop") {
+    if (runtimeState.busy) {
+      isAborted = true;
+      runtimeState = {
+        ...runtimeState,
+        busy: false,
+        status: "idle",
+        phase: "idle",
+        message: "已緊急暫停",
+        errors: [...runtimeState.errors, { message: "使用者手動取消操作" }],
+      };
+      publishState();
+    }
+    sendResponse({ ok: true, state: runtimeState });
+    return false;
   }
 
   return false;
@@ -599,6 +619,7 @@ async function handleNextRound(action, text) {
 
 async function runSequentialProviderJobs(jobs, target) {
   for (const job of jobs) {
+    if (isAborted) throw new Error("已緊急暫停");
     const result = await sendJob(job);
     recordProviderResult(result, target);
     runtimeState = {
@@ -612,6 +633,7 @@ async function runSequentialProviderJobs(jobs, target) {
 async function runFastProviderJobs(jobs, target) {
   const submittedJobs = [];
   for (const job of jobs) {
+    if (isAborted) throw new Error("已緊急暫停");
     const submitted = await submitProviderJob(job);
     if (submitted.ok) {
       submittedJobs.push(submitted);
@@ -626,6 +648,7 @@ async function runFastProviderJobs(jobs, target) {
   }
 
   for (const submitted of submittedJobs) {
+    if (isAborted) throw new Error("已緊急暫停");
     const result = await collectProviderJob(submitted);
     recordProviderResult(result, target);
     runtimeState = {
@@ -804,6 +827,8 @@ async function sendJob(job) {
       url: tab.url || tab.pendingUrl || "",
     });
     await publishState();
+
+    if (isAborted) throw new Error("已緊急暫停");
 
     const response = await sendProviderMessage(tab.id, job);
     if (!response?.ok) {

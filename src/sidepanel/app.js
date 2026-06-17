@@ -217,6 +217,15 @@ chatSummarizeBtn?.addEventListener("click", async () => {
   if (response?.state) renderState(response.state);
 });
 
+const stopDebateBtn = document.getElementById("stopDebateBtn");
+
+stopDebateBtn?.addEventListener("click", async () => {
+  stopDebateBtn.disabled = true;
+  stopDebateBtn.textContent = "暫停中...";
+  const response = await chrome.runtime.sendMessage({ type: "aiDebate:stop" });
+  if (response?.state) renderState(response.state);
+});
+
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === "aiDebate:stateChanged") {
     renderState(message.state);
@@ -246,6 +255,17 @@ function renderState(state) {
 
   latestState = state;
   currentEntitlements = state.entitlements || entitlementsForPlan();
+  
+  if (stopDebateBtn) {
+    if (state.busy) {
+      stopDebateBtn.style.display = "block";
+      stopDebateBtn.disabled = false;
+      stopDebateBtn.textContent = "緊急暫停 🛑";
+    } else {
+      stopDebateBtn.style.display = "none";
+    }
+  }
+
   setActionButtonsDisabled(Boolean(state.busy));
   renderEntitlementState();
   statusText.textContent = state.message || state.status || "等待開始";
