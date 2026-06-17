@@ -49,7 +49,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === "aiDebate:start") {
     isAborted = false;
-    const { question, mode = "basic", activeProviders, summaryProvider, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle } = message;
+    const { question, mode = "basic", activeProviders, summaryProvider, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode } = message;
     const startAction = {
       basic: startBasicDebate,
       fast: startFastDebate,
@@ -63,7 +63,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return false;
     }
 
-    startAction(question, { activeProviders, summaryProvider, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle })
+    startAction(question, { activeProviders, summaryProvider, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode })
       .then((state) => sendResponse({ ok: true, state }))
       .catch(async (error) => {
         const isProRequired = error.code === "PRO_REQUIRED";
@@ -472,7 +472,7 @@ async function startSummaryDebate(userNote, options = {}) {
   };
   await publishState();
 
-  return runDebateRounds(sourceResult.content, { scheduler: "fast" });
+  return runDebateRounds(sourceResult.content, { scheduler: "fast", interactiveMode: options.interactiveMode });
 }
 
 async function runDebateRounds(originalQuestion, options = {}) {
@@ -502,6 +502,19 @@ async function runDebateRounds(originalQuestion, options = {}) {
     };
     await publishState();
     await runProviderJobs(critiqueJobs, "critique");
+  }
+
+  if (options.interactiveMode) {
+    runtimeState = {
+      ...runtimeState,
+      busy: false,
+      status: "waiting_for_user",
+      phase: "waiting_for_user",
+      message: "等待主人發言或選擇下一步...",
+      transcript: engine.snapshot(),
+    };
+    await publishState();
+    return runtimeState;
   }
 
   if (runtimeState.skipSummary) {
@@ -547,7 +560,7 @@ async function runDebateRounds(originalQuestion, options = {}) {
 
 async function handleNextRound(action, text) {
   if (runtimeState.busy) throw new Error("目前忙碌中");
-  if (runtimeState.mode !== "chat" && runtimeState.mode !== "theater") throw new Error("只有自由群聊與劇場模式支援此操作");
+  if (runtimeState.mode !== "chat" && runtimeState.mode !== "theater" && runtimeState.mode !== "summary") throw new Error("只有自由群聊、劇場模式與總結辯論支援此操作");
   if (!["user_message", "critique", "summarize"].includes(action)) {
     throw new Error(`未知的操作: ${action}`);
   }

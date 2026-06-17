@@ -158,7 +158,7 @@ async function startDebate(mode) {
   }
 
   const chatControls = document.getElementById("chatControls");
-  const interactiveMode = chatControls ? chatControls.open : false;
+  const interactiveMode = chatControls && chatControls.style.display !== "none" ? chatControls.open : false;
 
   setActionButtonsDisabled(true);
   renderMessage(startingMessage(mode));
@@ -670,6 +670,10 @@ function renderDebateModeState() {
 
   if (theaterSettings) {
     theaterSettings.style.display = mode === "theater" ? "block" : "none";
+  }
+  
+  if (chatControls) {
+    chatControls.style.display = (mode === "basic" || mode === "fast") ? "none" : "block";
   }
 }
 
