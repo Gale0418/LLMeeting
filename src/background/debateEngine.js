@@ -26,7 +26,11 @@ function critiquePhase(roundNumber) {
 
 function critiqueRoundFromPhase(phase) {
   const match = String(phase || "").match(/^critique(?:-(\d+))?$/);
-  return match ? normalizeDebateRounds(match[1] || 1) : 0;
+  if (!match) {
+    return 0;
+  }
+  const round = Number.parseInt(match[1] || 1, 10);
+  return Number.isInteger(round) && round > 0 ? round : 0;
 }
 
 export function normalizeDebateRounds(value = 1) {
@@ -36,6 +40,34 @@ export function normalizeDebateRounds(value = 1) {
   }
 
   return Math.min(5, Math.max(1, parsed));
+}
+
+function parseExistingRound(value, roundCount) {
+  const round = Number.parseInt(value, 10);
+  if (!Number.isInteger(round) || round < 1 || round > roundCount) {
+    throw new Error(`Unknown critique round: ${value}`);
+  }
+  return round;
+}
+
+function createEngineState(engine, overrides = {}) {
+  const critiqueRounds = emptyCritiqueRounds(engine.activeProviders, engine.debateRounds);
+  return {
+    phase: "idle",
+    originalQuestion: "",
+    activeProviders: [...engine.activeProviders],
+    summaryProvider: engine.summaryProvider,
+    interactionStyle: engine.interactionStyle,
+    isTheaterMode: engine.isTheaterMode,
+    customPersonas: { ...engine.customPersonas },
+    debateRounds: engine.debateRounds,
+    currentCritiqueRound: 0,
+    answers: emptyProviderMap(engine.activeProviders),
+    critiques: critiqueRounds[0],
+    critiqueRounds,
+    errors: [],
+    ...overrides,
+  };
 }
 
 export class DebateEngine {
@@ -55,38 +87,46 @@ export class DebateEngine {
     this.isTheaterMode = options.isTheaterMode || false;
     this.customPersonas = options.customPersonas || {};
     this.interactionStyle = options.interactionStyle || "critique";
-    
-    const critiqueRounds = emptyCritiqueRounds(this.activeProviders, this.debateRounds);
-    this.state = {
-      phase: "idle",
-      originalQuestion: "",
-      debateRounds: this.debateRounds,
-      currentCritiqueRound: 0,
-      answers: emptyProviderMap(this.activeProviders),
-      critiques: critiqueRounds[0],
-      critiqueRounds,
-      errors: [],
-      userMessages: [],
+    this.state = createEngineState(this);
+  }
+
+  static restore(snapshot) {
+    const state = JSON.parse(JSON.stringify(snapshot || {}));
+    if (!Array.isArray(state.activeProviders) || !Array.isArray(state.critiqueRounds)) {
+      throw new Error("Invalid debate snapshot");
+    }
+
+    const engine = new DebateEngine(
+      state.activeProviders,
+      state.summaryProvider,
+      normalizeDebateRounds(state.debateRounds),
+      {
+        interactionStyle: state.interactionStyle,
+        isTheaterMode: state.isTheaterMode,
+        customPersonas: state.customPersonas,
+      },
+    );
+    engine.debateRounds = state.critiqueRounds.length;
+    engine.state = {
+      ...state,
+      activeProviders: [...engine.activeProviders],
+      summaryProvider: engine.summaryProvider,
+      interactionStyle: engine.interactionStyle,
+      isTheaterMode: engine.isTheaterMode,
+      customPersonas: { ...engine.customPersonas },
+      debateRounds: engine.debateRounds,
+      critiques: state.critiqueRounds[0] || emptyProviderMap(engine.activeProviders),
     };
+    return engine;
   }
 
   start(originalQuestion) {
     const question = normalizeText(originalQuestion);
-    const critiqueRounds = emptyCritiqueRounds(this.activeProviders, this.debateRounds);
-    this.state = {
+    this.state = createEngineState(this, {
       phase: "first-round",
       originalQuestion: question,
-      debateRounds: this.debateRounds,
-      currentCritiqueRound: 0,
-      answers: emptyProviderMap(this.activeProviders),
-      critiques: critiqueRounds[0],
-      critiqueRounds,
-      errors: [],
-      userMessages: [],
-    };
-    this.state.originalQuestion = normalizeText(question);
-    this.state.phase = "first-round";
-    this.state.status = "running";
+      status: "running",
+    });
 
     // Imposter logic
     if (this.interactionStyle === "imposter") {
@@ -116,7 +156,7 @@ export class DebateEngine {
 
   recordCritique(providerId, content, roundNumber = this.state.currentCritiqueRound || 1) {
     this.assertKnownProvider(providerId);
-    const round = Math.min(this.debateRounds, Math.max(1, normalizeDebateRounds(roundNumber)));
+    const round = parseExistingRound(roundNumber, this.state.critiqueRounds.length);
     this.state.critiqueRounds[round - 1][providerId] = normalizeText(content);
     this.state.critiques = this.state.critiqueRounds[0];
   }
@@ -146,7 +186,7 @@ export class DebateEngine {
   }
 
   buildCritiqueJobs(roundNumber = 1) {
-    const round = Math.min(this.debateRounds, Math.max(1, normalizeDebateRounds(roundNumber)));
+    const round = parseExistingRound(roundNumber, this.state.critiqueRounds.length);
     const lastCompleted = this.getLastCompletedRoundData();
     this.requireComplete(lastCompleted.data, lastCompleted.phase);
     const phase = critiquePhase(round);
@@ -172,13 +212,10 @@ export class DebateEngine {
   }
 
   addChatRound(userText = null) {
-    if (userText) {
-      this.state.userMessages.push(userText);
-    }
-    const newRoundIndex = this.state.critiqueRounds.length;
     const newCritiqueRound = emptyProviderMap(this.activeProviders);
-    if (userText) {
-      newCritiqueRound.USER = userText;
+    const normalizedUserText = normalizeText(userText);
+    if (normalizedUserText) {
+      newCritiqueRound.USER = normalizedUserText;
     }
     this.state.critiqueRounds.push(newCritiqueRound);
     this.debateRounds = this.state.critiqueRounds.length;
@@ -187,7 +224,7 @@ export class DebateEngine {
   }
 
   buildUserMessageJobs(text, roundNumber) {
-    const round = Math.min(this.debateRounds, Math.max(1, normalizeDebateRounds(roundNumber)));
+    const round = parseExistingRound(roundNumber, this.state.critiqueRounds.length);
     const lastCompleted = this.getLastCompletedRoundData();
     const phase = critiquePhase(round);
     this.state.phase = phase;

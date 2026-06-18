@@ -96,6 +96,59 @@ test("debate round count is clamped to the supported one through five range", ()
   assert.equal(normalizeDebateRounds(99), 5);
 });
 
+test("engine restores an interactive session and builds the next round", () => {
+  const original = new DebateEngine(
+    ["chatgpt", "gemini"],
+    "gemini",
+    1,
+    { interactionStyle: "casual" },
+  );
+  original.start("恢復測試");
+  original.recordAnswer("chatgpt", "GPT 答案");
+  original.recordAnswer("gemini", "Gemini 答案");
+  original.buildCritiqueJobs(1);
+  original.recordCritique("chatgpt", "GPT 互動", 1);
+  original.recordCritique("gemini", "Gemini 互動", 1);
+
+  const restored = DebateEngine.restore(original.snapshot());
+  const round = restored.addChatRound("主人補充");
+  const jobs = restored.buildUserMessageJobs("主人補充", round);
+
+  assert.equal(restored.summaryProvider, "gemini");
+  assert.equal(jobs[0].round, 2);
+  assert.match(jobs[0].prompt, /主人補充/);
+  assert.equal(restored.snapshot().critiqueRounds[1].USER, "主人補充");
+});
+
+test("interactive rounds can continue beyond the configured five-round limit", () => {
+  const providers = ["chatgpt", "gemini"];
+  const engine = new DebateEngine(providers, "chatgpt", 5);
+  engine.start("第六輪測試");
+  providers.forEach((id) => engine.recordAnswer(id, `${id} answer`));
+  for (let round = 1; round <= 5; round += 1) {
+    engine.buildCritiqueJobs(round);
+    providers.forEach((id) => engine.recordCritique(id, `${id} round ${round}`, round));
+  }
+
+  const sixthRound = engine.addChatRound("第六輪插話");
+  const jobs = engine.buildUserMessageJobs("第六輪插話", sixthRound);
+  jobs.forEach((job) => engine.recordCritique(job.provider, "sixth", job.round));
+
+  assert.equal(sixthRound, 6);
+  assert.deepEqual([...new Set(jobs.map((job) => job.round))], [6]);
+  assert.doesNotThrow(() => engine.buildFinalJob());
+});
+
+test("engine rejects a critique write outside the existing round range", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"]);
+  engine.start("跳輪測試");
+
+  assert.throws(
+    () => engine.recordCritique("chatgpt", "bad", 2),
+    /Unknown critique round: 2/,
+  );
+});
+
 test("engine records provider errors without blocking the next phase", () => {
   const engine = new DebateEngine();
   engine.start("天為什麼是藍的？");
