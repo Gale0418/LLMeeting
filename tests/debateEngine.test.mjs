@@ -83,7 +83,7 @@ test("engine can run multiple critique rounds before the final summary", () => {
   assert.equal(snapshot.critiqueRounds.length, 2);
   assert.equal(firstCritiqueJobs[0].round, 1);
   assert.equal(secondCritiqueJobs[0].phase, "critique-2");
-  assert.match(secondCritiqueJobs.find((item) => item.provider === "chatgpt").prompt, /上一輪互評/);
+  assert.match(secondCritiqueJobs.find((item) => item.provider === "chatgpt").prompt, /上一輪對話/);
   assert.match(job.prompt, /第二輪互評:/);
   assert.match(job.prompt, /第三輪互評:/);
   assert.match(job.prompt, /我補上瑞利散射。/);

@@ -26,7 +26,7 @@ test("service worker forwards selected debate round count into the engine", asyn
 
   assert.match(script, /debateRounds/);
   assert.match(script, /normalizeDebateRounds/);
-  assert.match(script, /new DebateEngine\(activeProviders, summaryProvider, debateRounds\)/);
+  assert.match(script, /new DebateEngine\(activeProviders, summaryProvider, debateRounds, \{/);
   assert.match(script, /for \(let roundNumber = 1; roundNumber <= engine\.debateRounds; roundNumber \+= 1\)/);
 });
 

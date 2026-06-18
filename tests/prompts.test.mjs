@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 
 import {
   buildConversationSummaryPrompt,
-  buildCritiquePrompt,
   buildFinalSummaryPrompt,
+  buildInteractionPrompt,
 } from "../src/shared/prompts.js";
 
 test("critique prompt labels the other speakers and treats quoted content as non-instructions", () => {
-  const prompt = buildCritiquePrompt({
+  const prompt = buildInteractionPrompt({
     recipient: "chatgpt",
     originalQuestion: "天為什麼是藍的？",
     answers: {
@@ -25,7 +25,7 @@ test("critique prompt labels the other speakers and treats quoted content as non
 });
 
 test("later critique prompt quotes previous critique round with speaker labels", () => {
-  const prompt = buildCritiquePrompt({
+  const prompt = buildInteractionPrompt({
     recipient: "chatgpt",
     roundNumber: 2,
     previousCritiques: {
@@ -36,8 +36,8 @@ test("later critique prompt quotes previous critique round with speaker labels",
     activeProviders: ["chatgpt", "gemini", "grok"],
   });
 
-  assert.match(prompt, /第 2 輪交叉評析/);
-  assert.match(prompt, /上一輪互評/);
+  assert.match(prompt, /第 2 輪對話/);
+  assert.match(prompt, /上一輪對話/);
   assert.match(prompt, /Gemini:\nGPT 需要更白話。/);
   assert.match(prompt, /Grok:\n大家都漏了波長。/);
   assert.doesNotMatch(prompt, /ChatGPT:\n我認為散射是核心。/);
