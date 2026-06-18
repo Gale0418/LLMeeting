@@ -5,6 +5,7 @@
   globalThis.__aiDebateContentLoaded = true;
   const {
     assistantSnapshot,
+    ensurePromptSubmitted,
     formatStageError,
     hasFreshAssistantResponse,
     isPromptEcho,
@@ -50,10 +51,10 @@
         "[role='textbox']",
       ],
       sendSelectors: [
-        "button[type='submit']",
+        "button.send-button",
         "button[aria-label*='Send']",
         "button[aria-label*='送出']",
-        "button.send-button",
+        "button[type='submit']",
       ],
       stopSelectors: [
         "button[aria-label*='Stop']",
@@ -67,6 +68,12 @@
         "[data-response-index]",
         "response-container",
         "div[data-message-author='model']"
+      ],
+      userMessageSelectors: [
+        "user-query",
+        ".user-query-container",
+        "[data-message-author='user']",
+        "[data-author='user']",
       ],
     },
     grok: {
@@ -161,8 +168,23 @@
       await writeInput(input, message.prompt);
 
       stage = "送出提示";
-      const sendButton = await waitForOptional(() => findSendButton(config), 3000);
-      if (sendButton) {
+      const sendButton = await waitForOptional(
+        () => providerId === "gemini" ? findSendButton(config, input) : findSendButton(config),
+        3000,
+      );
+      let submission = { method: sendButton ? "button" : "enter", evidence: "not-required", retried: false };
+      if (providerId === "gemini") {
+        const userMessageCount = countUserMessages(config);
+        submission = await ensurePromptSubmitted({
+          clickButton: () => {
+            if (!sendButton) return false;
+            sendButton.click();
+            return true;
+          },
+          pressEnter: () => dispatchEnter(input),
+          confirmSubmission: () => observeGeminiSubmission(config, input, userMessageCount),
+        });
+      } else if (sendButton) {
         sendButton.click();
       } else {
         dispatchEnter(input);
@@ -177,7 +199,7 @@
         submittedAt: Date.now(),
       });
 
-      return { ok: true, provider: providerId, runId };
+      return { ok: true, provider: providerId, runId, submission };
     } catch (error) {
       throw new Error(formatStageError(stage, error));
     }
@@ -245,13 +267,32 @@
       }) || null;
   }
 
-  function findSendButton(config) {
-    const candidates = collectElements(config.sendSelectors)
-      .filter((element) => element instanceof HTMLButtonElement || element.getAttribute("role") === "button")
-      .filter(isVisible)
-      .filter((button) => !button.disabled && button.getAttribute("aria-disabled") !== "true");
+  function findSendButton(config, input) {
+    if (input) {
+      let ancestor = input.parentElement;
+      while (ancestor && ancestor !== document.documentElement) {
+        const nearbyButton = findConfiguredSendButton(ancestor, config);
+        if (nearbyButton) {
+          return nearbyButton;
+        }
+        ancestor = ancestor.parentElement;
+      }
+    }
 
-    return candidates[0] || findLikelySendButton();
+    return findConfiguredSendButton(document, config) || findLikelySendButton();
+  }
+
+  function findConfiguredSendButton(root, config) {
+    for (const selector of config.sendSelectors) {
+      const button = Array.from(root.querySelectorAll(selector))
+        .filter((element) => element instanceof HTMLButtonElement || element.getAttribute("role") === "button")
+        .filter(isVisible)
+        .find((element) => !element.disabled && element.getAttribute("aria-disabled") !== "true");
+      if (button) {
+        return button;
+      }
+    }
+    return null;
   }
 
   function findLikelySendButton() {
@@ -349,6 +390,34 @@
 
   function readLastAssistantMessage(config, providerId) {
     return readAssistantSnapshot(config, providerId).lastText;
+  }
+
+  async function observeGeminiSubmission(config, input, initialUserMessageCount, timeoutMs = 4000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (!readInputText(input)) {
+        return "input-cleared";
+      }
+      if (isGenerating(config)) {
+        return "generation-started";
+      }
+      if (countUserMessages(config) > initialUserMessageCount) {
+        return "user-message-added";
+      }
+      await delay(100);
+    }
+    return null;
+  }
+
+  function readInputText(input) {
+    if (input instanceof HTMLTextAreaElement || input instanceof HTMLInputElement) {
+      return input.value.trim();
+    }
+    return String(input.innerText || input.textContent || "").trim();
+  }
+
+  function countUserMessages(config) {
+    return collectElements(config.userMessageSelectors).filter(isVisible).length;
   }
 
   function readAssistantSnapshot(config, providerId) {

@@ -32,8 +32,33 @@
     return value.replace(/(?:^|\r?\n)[ \t]*image[ \t]*$/i, "").trimEnd();
   }
 
+  async function ensurePromptSubmitted({ clickButton, pressEnter, confirmSubmission }) {
+    const clicked = Boolean(await clickButton());
+    let method = clicked ? "button" : "enter";
+    if (!clicked) {
+      await pressEnter();
+    }
+
+    let evidence = await confirmSubmission();
+    if (evidence) {
+      return { method, evidence, retried: false };
+    }
+
+    if (clicked) {
+      await pressEnter();
+      method = "enter";
+      evidence = await confirmSubmission();
+      if (evidence) {
+        return { method, evidence, retried: true };
+      }
+    }
+
+    throw new Error("Gemini 未確認送出");
+  }
+
   globalThis.aiDebateAutomationCore = {
     assistantSnapshot,
+    ensurePromptSubmitted,
     formatStageError,
     hasFreshAssistantResponse,
     isPromptEcho,

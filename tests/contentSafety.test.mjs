@@ -37,3 +37,13 @@ test("content script does not accept the submitted prompt bubble as an AI respon
   assert.match(script, /baseline,\s+prompt: message\.prompt/);
   assert.match(script, /waitForCompletion\(config, providerId, message\.timeoutMs \|\| 120000, run\.baseline, run\.prompt\)/);
 });
+
+test("Gemini confirms submission before registering the run", async () => {
+  const script = await readFile("src/content/provider-page.js", "utf8");
+
+  assert.match(script, /ensurePromptSubmitted/);
+  assert.match(script, /observeGeminiSubmission/);
+  assert.match(script, /findSendButton\(config, input\)/);
+  assert.ok(script.indexOf("ensurePromptSubmitted({") < script.indexOf("submittedRuns.set(runId"));
+  assert.match(script, /gemini:[\s\S]*?sendSelectors:\s*\[\s*"button\.send-button"[\s\S]*?"button\[type='submit'\]"/);
+});

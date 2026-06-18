@@ -6,6 +6,7 @@ await import("../src/content/automation-core.js");
 
 const {
   assistantSnapshot,
+  ensurePromptSubmitted,
   formatStageError,
   hasFreshAssistantResponse,
   isPromptEcho,
@@ -56,6 +57,42 @@ test("Gemini response removes only a final standalone image artifact", () => {
 
 test("other providers preserve a final image line", () => {
   assert.equal(normalizeProviderResponse("chatgpt", "分析完成\nimage"), "分析完成\nimage");
+});
+
+test("confirmed Gemini button submission does not press Enter", async () => {
+  let enterCount = 0;
+  const result = await ensurePromptSubmitted({
+    clickButton: () => true,
+    pressEnter: () => { enterCount += 1; },
+    confirmSubmission: async () => "input-cleared",
+  });
+
+  assert.deepEqual(result, { method: "button", evidence: "input-cleared", retried: false });
+  assert.equal(enterCount, 0);
+});
+
+test("unconfirmed Gemini click retries once with Enter", async () => {
+  let enterCount = 0;
+  const evidence = [null, "generation-started"];
+  const result = await ensurePromptSubmitted({
+    clickButton: () => true,
+    pressEnter: () => { enterCount += 1; },
+    confirmSubmission: async () => evidence.shift(),
+  });
+
+  assert.deepEqual(result, { method: "enter", evidence: "generation-started", retried: true });
+  assert.equal(enterCount, 1);
+});
+
+test("unconfirmed Gemini submission fails after one fallback", async () => {
+  await assert.rejects(
+    ensurePromptSubmitted({
+      clickButton: () => true,
+      pressEnter: () => {},
+      confirmSubmission: async () => null,
+    }),
+    /Gemini 未確認送出/,
+  );
 });
 
 test("provider page automation can submit first and read the reply later", async () => {
