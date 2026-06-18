@@ -19,6 +19,8 @@ test("free basic debate uses sequential provider jobs while pro workflows are ga
   assert.match(script, /runSequentialProviderJobs/);
   assert.match(script, /requireProFeature\("fastDebate"\)/);
   assert.match(script, /requireProFeature\("summaryDebate"\)/);
+  assert.match(script, /async function startChatDebate\([^)]*\) \{\s+await requireProFeature\("chatMode"\)/);
+  assert.match(script, /async function startTheaterDebate\([^)]*\) \{\s+await requireProFeature\("chatMode"\)/);
 });
 
 test("service worker forwards selected debate round count into the engine", async () => {

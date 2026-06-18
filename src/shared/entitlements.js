@@ -6,6 +6,7 @@ const FEATURE_LABELS = {
   basicDebate: "基礎辯論",
   fastDebate: "快速鬥技場",
   summaryDebate: "總結辯論",
+  chatMode: "自由群聊與劇場模式",
   history: "歷史紀錄",
   export: "匯出",
 };
@@ -15,6 +16,7 @@ const PLAN_FEATURES = {
     basicDebate: true,
     fastDebate: false,
     summaryDebate: false,
+    chatMode: false,
     history: false,
     export: false,
   },
@@ -22,6 +24,7 @@ const PLAN_FEATURES = {
     basicDebate: true,
     fastDebate: true,
     summaryDebate: true,
+    chatMode: true,
     history: true,
     export: true,
   },

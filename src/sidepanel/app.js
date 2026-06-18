@@ -361,6 +361,8 @@ function featureForMode(mode) {
   return {
     fast: "fastDebate",
     summary: "summaryDebate",
+    chat: "chatMode",
+    theater: "chatMode",
   }[mode] || "";
 }
 

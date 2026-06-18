@@ -175,6 +175,7 @@ async function startFastDebate(question, options = {}) {
 }
 
 async function startChatDebate(question, options = {}) {
+  await requireProFeature("chatMode");
   const trimmedQuestion = String(question || "").trim();
   if (!trimmedQuestion) throw new Error("請先輸入問題");
   if (runtimeState.busy) throw new Error("目前已有辯論正在進行");
@@ -274,6 +275,7 @@ async function startChatDebate(question, options = {}) {
 }
 
 async function startTheaterDebate(question, options = {}) {
+  await requireProFeature("chatMode");
   const trimmedQuestion = String(question || "").trim();
   if (!trimmedQuestion) throw new Error("請先輸入問題");
   if (runtimeState.busy) throw new Error("目前已有辯論正在進行");

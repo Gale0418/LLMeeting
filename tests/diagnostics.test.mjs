@@ -62,6 +62,8 @@ test("side panel exposes one main debate button and advanced mutually exclusive 
   assert.match(app, /selectedDebateRounds/);
   assert.match(app, /debateRounds/);
   assert.match(app, /featureForMode/);
+  assert.match(app, /chat: "chatMode"/);
+  assert.match(app, /theater: "chatMode"/);
   assert.match(app, /renderDebateModeState/);
   assert.match(app, /renderEntitlementState/);
 });
