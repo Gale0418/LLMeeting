@@ -19,8 +19,8 @@ test("free basic debate uses sequential provider jobs while pro workflows are ga
   assert.match(script, /runSequentialProviderJobs/);
   assert.match(script, /requireProFeature\("fastDebate"\)/);
   assert.match(script, /requireProFeature\("summaryDebate"\)/);
-  assert.match(script, /async function startChatDebate\([^)]*\) \{\s+await requireProFeature\("chatMode"\)/);
-  assert.match(script, /async function startTheaterDebate\([^)]*\) \{\s+await requireProFeature\("chatMode"\)/);
+  assert.match(script, /async function startChatDebate\([^)]*\) \{[\s\S]*?requireProFeature\("chatMode"\)/);
+  assert.match(script, /async function startTheaterDebate\([^)]*\) \{[\s\S]*?requireProFeature\("chatMode"\)/);
 });
 
 test("service worker forwards selected debate round count into the engine", async () => {
@@ -52,4 +52,21 @@ test("runtime state refreshes entitlements even after a completed debate", async
 
   assert.doesNotMatch(script, /if \(runtimeState\.status !== "idle" \|\| runtimeState\.busy\) \{\s+return runtimeState;\s+\}/);
   assert.match(script, /entitlements: await getEntitlements\(\)/);
+});
+
+test("service worker restores stored state once before handling messages", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  assert.match(script, /recoverSession/);
+  assert.match(script, /ensureRuntimeInitialized/);
+  assert.match(script, /initializationPromise/);
+});
+
+test("run tokens replace the process-local abort flag", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  assert.match(script, /new RunController\(\)/);
+  assert.match(script, /runController\.assertCurrent\(runToken\)/);
+  assert.match(script, /isRunCancelledError/);
+  assert.doesNotMatch(script, /\bisAborted\b/);
 });

@@ -1,6 +1,8 @@
 import { DebateEngine, normalizeDebateRounds } from "./debateEngine.js";
 import { isProviderTabReady, setSidePanelOpenOnActionClick } from "./chromeCompat.js";
 import { createProviderDiagnostics, updateProviderDiagnostic } from "./diagnostics.js";
+import { RunController, isRunCancelledError } from "./runController.js";
+import { recoverSession } from "./sessionRecovery.js";
 import {
   canUseFeature,
   ENTITLEMENT_STORAGE_KEY,
@@ -21,7 +23,8 @@ const PROVIDER_TIMEOUT_MS = 240000; // 4分鐘，防話癆
 
 let engine = new DebateEngine();
 let runtimeState = createIdleState();
-let isAborted = false;
+const runController = new RunController();
+let initializationPromise;
 
 chrome.runtime.onInstalled.addListener(() => {
   setSidePanelOpenOnActionClick(chrome);
@@ -33,22 +36,27 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "aiDebate:getState") {
-    getRuntimeState()
+    ensureRuntimeInitialized()
+      .then(() => getRuntimeState())
       .then((state) => sendResponse({ ok: true, state }))
       .catch((error) => sendResponse({ ok: false, error: error.message, state: runtimeState }));
     return true;
   }
 
   if (message.type === "aiDebate:reset") {
-    engine = new DebateEngine();
-    runtimeState = createIdleState();
-    publishState();
-    sendResponse({ ok: true, state: runtimeState });
-    return false;
+    ensureRuntimeInitialized()
+      .then(async () => {
+        runController.cancel();
+        engine = new DebateEngine();
+        runtimeState = createIdleState();
+        await publishState();
+        sendResponse({ ok: true, state: runtimeState });
+      })
+      .catch((error) => sendResponse({ ok: false, error: error.message, state: runtimeState }));
+    return true;
   }
 
   if (message.type === "aiDebate:start") {
-    isAborted = false;
     const { question, mode = "basic", activeProviders, summaryProvider, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode } = message;
     const startAction = {
       basic: startBasicDebate,
@@ -63,10 +71,33 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return false;
     }
 
-    startAction(question, { activeProviders, summaryProvider, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode })
+    let runToken;
+    ensureRuntimeInitialized()
+      .then(() => {
+        if (runtimeState.busy) {
+          throw new Error("目前已有辯論正在進行");
+        }
+        runToken = runController.start();
+        return startAction(question, { activeProviders, summaryProvider, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode, runToken });
+      })
       .then((state) => sendResponse({ ok: true, state }))
       .catch(async (error) => {
+        if (!runToken) {
+          sendResponse({ ok: false, code: error.code || "ERROR", error: error.message, state: runtimeState });
+          return;
+        }
+        if (isRunCancelledError(error) || (runToken && !runController.isCurrent(runToken))) {
+          sendResponse({ ok: false, code: "RUN_CANCELLED", error: "已緊急暫停", state: runtimeState });
+          return;
+        }
+
         const isProRequired = error.code === "PRO_REQUIRED";
+        const entitlements = await getEntitlements();
+        if (runToken && !runController.isCurrent(runToken)) {
+          sendResponse({ ok: false, code: "RUN_CANCELLED", error: "已緊急暫停", state: runtimeState });
+          return;
+        }
+        runController.cancel();
         runtimeState = {
           ...runtimeState,
           busy: false,
@@ -74,7 +105,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           phase: isProRequired ? runtimeState.phase : "done",
           message: error.message,
           errors: isProRequired ? runtimeState.errors : [...runtimeState.errors, { message: error.message }],
-          entitlements: await getEntitlements(),
+          entitlements,
         };
         await publishState();
         sendResponse({
@@ -89,10 +120,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "aiDebate:nextRound") {
-    isAborted = false;
-    handleNextRound(message.action, message.text)
+    let runToken;
+    ensureRuntimeInitialized()
+      .then(() => {
+        if (runtimeState.busy) {
+          throw new Error("目前忙碌中");
+        }
+        runToken = runController.start();
+        return handleNextRound(message.action, message.text, runToken);
+      })
       .then((state) => sendResponse({ ok: true, state }))
       .catch(async (error) => {
+        if (!runToken) {
+          sendResponse({ ok: false, code: error.code || "ERROR", error: error.message, state: runtimeState });
+          return;
+        }
+        if (isRunCancelledError(error) || (runToken && !runController.isCurrent(runToken))) {
+          sendResponse({ ok: false, code: "RUN_CANCELLED", error: "已緊急暫停", state: runtimeState });
+          return;
+        }
+        runController.cancel();
         runtimeState = {
           ...runtimeState,
           busy: false,
@@ -107,20 +154,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "aiDebate:stop") {
-    if (runtimeState.busy) {
-      isAborted = true;
-      runtimeState = {
-        ...runtimeState,
-        busy: false,
-        status: "idle",
-        phase: "idle",
-        message: "已緊急暫停",
-        errors: [...runtimeState.errors, { message: "使用者手動取消操作" }],
-      };
-      publishState();
-    }
-    sendResponse({ ok: true, state: runtimeState });
-    return false;
+    ensureRuntimeInitialized()
+      .then(async () => {
+        runController.cancel();
+        if (runtimeState.busy) {
+          runtimeState = {
+            ...runtimeState,
+            busy: false,
+            status: "idle",
+            phase: "idle",
+            message: "已緊急暫停",
+            errors: [...runtimeState.errors, { message: "使用者手動取消操作" }],
+          };
+          await publishState();
+        }
+        sendResponse({ ok: true, state: runtimeState });
+      })
+      .catch((error) => sendResponse({ ok: false, error: error.message, state: runtimeState }));
+    return true;
   }
 
   return false;
@@ -164,6 +215,7 @@ async function startBasicDebate(question, options = {}) {
 
 async function startFastDebate(question, options = {}) {
   await requireProFeature("fastDebate");
+  runController.assertCurrent(options.runToken);
   return startQuestionDebate(question, {
     ...options,
     mode: "fast",
@@ -175,13 +227,17 @@ async function startFastDebate(question, options = {}) {
 }
 
 async function startChatDebate(question, options = {}) {
+  const runToken = options.runToken;
   await requireProFeature("chatMode");
+  runController.assertCurrent(runToken);
   const trimmedQuestion = String(question || "").trim();
   if (!trimmedQuestion) throw new Error("請先輸入問題");
   if (runtimeState.busy) throw new Error("目前已有辯論正在進行");
 
   const activeProviders = normalizeProviderIds(options.activeProviders);
   const debateRounds = normalizeDebateRounds(options.debateRounds);
+  const entitlements = await getEntitlements();
+  runController.assertCurrent(runToken);
   engine = new DebateEngine(activeProviders, options.summaryProvider, debateRounds, {
     interactionStyle: options.interactionStyle,
   });
@@ -197,16 +253,16 @@ async function startChatDebate(question, options = {}) {
     summaryProvider: options.summaryProvider || "chatgpt",
     debateRounds: debateRounds,
     currentCritiqueRound: 0,
-    entitlements: await getEntitlements(),
+    entitlements,
     skipSummary: options.skipSummary || false,
     providerTabs: options.hookedTabs || {},
   };
-  await publishState();
+  await publishState(runToken);
 
   const firstRoundJobs = engine.start(trimmedQuestion);
   runtimeState = { ...runtimeState, transcript: engine.snapshot() };
-  await publishState();
-  await runFastProviderJobs(firstRoundJobs, "answer");
+  await publishState(runToken);
+  await runFastProviderJobs(firstRoundJobs, "answer", runToken);
 
   for (let round = 1; round <= debateRounds; round += 1) {
     const jobs = engine.buildCritiqueJobs(round);
@@ -217,8 +273,8 @@ async function startChatDebate(question, options = {}) {
       message: `第 ${round} 輪：等待 AI 交叉互評`,
       transcript: engine.snapshot(),
     };
-    await publishState();
-    await runFastProviderJobs(jobs, "critique");
+    await publishState(runToken);
+    await runFastProviderJobs(jobs, "critique", runToken);
   }
 
   if (options.interactiveMode) {
@@ -230,7 +286,7 @@ async function startChatDebate(question, options = {}) {
       message: "等待主人發言或選擇下一步...",
       transcript: engine.snapshot(),
     };
-    await publishState();
+    await publishState(runToken);
     return runtimeState;
   }
 
@@ -244,7 +300,7 @@ async function startChatDebate(question, options = {}) {
       transcript: engine.snapshot(),
       summary: "",
     };
-    await publishState();
+    await publishState(runToken);
     return runtimeState;
   }
 
@@ -254,11 +310,11 @@ async function startChatDebate(question, options = {}) {
     message: `最終回合：請 ${providerLabel(runtimeState.summaryProvider)} 總結`,
     transcript: engine.snapshot(),
   };
-  await publishState();
+  await publishState(runToken);
 
-  const finalResult = await sendJob(engine.buildFinalJob());
+  const finalResult = await sendJob(engine.buildFinalJob(), runToken);
   if (!finalResult.ok) {
-    return finishWithError(finalResult);
+    return finishWithError(finalResult, runToken);
   }
 
   runtimeState = {
@@ -270,18 +326,22 @@ async function startChatDebate(question, options = {}) {
     transcript: engine.snapshot(),
     summary: finalResult.content,
   };
-  await publishState();
+  await publishState(runToken);
   return runtimeState;
 }
 
 async function startTheaterDebate(question, options = {}) {
+  const runToken = options.runToken;
   await requireProFeature("chatMode");
+  runController.assertCurrent(runToken);
   const trimmedQuestion = String(question || "").trim();
   if (!trimmedQuestion) throw new Error("請先輸入問題");
   if (runtimeState.busy) throw new Error("目前已有辯論正在進行");
 
   const activeProviders = normalizeProviderIds(options.activeProviders);
   const debateRounds = normalizeDebateRounds(options.debateRounds);
+  const entitlements = await getEntitlements();
+  runController.assertCurrent(runToken);
   engine = new DebateEngine(activeProviders, options.summaryProvider, debateRounds, {
     isTheaterMode: true,
     customPersonas: options.customPersonas,
@@ -299,16 +359,16 @@ async function startTheaterDebate(question, options = {}) {
     summaryProvider: options.summaryProvider || "chatgpt",
     debateRounds: debateRounds,
     currentCritiqueRound: 0,
-    entitlements: await getEntitlements(),
+    entitlements,
     skipSummary: options.skipSummary || false,
     providerTabs: options.hookedTabs || {},
   };
-  await publishState();
+  await publishState(runToken);
 
   const firstRoundJobs = engine.start(trimmedQuestion);
   runtimeState = { ...runtimeState, transcript: engine.snapshot() };
-  await publishState();
-  await runFastProviderJobs(firstRoundJobs, "answer");
+  await publishState(runToken);
+  await runFastProviderJobs(firstRoundJobs, "answer", runToken);
 
   for (let round = 1; round <= debateRounds; round += 1) {
     const jobs = engine.buildCritiqueJobs(round);
@@ -319,8 +379,8 @@ async function startTheaterDebate(question, options = {}) {
       message: `第 ${round} 輪：等待 AI 交叉互評`,
       transcript: engine.snapshot(),
     };
-    await publishState();
-    await runFastProviderJobs(jobs, "critique");
+    await publishState(runToken);
+    await runFastProviderJobs(jobs, "critique", runToken);
   }
 
   if (options.interactiveMode) {
@@ -332,7 +392,7 @@ async function startTheaterDebate(question, options = {}) {
       message: "等待主人發言或選擇下一步...",
       transcript: engine.snapshot(),
     };
-    await publishState();
+    await publishState(runToken);
     return runtimeState;
   }
 
@@ -346,7 +406,7 @@ async function startTheaterDebate(question, options = {}) {
       transcript: engine.snapshot(),
       summary: "",
     };
-    await publishState();
+    await publishState(runToken);
     return runtimeState;
   }
 
@@ -356,11 +416,11 @@ async function startTheaterDebate(question, options = {}) {
     message: `最終回合：請 ${providerLabel(runtimeState.summaryProvider)} 總結`,
     transcript: engine.snapshot(),
   };
-  await publishState();
+  await publishState(runToken);
 
-  const finalResult = await sendJob(engine.buildFinalJob());
+  const finalResult = await sendJob(engine.buildFinalJob(), runToken);
   if (!finalResult.ok) {
-    return finishWithError(finalResult);
+    return finishWithError(finalResult, runToken);
   }
 
   runtimeState = {
@@ -372,11 +432,13 @@ async function startTheaterDebate(question, options = {}) {
     transcript: engine.snapshot(),
     summary: finalResult.content,
   };
-  await publishState();
+  await publishState(runToken);
   return runtimeState;
 }
 
 async function startQuestionDebate(question, options = {}) {
+  const runToken = options.runToken;
+  runController.assertCurrent(runToken);
   const trimmedQuestion = String(question || "").trim();
   if (!trimmedQuestion) {
     throw new Error("請先輸入問題");
@@ -389,6 +451,7 @@ async function startQuestionDebate(question, options = {}) {
   const activeProviders = normalizeProviderIds(options.activeProviders);
   const summaryProvider = options.summaryProvider || "chatgpt";
   const entitlements = await getEntitlements();
+  runController.assertCurrent(runToken);
   const mode = options.mode || "basic";
   const scheduler = options.scheduler || "sequential";
   const debateRounds = normalizeDebateRounds(options.debateRounds);
@@ -412,23 +475,27 @@ async function startQuestionDebate(question, options = {}) {
     skipSummary: options.skipSummary || false,
     providerTabs: options.hookedTabs || {},
   };
-  await publishState();
+  await publishState(runToken);
 
-  return runDebateRounds(trimmedQuestion, { scheduler });
+  return runDebateRounds(trimmedQuestion, { scheduler, runToken, interactiveMode: options.interactiveMode });
 }
 
 async function startSummaryDebate(userNote, options = {}) {
+  const runToken = options.runToken;
   await requireProFeature("summaryDebate");
+  runController.assertCurrent(runToken);
 
   if (runtimeState.busy) {
     throw new Error("目前已有辯論正在進行");
   }
 
   const { tab: sourceTab, provider: sourceProviderInfo } = await getActiveProviderTab();
+  runController.assertCurrent(runToken);
   const sourceProvider = sourceProviderInfo.id;
   const requestedProviders = normalizeProviderIds(options.activeProviders);
   const debateProviders = requestedProviders.filter((providerId) => providerId !== sourceProvider);
   const entitlements = await getEntitlements();
+  runController.assertCurrent(runToken);
   const debateRounds = normalizeDebateRounds(options.debateRounds);
   if (debateProviders.length < 2) {
     throw new Error(`總結辯論至少需要目前頁面以外的 2 家 AI。現在目前頁面是 ${providerLabel(sourceProvider)}，請再勾選兩家其他 AI。`);
@@ -454,15 +521,15 @@ async function startSummaryDebate(userNote, options = {}) {
     entitlements,
     skipSummary: options.skipSummary || false,
   };
-  await publishState();
+  await publishState(runToken);
 
   const sourceResult = await sendJob({
     provider: sourceProvider,
     phase: "source-summary",
     prompt: buildConversationSummaryPrompt(userNote),
-  });
+  }, runToken);
   if (!sourceResult.ok) {
-    return finishWithError(sourceResult);
+    return finishWithError(sourceResult, runToken);
   }
 
   runtimeState = {
@@ -472,12 +539,14 @@ async function startSummaryDebate(userNote, options = {}) {
     message: "快速辯論：將目前對話總結送給其他 AI",
     debateRounds,
   };
-  await publishState();
+  await publishState(runToken);
 
-  return runDebateRounds(sourceResult.content, { scheduler: "fast", interactiveMode: options.interactiveMode });
+  return runDebateRounds(sourceResult.content, { scheduler: "fast", interactiveMode: options.interactiveMode, runToken });
 }
 
 async function runDebateRounds(originalQuestion, options = {}) {
+  const runToken = options.runToken;
+  runController.assertCurrent(runToken);
   const scheduler = options.scheduler || "sequential";
   const runProviderJobs = scheduler === "fast" ? runFastProviderJobs : runSequentialProviderJobs;
   const schedulerLabel = scheduler === "fast" ? "快速" : "逐家";
@@ -489,8 +558,8 @@ async function runDebateRounds(originalQuestion, options = {}) {
     message: `第一輪：${schedulerLabel}送出原始問題`,
     transcript: engine.snapshot(),
   };
-  await publishState();
-  await runProviderJobs(firstRoundJobs, "answer");
+  await publishState(runToken);
+  await runProviderJobs(firstRoundJobs, "answer", runToken);
 
   for (let roundNumber = 1; roundNumber <= engine.debateRounds; roundNumber += 1) {
     const critiqueJobs = engine.buildCritiqueJobs(roundNumber);
@@ -502,8 +571,8 @@ async function runDebateRounds(originalQuestion, options = {}) {
       message: `${critiqueRoundLabel(roundNumber, engine.debateRounds)}：${schedulerLabel}送出交叉互評`,
       transcript: engine.snapshot(),
     };
-    await publishState();
-    await runProviderJobs(critiqueJobs, "critique");
+    await publishState(runToken);
+    await runProviderJobs(critiqueJobs, "critique", runToken);
   }
 
   if (options.interactiveMode) {
@@ -515,7 +584,7 @@ async function runDebateRounds(originalQuestion, options = {}) {
       message: "等待主人發言或選擇下一步...",
       transcript: engine.snapshot(),
     };
-    await publishState();
+    await publishState(runToken);
     return runtimeState;
   }
 
@@ -529,7 +598,7 @@ async function runDebateRounds(originalQuestion, options = {}) {
       transcript: engine.snapshot(),
       summary: "",
     };
-    await publishState();
+    await publishState(runToken);
     return runtimeState;
   }
 
@@ -539,11 +608,11 @@ async function runDebateRounds(originalQuestion, options = {}) {
     message: `最終回合：請 ${providerLabel(runtimeState.summaryProvider)} 總結`,
     transcript: engine.snapshot(),
   };
-  await publishState();
+  await publishState(runToken);
 
-  const finalResult = await sendJob(engine.buildFinalJob());
+  const finalResult = await sendJob(engine.buildFinalJob(), runToken);
   if (!finalResult.ok) {
-    return finishWithError(finalResult);
+    return finishWithError(finalResult, runToken);
   }
 
   runtimeState = {
@@ -555,12 +624,13 @@ async function runDebateRounds(originalQuestion, options = {}) {
     transcript: engine.snapshot(),
     summary: finalResult.content,
   };
-  await publishState();
+  await publishState(runToken);
 
   return runtimeState;
 }
 
-async function handleNextRound(action, text) {
+async function handleNextRound(action, text, runToken) {
+  runController.assertCurrent(runToken);
   if (runtimeState.busy) throw new Error("目前忙碌中");
   if (runtimeState.mode !== "chat" && runtimeState.mode !== "theater" && runtimeState.mode !== "summary") throw new Error("只有自由群聊、劇場模式與總結辯論支援此操作");
   if (!["user_message", "critique", "summarize"].includes(action)) {
@@ -568,7 +638,7 @@ async function handleNextRound(action, text) {
   }
 
   runtimeState = { ...runtimeState, busy: true, status: "running" };
-  await publishState();
+  await publishState(runToken);
 
   if (action === "user_message") {
     const newRound = engine.addChatRound(text);
@@ -581,8 +651,8 @@ async function handleNextRound(action, text) {
       message: `送出主人的補充發言`,
       transcript: engine.snapshot(),
     };
-    await publishState();
-    await runFastProviderJobs(jobs, "critique");
+    await publishState(runToken);
+    await runFastProviderJobs(jobs, "critique", runToken);
   } else if (action === "critique") {
     const newRound = engine.addChatRound();
     const jobs = engine.buildCritiqueJobs(newRound);
@@ -594,8 +664,8 @@ async function handleNextRound(action, text) {
       message: `第 ${newRound} 輪：送出交叉互評`,
       transcript: engine.snapshot(),
     };
-    await publishState();
-    await runFastProviderJobs(jobs, "critique");
+    await publishState(runToken);
+    await runFastProviderJobs(jobs, "critique", runToken);
   } else if (action === "summarize") {
     runtimeState = {
       ...runtimeState,
@@ -603,9 +673,9 @@ async function handleNextRound(action, text) {
       message: `請 ${providerLabel(runtimeState.summaryProvider)} 總結`,
       transcript: engine.snapshot(),
     };
-    await publishState();
-    const finalResult = await sendJob(engine.buildFinalJob());
-    if (!finalResult.ok) return finishWithError(finalResult);
+    await publishState(runToken);
+    const finalResult = await sendJob(engine.buildFinalJob(), runToken);
+    if (!finalResult.ok) return finishWithError(finalResult, runToken);
     
     runtimeState = {
       ...runtimeState,
@@ -616,7 +686,7 @@ async function handleNextRound(action, text) {
       transcript: engine.snapshot(),
       summary: finalResult.content,
     };
-    await publishState();
+    await publishState(runToken);
     return runtimeState;
   }
 
@@ -628,53 +698,54 @@ async function handleNextRound(action, text) {
     message: "等待主人發言或選擇下一步...",
     transcript: engine.snapshot(),
   };
-  await publishState();
+  await publishState(runToken);
   return runtimeState;
 }
 
-async function runSequentialProviderJobs(jobs, target) {
+async function runSequentialProviderJobs(jobs, target, runToken) {
   for (const job of jobs) {
-    if (isAborted) throw new Error("已緊急暫停");
-    const result = await sendJob(job);
-    recordProviderResult(result, target);
+    runController.assertCurrent(runToken);
+    const result = await sendJob(job, runToken);
+    recordProviderResult(result, target, runToken);
     runtimeState = {
       ...runtimeState,
       transcript: engine.snapshot(),
     };
-    await publishState();
+    await publishState(runToken);
   }
 }
 
-async function runFastProviderJobs(jobs, target) {
+async function runFastProviderJobs(jobs, target, runToken) {
   const submittedJobs = [];
   for (const job of jobs) {
-    if (isAborted) throw new Error("已緊急暫停");
-    const submitted = await submitProviderJob(job);
+    runController.assertCurrent(runToken);
+    const submitted = await submitProviderJob(job, runToken);
     if (submitted.ok) {
       submittedJobs.push(submitted);
     } else {
-      recordProviderResult(submitted, target);
+      recordProviderResult(submitted, target, runToken);
     }
     runtimeState = {
       ...runtimeState,
       transcript: engine.snapshot(),
     };
-    await publishState();
+    await publishState(runToken);
   }
 
   for (const submitted of submittedJobs) {
-    if (isAborted) throw new Error("已緊急暫停");
-    const result = await collectProviderJob(submitted);
-    recordProviderResult(result, target);
+    runController.assertCurrent(runToken);
+    const result = await collectProviderJob(submitted, runToken);
+    recordProviderResult(result, target, runToken);
     runtimeState = {
       ...runtimeState,
       transcript: engine.snapshot(),
     };
-    await publishState();
+    await publishState(runToken);
   }
 }
 
-function recordProviderResult(result, target) {
+function recordProviderResult(result, target, runToken) {
+  runController.assertCurrent(runToken);
   if (result.ok && target === "answer") {
     engine.recordAnswer(result.provider, result.content);
   } else if (result.ok && target === "critique") {
@@ -685,21 +756,23 @@ function recordProviderResult(result, target) {
   }
 }
 
-async function submitProviderJob(job) {
+async function submitProviderJob(job, runToken) {
   try {
+    runController.assertCurrent(runToken);
     await setProviderDiagnostic(job.provider, {
       stage: "opening-tab",
       phase: job.phase,
       error: "",
-    });
+    }, runToken);
     const tab = await getOrCreateProviderTab(job.provider);
     await setProviderDiagnostic(job.provider, {
       stage: "activating-tab",
       phase: job.phase,
       tabId: tab.id,
       url: tab.url || tab.pendingUrl || "",
-    });
+    }, runToken);
     await activateProviderTab(tab);
+    runController.assertCurrent(runToken);
 
     const runId = createRunId(job);
     runtimeState = {
@@ -713,21 +786,23 @@ async function submitProviderJob(job) {
       tabId: tab.id,
       url: tab.url || tab.pendingUrl || "",
     });
-    await publishState();
+    await publishState(runToken);
 
     const response = await sendProviderMessage(tab.id, job, "aiDebate:submitPrompt", { runId });
+    runController.assertCurrent(runToken);
     if (!response?.ok) {
       throw new Error(response?.error || "provider submit failed");
     }
 
     await delay(500);
+    runController.assertCurrent(runToken);
 
     await setProviderDiagnostic(job.provider, {
       stage: "submitted",
       phase: job.phase,
       tabId: tab.id,
       url: tab.url || tab.pendingUrl || "",
-    });
+    }, runToken);
     return {
       ok: true,
       provider: job.provider,
@@ -738,11 +813,14 @@ async function submitProviderJob(job) {
       runId: response.runId || runId,
     };
   } catch (error) {
+    if (isRunCancelledError(error)) {
+      throw error;
+    }
     await setProviderDiagnostic(job.provider, {
       stage: "error",
       phase: job.phase,
       error: error.message,
-    });
+    }, runToken);
     return {
       ok: false,
       provider: job.provider,
@@ -753,8 +831,9 @@ async function submitProviderJob(job) {
   }
 }
 
-async function collectProviderJob(submitted) {
+async function collectProviderJob(submitted, runToken) {
   try {
+    runController.assertCurrent(runToken);
     const tab = await chrome.tabs.get(submitted.tabId);
     await setProviderDiagnostic(submitted.provider, {
       stage: "activating-tab",
@@ -762,8 +841,9 @@ async function collectProviderJob(submitted) {
       tabId: submitted.tabId,
       url: tab.url || tab.pendingUrl || "",
       error: "",
-    });
+    }, runToken);
     await activateProviderTab(tab);
+    runController.assertCurrent(runToken);
 
     runtimeState = {
       ...runtimeState,
@@ -776,11 +856,12 @@ async function collectProviderJob(submitted) {
       url: tab.url || tab.pendingUrl || "",
       error: "",
     });
-    await publishState();
+    await publishState(runToken);
 
     const response = await sendProviderMessage(tab.id, submitted, "aiDebate:readSubmittedResponse", {
       runId: submitted.runId,
     });
+    runController.assertCurrent(runToken);
     if (!response?.ok) {
       throw new Error(response?.error || "provider returned empty response");
     }
@@ -790,7 +871,7 @@ async function collectProviderJob(submitted) {
       phase: submitted.phase,
       tabId: submitted.tabId,
       url: tab.url || tab.pendingUrl || "",
-    });
+    }, runToken);
     return {
       ok: true,
       provider: submitted.provider,
@@ -799,12 +880,15 @@ async function collectProviderJob(submitted) {
       content: response.content,
     };
   } catch (error) {
+    if (isRunCancelledError(error)) {
+      throw error;
+    }
     await setProviderDiagnostic(submitted.provider, {
       stage: "error",
       phase: submitted.phase,
       tabId: submitted.tabId,
       error: error.message,
-    });
+    }, runToken);
     return {
       ok: false,
       provider: submitted.provider,
@@ -815,21 +899,23 @@ async function collectProviderJob(submitted) {
   }
 }
 
-async function sendJob(job) {
+async function sendJob(job, runToken) {
   try {
+    runController.assertCurrent(runToken);
     await setProviderDiagnostic(job.provider, {
       stage: "opening-tab",
       phase: job.phase,
       error: "",
-    });
+    }, runToken);
     const tab = await getOrCreateProviderTab(job.provider);
     await setProviderDiagnostic(job.provider, {
       stage: "activating-tab",
       phase: job.phase,
       tabId: tab.id,
       url: tab.url || tab.pendingUrl || "",
-    });
+    }, runToken);
     await activateProviderTab(tab);
+    runController.assertCurrent(runToken);
     runtimeState = {
       ...runtimeState,
       message: `${providerLabel(job.provider)}：${phaseLabel(job.phase, job.round)}`,
@@ -841,11 +927,10 @@ async function sendJob(job) {
       tabId: tab.id,
       url: tab.url || tab.pendingUrl || "",
     });
-    await publishState();
-
-    if (isAborted) throw new Error("已緊急暫停");
+    await publishState(runToken);
 
     const response = await sendProviderMessage(tab.id, job);
+    runController.assertCurrent(runToken);
     if (!response?.ok) {
       throw new Error(response?.error || "provider returned empty response");
     }
@@ -853,7 +938,7 @@ async function sendJob(job) {
     await setProviderDiagnostic(job.provider, {
       stage: "received",
       phase: job.phase,
-    });
+    }, runToken);
     return {
       ok: true,
       provider: job.provider,
@@ -862,11 +947,14 @@ async function sendJob(job) {
       content: response.content,
     };
   } catch (error) {
+    if (isRunCancelledError(error)) {
+      throw error;
+    }
     await setProviderDiagnostic(job.provider, {
       stage: "error",
       phase: job.phase,
       error: error.message,
-    });
+    }, runToken);
     return {
       ok: false,
       provider: job.provider,
@@ -960,7 +1048,8 @@ async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", ex
   }
 }
 
-async function finishWithError(result) {
+async function finishWithError(result, runToken) {
+  runController.assertCurrent(runToken);
   runtimeState = {
     ...runtimeState,
     busy: false,
@@ -970,35 +1059,63 @@ async function finishWithError(result) {
     transcript: engine.snapshot(),
     errors: [...runtimeState.errors, result],
   };
-  await publishState();
+  await publishState(runToken);
   return runtimeState;
 }
 
-async function publishState() {
-  await chrome.storage.local.set({ [STORAGE_KEY]: runtimeState });
-  chrome.runtime.sendMessage({ type: "aiDebate:stateChanged", state: runtimeState }).catch(() => {});
+async function publishState(runToken) {
+  if (runToken !== undefined) {
+    runController.assertCurrent(runToken);
+  }
+
+  const stateToPublish = JSON.parse(JSON.stringify(runtimeState));
+  await chrome.storage.local.set({ [STORAGE_KEY]: stateToPublish });
+
+  if (runToken !== undefined && !runController.isCurrent(runToken)) {
+    await chrome.storage.local.set({ [STORAGE_KEY]: runtimeState });
+    runController.assertCurrent(runToken);
+  }
+
+  chrome.runtime.sendMessage({ type: "aiDebate:stateChanged", state: stateToPublish }).catch(() => {});
 }
 
-async function setProviderDiagnostic(providerId, patch) {
+async function setProviderDiagnostic(providerId, patch, runToken) {
+  if (runToken !== undefined) {
+    runController.assertCurrent(runToken);
+  }
   runtimeState = {
     ...runtimeState,
     providerDiagnostics: updateProviderDiagnostic(runtimeState.providerDiagnostics, providerId, patch),
   };
-  await publishState();
+  await publishState(runToken);
 }
 
 async function getRuntimeState() {
-  const stored = await chrome.storage.local.get(STORAGE_KEY);
-  if (!runtimeState.busy && runtimeState.status === "idle" && stored?.[STORAGE_KEY]) {
-    runtimeState = stored[STORAGE_KEY];
-  }
-
   runtimeState = {
     ...runtimeState,
     entitlements: await getEntitlements(),
   };
 
   return runtimeState;
+}
+
+async function ensureRuntimeInitialized() {
+  if (!initializationPromise) {
+    initializationPromise = (async () => {
+      const stored = await chrome.storage.local.get(STORAGE_KEY);
+      const recovered = recoverSession(stored?.[STORAGE_KEY], createIdleState);
+      runtimeState = recovered.state;
+      engine = recovered.engine || new DebateEngine();
+      if (recovered.shouldPersist) {
+        await publishState();
+      }
+    })().catch((error) => {
+      initializationPromise = undefined;
+      throw error;
+    });
+  }
+
+  return initializationPromise;
 }
 
 async function getEntitlements() {
