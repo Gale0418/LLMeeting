@@ -1,13 +1,14 @@
 # 進度
 
 - 專案：LLMeeting Chrome 插件 MVP
-- 目前目標：完成 0.4.0 Free/Pro 軟鎖、進階模式收納、辯論輪次設定與 Chrome Web Store 上架準備。
-- 目前狀態：Release Ready
-- 里程碑：四家 AI 預設啟用、Free/Pro 軟鎖、公開彩蛋 Pro 解鎖、進階模式收納、辯論輪次設定、CodeRabbit review、商店 zip、listing 與 privacy policy 已完成。
-- 進度條：[###################-] 95%
+- 目前目標：修復大改後的狀態、授權、回合、取消與 Gemini 送出回歸，並完成 Free 五連點彩蛋。
+- 目前狀態：In Progress
+- 里程碑：核准設計落盤，建立實作計畫後以 TDD 逐項修復。
+- 進度條：[################----] 79%
 - 進行中任務：
-  - 無。
+  - LLM-T17：修復大型功能回歸。
 - 阻塞原因：
+  - CodeRabbit review 需先確認第三方傳送授權。
   - 上架前仍需用乾淨畫面擷取實際 Chrome Web Store 截圖。
 - 下次更新：
-  - 進入 Chrome 實機 reload、辯論輪次試跑與商店截圖。
+  - 撰寫實作計畫，依序新增失敗測試並修復 LLM-T17、LLM-T18、LLM-T19。

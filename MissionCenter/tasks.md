@@ -2,7 +2,7 @@
 
 | ID | 標題 | 類型 | 上層 | 優先級 | 狀態 | 負責人 | 依賴 | 下一步 | 驗證方式 | 估算 | 標籤 | 備註 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| LLM-E1 | LLMeeting MVP 收尾 | Epic |  | P1 | Review | Codex |  | 上架前擷取實際 Chrome Web Store 截圖 | 自動測試、語法檢查、Chrome 實機試跑、CodeRabbit review | 12 | chrome-extension, ai-debate | 0.4.0 已完成 Free/Pro 軟鎖、商店準備、進階模式收納與辯論輪次 |
+| LLM-E1 | LLMeeting MVP 收尾 | Epic |  | P1 | In Progress | Codex |  | 完成 LLM-T17 至 LLM-T19 後再擷取商店截圖 | 自動測試、語法檢查、Chrome 實機試跑、CodeRabbit review | 12 | chrome-extension, ai-debate | 大改回歸已完成設計，進入 TDD 修復階段 |
 | LLM-T1 | 多 AI 辯論基礎流程 | Task | LLM-E1 | P1 | Done | Codex |  | 無 | 使用 ChatGPT/Gemini/Grok 實際試跑，主人回報可運行 | 2 | mvp | 已完成 |
 | LLM-T2 | Claude 參與者支援 | Task | LLM-E1 | P2 | Done | Codex |  | 無 | 主人 Chrome 實機跑四家 AI 辯論，Claude 可參與 | 2 | provider, claude | 主人回報四家 AI 實機辯論正常 |
 | LLM-T3 | 快速鬥技場排程 | Task | LLM-E1 | P1 | Done | Codex |  | 無 | `npm test`、service worker 語法檢查 | 3 | pro-feature, scheduler | 已改成先送出再收回 |
@@ -19,3 +19,6 @@
 | LLM-T14 | 作者模式 Pro 解鎖 | Task | LLM-E1 | P2 | Done | Codex | LLM-T12 | 無 | `npm test` 53/53、store zip 內容檢查 | 1 | dev-tool, entitlement | 五連點 Free badge 切換 Free/Pro；依主人要求作為公開彩蛋保留進商店 zip |
 | LLM-T15 | 進階辯論模式收納 | Task | LLM-E1 | P1 | Done | Codex | LLM-T12 | 無 | `npm test`、side panel 語法檢查、store zip 內容檢查 | 1 | ui, monetization | 外層只留單一主按鈕；快速鬥技場與總結辯論改為進階設定互斥選項 |
 | LLM-T16 | 辯論輪次設定 | Task | LLM-E1 | P1 | Done | Codex | LLM-T15 | 無 | `npm test`、語法檢查、CodeRabbit review | 2 | ui, debate-engine, review | 1-5 輪交叉評析已完成；CodeRabbit raised 2 minor issues 並已修正 |
+| LLM-T17 | 修復 0.4.0 RC 後大型功能回歸 | Task | LLM-E1 | P1 | In Progress | Codex | LLM-T16 | 根據核准設計撰寫 TDD 實作計畫 | `npm test`、`node --check`、diff 審查、Chrome 互動模式試跑 | 5 | review, regression, interaction | 範圍包含 MV3 恢復、run token、Pro gate、動態輪次、插話對齊、response artifact 與現有測試同步 |
+| LLM-T18 | Free 五連點彩蛋對話 | Task | LLM-E1 | P2 | Ready | Codex | LLM-T17 | 先寫 1、3、5 次點擊與可測亂數的失敗測試 | 單元測試與封裝內容檢查 | 1 | easter-egg, ui | 第 1 次固定台詞，第 3 次從 10 句隨機挑選，第 5 次解鎖並顯示 YouTube 連結 |
+| LLM-T19 | Gemini 可靠送出與確認 | Task | LLM-E1 | P1 | Ready | Codex | LLM-T17 | 先寫「按鈕點擊未送出」與「不重複送出」回歸測試 | 單元測試、content script 安全檢查與 Chrome 實機試跑 | 2 | gemini, automation, reliability | 送出後必須由輸入清空、產生中狀態或使用者訊息新增確認；僅在提示仍留存時補送一次 |

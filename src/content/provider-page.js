@@ -351,8 +351,16 @@
   }
 
   function readAssistantSnapshot(config) {
-    const elements = [...new Set(collectElements(config.responseSelectors))];
-    const texts = elements
+    let elements = collectElements(config.responseSelectors);
+    
+    // Filter out elements that are descendants of any other element in the list
+    // This ensures we capture the outermost message container and don't overwrite
+    // it with an inner text block (which would miss sibling artifacts/cards).
+    elements = elements.filter((el) => {
+      return !elements.some((other) => other !== el && other.contains(el));
+    });
+
+    const texts = [...new Set(elements)]
       .filter(isVisible)
       .map((element) => element.innerText || element.textContent || "")
       .map((text) => text.replace(/(?:\r?\n)?\s*image\s*$/i, ""))
@@ -363,13 +371,12 @@
   }
 
   function collectElements(selectors) {
-    return selectors.flatMap((selector) => {
-      try {
-        return Array.from(document.querySelectorAll(selector));
-      } catch (_error) {
-        return [];
-      }
-    });
+    if (!selectors || selectors.length === 0) return [];
+    try {
+      return Array.from(document.querySelectorAll(selectors.join(", ")));
+    } catch (_error) {
+      return [];
+    }
   }
 
   function isVisible(element) {

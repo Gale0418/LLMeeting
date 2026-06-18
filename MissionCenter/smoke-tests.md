@@ -22,3 +22,8 @@
 | 2026-06-14 | LLM-T16 | CodeRabbit review 嘗試 | `coderabbit review --agent -t uncommitted` | 取得第三方 review 結果 | 執行環境因第三方資料輸出風險拒絕執行，需主人再次明確確認後重試 | 失敗 | external |
 | 2026-06-14 | LLM-T16 | CodeRabbit review | `coderabbit review --agent --base-commit 34565dc` | 只審最新輪次功能 diff，排除 `dist/` 等大檔 | CodeRabbit raised 2 minor issues：MissionCenter 進度百分比不一致、prompt speaker label 不一致；兩者皆已修正 | 通過 | external |
 | 2026-06-14 | LLM-E1 | 0.4.0 上架候選包 | `npm test`、`node --check scripts\package-extension.mjs`、`npm run package`、`tar -tf dist\llmeeting-0.4.0.zip`、`git diff --check` | manifest 與 package 版本皆為 0.4.0，zip 檔名為 `llmeeting-0.4.0.zip`，內容只含 extension 檔案 | 57/57 pass；`dist\llmeeting-0.4.0.zip` 1,760,384 bytes；zip 含 manifest、assets、src 與公開彩蛋；`git diff --check` 只有 CRLF 提示 | 通過 | automated |
+| 2026-06-18 | LLM-T17 | 大型功能回歸測試 | `npm test` | 所有測試通過 | 51/54 pass；prompt export、多輪 prompt 文字與 service worker 安全測試共 3 項失敗 | 失敗 | automated |
+| 2026-06-18 | LLM-T17 | 變更檔案語法檢查 | `node --check` 逐一檢查 6 個變更 JavaScript 檔 | 無語法錯誤 | 全部 exit 0 | 通過 | automated |
+| 2026-06-18 | LLM-T17 | Diff whitespace 檢查 | `git diff --check d12bca6..HEAD` | 無 whitespace error | 5 個檔案共 10 處 trailing whitespace | 失敗 | automated |
+| 2026-06-18 | LLM-T17 | Chrome Web Store 封裝 | `npm run package` | 產生 0.4.0 zip | `dist\llmeeting-0.4.0.zip` 1,792,914 bytes | 通過 | automated |
+| 2026-06-18 | LLM-T17 | 互動第 6 輪回歸 | Node 建立 5 輪 engine，再 `addChatRound()` 並總結 | 新工作應寫入第 6 輪並可總結 | 新輪數為 6，但 job.round 被夾成 5；總結報 `Cannot leave critique-6; missing chatgpt` | 失敗 | automated |

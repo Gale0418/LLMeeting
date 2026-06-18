@@ -1,5 +1,13 @@
 # 筆記
 
+- 2026-06-18 審查發現：
+  1. 自由群聊與劇場模式標示為 Pro，但 entitlement 和 background 都沒有 gate，Free 可直接啟動。
+  2. MV3 service worker 恢復儲存的 `runtimeState` 時沒有恢復 `engine`，互動續聊在 worker 被回收後會用空 engine。
+  3. 互動輪數可增加到 6 以上，但 job 與寫入仍被 `normalizeDebateRounds()` 夾在 5，導致第 6 輪永遠不完整。
+  4. 緊急停止只用全局 boolean；新任務會把它重置，舊異步任務回來後可能汙染新 engine/state。
+  5. 新增 835 行功能沒有同步新增或修改測試，目前 `npm test` 有 3 項失敗。
+  6. 互動插話的 `userMessages` 以緊密陣列儲存，UI 卻以實際輪號取值，多輪後會顯示在錯的輪次。
+  7. 回覆文字末尾的 `image` 會在所有 provider 被無條件移除，可能截斷合法回覆。
 - 補強優先順序：
   1. reload LLMeeting 0.4.0 後手動試跑基礎辯論與多輪互評。
   2. 五連點 Free badge 切換 Pro，試跑進階辯論設定裡的快速鬥技場與總結辯論。
