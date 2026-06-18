@@ -23,11 +23,21 @@
     return `[${stage}] ${message}`;
   }
 
+  function normalizeProviderResponse(providerId, text) {
+    const value = String(text || "");
+    if (providerId !== "gemini") {
+      return value;
+    }
+
+    return value.replace(/(?:^|\r?\n)[ \t]*image[ \t]*$/i, "").trimEnd();
+  }
+
   globalThis.aiDebateAutomationCore = {
     assistantSnapshot,
     formatStageError,
     hasFreshAssistantResponse,
     isPromptEcho,
+    normalizeProviderResponse,
   };
 
   function normalizeWhitespace(text) {

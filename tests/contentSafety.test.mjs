@@ -35,5 +35,5 @@ test("content script does not accept the submitted prompt bubble as an AI respon
 
   assert.match(script, /!isPromptEcho\(prompt, currentText\)/);
   assert.match(script, /baseline,\s+prompt: message\.prompt/);
-  assert.match(script, /waitForCompletion\(config, message\.timeoutMs \|\| 120000, run\.baseline, run\.prompt\)/);
+  assert.match(script, /waitForCompletion\(config, providerId, message\.timeoutMs \|\| 120000, run\.baseline, run\.prompt\)/);
 });

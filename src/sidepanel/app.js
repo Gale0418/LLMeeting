@@ -520,7 +520,7 @@ function renderChatBubbles(state) {
       return;
     }
 
-    const userMessage = transcript.userMessages?.[roundNumber - 1];
+    const userMessage = critiques.USER;
     if (userMessage) {
       html += `
         <div class="bubble-group user">

@@ -9,6 +9,7 @@ const {
   formatStageError,
   hasFreshAssistantResponse,
   isPromptEcho,
+  normalizeProviderResponse,
 } = globalThis.aiDebateAutomationCore;
 
 test("assistantSnapshot records assistant message count and latest text", () => {
@@ -48,6 +49,15 @@ test("isPromptEcho detects the user's submitted prompt despite whitespace differ
   assert.equal(isPromptEcho("請分析 Pony V6", "我的結論：Pony V6 仍然很強"), false);
 });
 
+test("Gemini response removes only a final standalone image artifact", () => {
+  assert.equal(normalizeProviderResponse("gemini", "分析完成\nimage"), "分析完成");
+  assert.equal(normalizeProviderResponse("gemini", "This is an image"), "This is an image");
+});
+
+test("other providers preserve a final image line", () => {
+  assert.equal(normalizeProviderResponse("chatgpt", "分析完成\nimage"), "分析完成\nimage");
+});
+
 test("provider page automation can submit first and read the reply later", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
 
@@ -55,4 +65,5 @@ test("provider page automation can submit first and read the reply later", async
   assert.match(script, /aiDebate:readSubmittedResponse/);
   assert.match(script, /submittedRuns/);
   assert.match(script, /sendAndRead\(message\)/);
+  assert.match(script, /readAssistantSnapshot\(config, providerId\)/);
 });

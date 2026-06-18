@@ -76,3 +76,10 @@ test("side panel previews checked providers while idle", async () => {
   assert.match(app, /function renderProviderSelectionPreview\(\)/);
   assert.match(app, /activeProviders: selectedProviderIds\(\)/);
 });
+
+test("side panel renders user interjections from their critique round", async () => {
+  const app = await readFile("src/sidepanel/app.js", "utf8");
+
+  assert.match(app, /const userMessage = critiques\.USER/);
+  assert.doesNotMatch(app, /transcript\.userMessages/);
+});

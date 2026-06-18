@@ -8,6 +8,7 @@
     formatStageError,
     hasFreshAssistantResponse,
     isPromptEcho,
+    normalizeProviderResponse,
   } = globalThis.aiDebateAutomationCore;
   const submittedRuns = new Map();
 
@@ -153,7 +154,7 @@
     try {
       const { providerId, config } = requireProviderPage(message.provider);
 
-      const baseline = readAssistantSnapshot(config);
+      const baseline = readAssistantSnapshot(config, providerId);
       stage = "尋找輸入框";
       const input = await waitFor(() => findInput(config), 30000, `找不到 ${message.provider} 的輸入框，請確認已登入並開啟聊天頁面。`);
       stage = "填入提示";
@@ -192,9 +193,9 @@
       }
 
       stage = "等待新回覆";
-      await waitForCompletion(config, message.timeoutMs || 120000, run.baseline, run.prompt);
+      await waitForCompletion(config, providerId, message.timeoutMs || 120000, run.baseline, run.prompt);
       stage = "讀取新回覆";
-      const content = readLastAssistantMessage(config);
+      const content = readLastAssistantMessage(config, providerId);
       if (!content) {
         throw new Error(`無法讀取 ${message.provider} 的 AI 回覆。`);
       }
@@ -306,13 +307,13 @@
     }
   }
 
-  async function waitForCompletion(config, timeoutMs, baseline, prompt) {
+  async function waitForCompletion(config, providerId, timeoutMs, baseline, prompt) {
     const deadline = Date.now() + timeoutMs;
     let lastText = "";
     let stableSince = Date.now();
 
     while (Date.now() < deadline) {
-      const current = readAssistantSnapshot(config);
+      const current = readAssistantSnapshot(config, providerId);
       const currentText = current.lastText;
       if (currentText !== lastText) {
         lastText = currentText;
@@ -346,11 +347,11 @@
     return stopVisible || busyVisible;
   }
 
-  function readLastAssistantMessage(config) {
-    return readAssistantSnapshot(config).lastText;
+  function readLastAssistantMessage(config, providerId) {
+    return readAssistantSnapshot(config, providerId).lastText;
   }
 
-  function readAssistantSnapshot(config) {
+  function readAssistantSnapshot(config, providerId) {
     let elements = collectElements(config.responseSelectors);
     
     // Filter out elements that are descendants of any other element in the list
@@ -363,7 +364,7 @@
     const texts = [...new Set(elements)]
       .filter(isVisible)
       .map((element) => element.innerText || element.textContent || "")
-      .map((text) => text.replace(/(?:\r?\n)?\s*image\s*$/i, ""))
+      .map((text) => normalizeProviderResponse(providerId, text))
       .map((text) => text.trim())
       .filter((text) => text.length > 0);
 
