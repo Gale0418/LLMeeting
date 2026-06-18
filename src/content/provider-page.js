@@ -380,11 +380,11 @@
   function isGenerating(config) {
     const stopVisible = collectElements(config.stopSelectors)
       .some((el) => isVisible(el) && !el.disabled && el.getAttribute("aria-disabled") !== "true");
-    
+
     // Some sites leave aria-busy="true" on random hidden elements or disabled buttons
     const busyVisible = Array.from(document.querySelectorAll("main [aria-busy='true'], article [aria-busy='true'], .prose [aria-busy='true']"))
       .some((el) => isVisible(el));
-      
+
     return stopVisible || busyVisible;
   }
 
@@ -422,7 +422,7 @@
 
   function readAssistantSnapshot(config, providerId) {
     let elements = collectElements(config.responseSelectors);
-    
+
     // Filter out elements that are descendants of any other element in the list
     // This ensures we capture the outermost message container and don't overwrite
     // it with an inner text block (which would miss sibling artifacts/cards).

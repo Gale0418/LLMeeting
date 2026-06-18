@@ -1,5 +1,12 @@
 # 筆記
 
+- 2026-06-19 修復結果：
+  1. `recoverSession()` 只恢復完整的等待互動快照；執行中遭回收會轉成可見錯誤，不假裝續跑半個 DOM 自動化步驟。
+  2. `RunController` 以 generation token 阻止停止後或新任務開始後的舊非同步結果寫回。
+  3. 互動輪次可超過初始 1 到 5 輪設定，且 `USER` 插話與 AI 回覆共用同一輪資料來源。
+  4. Gemini 送出由輸入清空、生成開始或使用者訊息新增確認；只有未確認時補一次 Enter。
+  5. Free badge 第 1、3、5 次點擊行為已有可注入亂數、儲存與對話框的單元測試。
+
 - 2026-06-18 審查發現：
   1. 自由群聊與劇場模式標示為 Pro，但 entitlement 和 background 都沒有 gate，Free 可直接啟動。
   2. MV3 service worker 恢復儲存的 `runtimeState` 時沒有恢復 `engine`，互動續聊在 worker 被回收後會用空 engine。

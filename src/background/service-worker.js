@@ -676,7 +676,7 @@ async function handleNextRound(action, text, runToken) {
     await publishState(runToken);
     const finalResult = await sendJob(engine.buildFinalJob(), runToken);
     if (!finalResult.ok) return finishWithError(finalResult, runToken);
-    
+
     runtimeState = {
       ...runtimeState,
       busy: false,

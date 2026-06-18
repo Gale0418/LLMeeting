@@ -89,7 +89,7 @@ async function scanAndPopulateHookTabs() {
         const queryTabs = await chrome.tabs.query({ url: pattern });
         tabs.push(...queryTabs);
       }
-      
+
       // 去重
       const uniqueTabs = Array.from(new Map(tabs.map((t) => [t.id, t])).values());
       uniqueTabs.sort((a, b) => b.windowId - a.windowId);
@@ -255,7 +255,7 @@ function renderState(state) {
 
   latestState = state;
   currentEntitlements = state.entitlements || entitlementsForPlan();
-  
+
   if (stopDebateBtn) {
     if (state.busy) {
       stopDebateBtn.style.display = "block";
@@ -300,7 +300,7 @@ function renderState(state) {
   if (chatControls) {
     const isWaiting = state.phase === "waiting_for_user";
     chatInput.disabled = !isWaiting;
-    
+
     const chatButtons = document.querySelectorAll(".chat-buttons button");
     chatButtons.forEach(btn => btn.disabled = !isWaiting);
 
@@ -673,7 +673,7 @@ function renderDebateModeState() {
   if (theaterSettings) {
     theaterSettings.style.display = mode === "theater" ? "block" : "none";
   }
-  
+
   if (chatControls) {
     chatControls.style.display = (mode === "basic" || mode === "fast") ? "none" : "block";
   }

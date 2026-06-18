@@ -1,25 +1,28 @@
 # 收尾
 
-- 摘要：LLMeeting 0.2.0 已完成快速鬥技場與總結辯論程式碼實作，Mock Mode 已移除。
+- 摘要：LLMeeting 0.4.0 大型功能回歸已修復並完成自動驗證，待 Gemini Chrome 實機確認與商店截圖。
 - 已完成：
   - 多 AI 辯論基礎流程。
   - 快速辯論排程。
   - 目前 AI 對話總結後開啟辯論。
   - Side panel 雙按鈕 UI。
   - 自動化測試與基本視覺檢查。
+  - MV3 工作階段恢復與 stale run 取消保護。
+  - Pro 權限邊界、動態互動輪次與插話顯示。
+  - Gemini 送出確認、單次 Enter fallback 與 provider 專屬回覆正規化。
+  - Free badge 第 1／3／5 次點擊彩蛋與 YouTube 連結。
 - 未完成：
-  - Chrome 實機驗收快速辯論與總結辯論。
-  - CodeRabbit review。
-  - Claude 真實流程驗證。
-  - Pro 付費牆或授權系統。
+  - Gemini 最新登入態 DOM 的實機送出驗收。
+  - Chrome Web Store 正式截圖與上架。
+  - 正式付款與授權後端。
 - 風險：
   - Provider DOM 變動。
   - 背景分頁節流。
   - 長上下文 prompt 過長。
 - Smoke tests：
-  - `npm test` 43/43 pass。
-  - `node --check` 三個主要 JS 檔案 pass。
-  - `git diff --check` 無 whitespace error。
-  - Side panel 本機預覽無水平溢出，Mock 不存在。
+  - `npm test` 78/78 pass。
+  - `node --check` 10 個變更 JavaScript 檔案 pass。
+  - `git diff --check d12bca6` 無 whitespace error。
+  - `dist/llmeeting-0.4.0.zip` 1,810,001 bytes，內容只含 extension 檔案並保留公開彩蛋。
 - 回顧：
   - 下一步應先做真實 Chrome 試玩，再決定要補強穩定性還是開始設計付費授權。

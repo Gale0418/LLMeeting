@@ -27,3 +27,7 @@
 | 2026-06-18 | LLM-T17 | Diff whitespace 檢查 | `git diff --check d12bca6..HEAD` | 無 whitespace error | 5 個檔案共 10 處 trailing whitespace | 失敗 | automated |
 | 2026-06-18 | LLM-T17 | Chrome Web Store 封裝 | `npm run package` | 產生 0.4.0 zip | `dist\llmeeting-0.4.0.zip` 1,792,914 bytes | 通過 | automated |
 | 2026-06-18 | LLM-T17 | 互動第 6 輪回歸 | Node 建立 5 輪 engine，再 `addChatRound()` 並總結 | 新工作應寫入第 6 輪並可總結 | 新輪數為 6，但 job.round 被夾成 5；總結報 `Cannot leave critique-6; missing chatgpt` | 失敗 | automated |
+| 2026-06-19 | LLM-T17, LLM-T18, LLM-T19 | 完整自動化測試 | `npm test` | 所有回歸與行為測試通過 | 78/78 pass | 通過 | automated |
+| 2026-06-19 | LLM-T17, LLM-T19 | 變更檔案語法檢查 | `node --check` 逐一檢查 10 個變更 JavaScript 檔 | 無語法錯誤 | 10/10 exit 0 | 通過 | automated |
+| 2026-06-19 | LLM-T17 | Diff whitespace 檢查 | `git diff --check d12bca6` | 無 whitespace error | exit 0 | 通過 | automated |
+| 2026-06-19 | LLM-T18 | Chrome Web Store 封裝 | `npm run package`、`tar -tf dist/llmeeting-0.4.0.zip` | 只包含 manifest、assets、src，且保留彩蛋 | 1,810,001 bytes；內容符合且含 `src/sidepanel/dev-unlock.js` | 通過 | automated |

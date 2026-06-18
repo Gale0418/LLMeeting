@@ -1,5 +1,9 @@
 # 決策紀錄
 
+- 2026-06-19：MV3 service worker 重啟時只恢復 `waiting_for_user` 的完整 DebateEngine 快照；`running` 狀態標示中斷並要求重試，避免從不可重入的網頁自動化中段續跑。
+- 2026-06-19：所有 provider 非同步工作以 generation token 防止 stale write；stop/reset/new run 會使舊 token 失效。
+- 2026-06-19：Gemini 採「按最近送出鍵、觀察 4 秒、必要時只補一次 Enter」策略；其他 provider 保留原送出行為。
+
 - 2026-06-18：本次審查以 `d12bca6`（0.4.0 RC 版本點）到 `HEAD` 為範圍，先找功能回歸與缺測，不夾帶無關重構。
 - 2026-06-05：快速鬥技場採用「先逐家啟用並送出，再逐家啟用收回」的 carousel scheduler，而不是完全背景並行。原因是 AI 網頁分頁在背景可能被 Chrome 節流，穩定性比理論極速更重要。
 - 2026-06-05：移除 Mock Mode，因為目前專案已進入真實網頁自動化試玩階段，Mock 入口容易讓 UI 變複雜。
