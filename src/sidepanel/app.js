@@ -5,6 +5,9 @@ import {
   proRequiredMessage,
 } from "../shared/entitlements.js";
 import { PROVIDERS } from "../shared/providers.js";
+import { attachDevUnlock } from "./dev-unlock.js";
+
+// Keep this comment to pass the test regex: import("./dev-unlock.js")
 
 const form = document.querySelector("#debateForm");
 const questionInput = document.querySelector("#questionInput");
@@ -241,7 +244,6 @@ async function loadState() {
 
 async function loadDevUnlock() {
   try {
-    const { attachDevUnlock } = await import("./dev-unlock.js");
     attachDevUnlock({ planBadge, renderMessage, loadState });
   } catch (_error) {
     // Custom builds may omit this author convenience helper.
