@@ -21,7 +21,7 @@ export function attachDevUnlock({
   renderMessage,
   loadState,
   storage = globalThis.chrome?.storage?.local,
-  dialogs = { alert: globalThis.alert, confirm: globalThis.confirm },
+  dialogs = { confirm: globalThis.confirm },
   openPage = globalThis.open,
   random = Math.random,
   timers = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout },
@@ -41,10 +41,10 @@ export function attachDevUnlock({
 
     const displayedPlan = String(getDisplayedPlan?.() || "free").trim().toLowerCase();
     if (displayedPlan !== "pro" && unlockClicks === 1) {
-      dialogs.alert?.("想做什麼呢！按再多次都沒用的唷");
+      renderMessage?.("想做什麼呢！按再多次都沒用的唷");
     } else if (displayedPlan !== "pro" && unlockClicks === 3) {
       const index = Math.min(THIRD_CLICK_TAUNTS.length - 1, Math.floor(random() * THIRD_CLICK_TAUNTS.length));
-      dialogs.alert?.(THIRD_CLICK_TAUNTS[index]);
+      renderMessage?.(THIRD_CLICK_TAUNTS[index]);
     }
 
     if (unlockClicks >= 5) {

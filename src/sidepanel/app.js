@@ -245,6 +245,7 @@ async function loadDevUnlock() {
     attachDevUnlock({ planBadge, renderMessage, loadState });
   } catch (_error) {
     // Custom builds may omit this author convenience helper.
+    renderMessage("作者模式載入失敗: " + _error.message);
   }
 }
 

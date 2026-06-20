@@ -177,7 +177,7 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 16px;
-  margin-top: 180px; /* 推下來留給背景圖空間 */
+  margin-top: 140px; /* 推下來留給背景圖空間 */
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(16px);
 }
