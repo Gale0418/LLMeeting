@@ -21,6 +21,7 @@ export function attachDevUnlock({
   renderMessage,
   loadState,
   storage = globalThis.chrome?.storage?.local,
+  tabs = globalThis.chrome?.tabs,
   dialogs = { confirm: globalThis.confirm },
   openPage = globalThis.open,
   random = Math.random,
@@ -61,10 +62,15 @@ export function attachDevUnlock({
         await storage.set({ [ENTITLEMENT_STORAGE_KEY]: nextPlan });
 
         if (nextPlan === "pro") {
-          renderMessage?.(`作者模式：Pro 已啟用！歡迎訂閱作者頻道！`);
-          const goToYT = dialogs.confirm?.(`恭喜解鎖 PRO 模式！\n\n覺得這個擴充功能好用嗎？\n歡迎訂閱作者的 YouTube 頻道、按讚並分享：\n${AUTHOR_YOUTUBE_URL}\n\n要去看看嗎？ (被拖走)`);
-          if (goToYT) {
-            openPage?.(AUTHOR_YOUTUBE_URL, "_blank");
+          renderMessage?.(`作者模式：Pro 已啟用！歡迎大家訂閱分享按讚((被拖走`);
+          try {
+            if (tabs?.create) {
+              tabs.create({ url: AUTHOR_YOUTUBE_URL });
+            } else {
+              openPage?.(AUTHOR_YOUTUBE_URL, "_blank");
+            }
+          } catch (e) {
+            console.error(e);
           }
         } else {
           renderMessage?.(`作者模式：Free 已啟用`);
