@@ -67,7 +67,13 @@
         ".model-response-text",
         "[data-response-index]",
         "response-container",
-        "div[data-message-author='model']"
+        "div[data-message-author='model']",
+        "div[data-message-author='assistant']",
+        ".message-content",
+        ".model-response",
+        "div.message-content",
+        "div.model-response",
+        "[data-testid='message-content']"
       ],
       userMessageSelectors: [
         "user-query",

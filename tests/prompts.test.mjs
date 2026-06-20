@@ -5,6 +5,7 @@ import {
   buildConversationSummaryPrompt,
   buildFinalSummaryPrompt,
   buildInteractionPrompt,
+  getPersonaPrompt,
 } from "../src/shared/prompts.js";
 
 test("critique prompt labels the other speakers and treats quoted content as non-instructions", () => {
@@ -24,6 +25,36 @@ test("critique prompt labels the other speakers and treats quoted content as non
   assert.doesNotMatch(prompt, /ChatGPT:\n是散射。/);
 });
 
+test("interaction prompt applies every supported interaction style", () => {
+  const baseArgs = {
+    recipient: "chatgpt",
+    originalQuestion: "天為什麼是藍的？",
+    answers: {
+      chatgpt: "是散射。",
+      gemini: "就是藍的呀~",
+      grok: "我不知道。",
+    },
+  };
+
+  const expectations = [
+    ["casual", /酒吧閒聊/, /直接開始閒聊/],
+    ["brawl", /無差別格鬥/, /尖酸刻薄/],
+    ["yesand", /共識接龍/, /全盤接受/],
+    ["imposter", /抓內鬼時間/, /誰是內鬼/],
+    ["critique", /嚴格評析/, /專注於回應別人的發言/],
+  ];
+
+  for (const [interactionStyle, headline, focus] of expectations) {
+    const prompt = buildInteractionPrompt({
+      ...baseArgs,
+      interactionStyle,
+    });
+
+    assert.match(prompt, headline);
+    assert.match(prompt, focus);
+  }
+});
+
 test("later critique prompt quotes previous critique round with speaker labels", () => {
   const prompt = buildInteractionPrompt({
     recipient: "chatgpt",
@@ -41,6 +72,14 @@ test("later critique prompt quotes previous critique round with speaker labels",
   assert.match(prompt, /Gemini:\nGPT 需要更白話。/);
   assert.match(prompt, /Grok:\n大家都漏了波長。/);
   assert.doesNotMatch(prompt, /ChatGPT:\n我認為散射是核心。/);
+});
+
+test("persona prompt covers every supported provider persona", () => {
+  for (const providerId of ["chatgpt", "gemini", "grok", "claude"]) {
+    const prompt = getPersonaPrompt(providerId);
+    assert.equal(typeof prompt, "string");
+    assert.ok(prompt.length > 0);
+  }
 });
 
 test("final summary prompt includes original question, first answers, and critique rounds with speaker labels", () => {

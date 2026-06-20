@@ -54,6 +54,7 @@ test("side panel loads a five-click Pro unlocker easter egg", async () => {
   assert.match(app, /import\("\.\/dev-unlock\.js"\)/);
   assert.match(unlocker, /ENTITLEMENT_STORAGE_KEY/);
   assert.match(unlocker, /unlockClicks >= 5/);
+  assert.match(unlocker, /isTogglingPlan/);
   assert.match(unlocker, /storage\.set/);
   assert.match(unlocker, /loadState/);
 });
@@ -82,6 +83,15 @@ test("fifth Free click unlocks Pro and visibly offers the author YouTube URL", a
   assert.equal(harness.getPlan(), "pro");
   assert.match(harness.confirms[0], /https:\/\/www\.youtube\.com\/@gale0418/);
   assert.deepEqual(harness.opened, [["https://www.youtube.com/@gale0418", "_blank"]]);
+});
+
+test("rapid repeated click bursts only toggle the plan once", async () => {
+  const harness = createHarness({ confirmResult: true });
+
+  await Promise.all(Array.from({ length: 10 }, () => harness.click()));
+
+  assert.equal(harness.getPlan(), "pro");
+  assert.equal(harness.confirms.length, 1);
 });
 
 test("Pro badge stays quiet on clicks one and three, then returns to Free on five", async () => {

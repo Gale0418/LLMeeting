@@ -33,6 +33,7 @@ export function attachDevUnlock({
 
   let unlockClicks = 0;
   let resetTimer = 0;
+  let isTogglingPlan = false;
 
   planBadge.addEventListener("click", async () => {
     unlockClicks += 1;
@@ -47,24 +48,32 @@ export function attachDevUnlock({
     }
 
     if (unlockClicks >= 5) {
+      if (isTogglingPlan) {
+        return;
+      }
+      isTogglingPlan = true;
       unlockClicks = 0;
       timers.clearTimeout(resetTimer);
 
-      const stored = await storage.get(ENTITLEMENT_STORAGE_KEY);
-      const nextPlan = stored?.[ENTITLEMENT_STORAGE_KEY] === "pro" ? "free" : "pro";
-      await storage.set({ [ENTITLEMENT_STORAGE_KEY]: nextPlan });
+      try {
+        const stored = await storage.get(ENTITLEMENT_STORAGE_KEY);
+        const nextPlan = stored?.[ENTITLEMENT_STORAGE_KEY] === "pro" ? "free" : "pro";
+        await storage.set({ [ENTITLEMENT_STORAGE_KEY]: nextPlan });
 
-      if (nextPlan === "pro") {
-        renderMessage?.(`作者模式：Pro 已啟用！歡迎訂閱作者頻道！`);
-        const goToYT = dialogs.confirm?.(`恭喜解鎖 PRO 模式！\n\n覺得這個擴充功能好用嗎？\n歡迎訂閱作者的 YouTube 頻道、按讚並分享：\n${AUTHOR_YOUTUBE_URL}\n\n要去看看嗎？ (被拖走)`);
-        if (goToYT) {
-          openPage?.(AUTHOR_YOUTUBE_URL, "_blank");
+        if (nextPlan === "pro") {
+          renderMessage?.(`作者模式：Pro 已啟用！歡迎訂閱作者頻道！`);
+          const goToYT = dialogs.confirm?.(`恭喜解鎖 PRO 模式！\n\n覺得這個擴充功能好用嗎？\n歡迎訂閱作者的 YouTube 頻道、按讚並分享：\n${AUTHOR_YOUTUBE_URL}\n\n要去看看嗎？ (被拖走)`);
+          if (goToYT) {
+            openPage?.(AUTHOR_YOUTUBE_URL, "_blank");
+          }
+        } else {
+          renderMessage?.(`作者模式：Free 已啟用`);
         }
-      } else {
-        renderMessage?.(`作者模式：Free 已啟用`);
-      }
 
-      await loadState?.();
+        await loadState?.();
+      } finally {
+        isTogglingPlan = false;
+      }
       return;
     }
 

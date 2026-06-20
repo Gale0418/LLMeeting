@@ -1,6 +1,6 @@
 # 收尾
 
-- 摘要：LLMeeting 0.4.0 大型功能回歸已修復並完成自動驗證，待 Gemini Chrome 實機確認與商店截圖。
+- 摘要：LLMeeting 0.4.1 候選包已補上 CodeRabbit follow-up 修正並完成自動驗證與封裝，待 Gemini Chrome 實機確認與商店截圖。
 - 已完成：
   - 多 AI 辯論基礎流程。
   - 快速辯論排程。
@@ -11,6 +11,7 @@
   - Pro 權限邊界、動態互動輪次與插話顯示。
   - Gemini 送出確認、單次 Enter fallback 與 provider 專屬回覆正規化。
   - Free badge 第 1／3／5 次點擊彩蛋與 YouTube 連結。
+  - CodeRabbit follow-up 審查、補測與重入保護修正。
 - 未完成：
   - Gemini 最新登入態 DOM 的實機送出驗收。
   - Chrome Web Store 正式截圖與上架。
@@ -20,9 +21,9 @@
   - 背景分頁節流。
   - 長上下文 prompt 過長。
 - Smoke tests：
-  - `npm test` 78/78 pass。
+  - `npm test` 81/81 pass。
   - `node --check` 10 個變更 JavaScript 檔案 pass。
-  - `git diff --check d12bca6` 無 whitespace error。
-  - `dist/llmeeting-0.4.0.zip` 1,810,001 bytes，內容只含 extension 檔案並保留公開彩蛋。
+  - CodeRabbit 首輪 4 issues；follow-up uncommitted review 為 0 issues。
+  - `dist/llmeeting-0.4.1.zip` 1,809,886 bytes，內容只含 extension 檔案並保留公開彩蛋。
 - 回顧：
   - 下一步應先做真實 Chrome 試玩，再決定要補強穩定性還是開始設計付費授權。

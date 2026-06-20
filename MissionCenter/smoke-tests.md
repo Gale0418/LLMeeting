@@ -31,3 +31,6 @@
 | 2026-06-19 | LLM-T17, LLM-T19 | 變更檔案語法檢查 | `node --check` 逐一檢查 10 個變更 JavaScript 檔 | 無語法錯誤 | 10/10 exit 0 | 通過 | automated |
 | 2026-06-19 | LLM-T17 | Diff whitespace 檢查 | `git diff --check d12bca6` | 無 whitespace error | exit 0 | 通過 | automated |
 | 2026-06-19 | LLM-T18 | Chrome Web Store 封裝 | `npm run package`、`tar -tf dist/llmeeting-0.4.0.zip` | 只包含 manifest、assets、src，且保留彩蛋 | 1,810,001 bytes；內容符合且含 `src/sidepanel/dev-unlock.js` | 通過 | automated |
+
+| 2026-06-20 | LLM-E1 | CodeRabbit 第三方審查 follow-up | coderabbit review --agent --base-commit 24eaddb20a8ce4f7f9fd8f40c10efdc74d1b0e8a -c .coderabbit.yaml、coderabbit review --agent -t uncommitted -c .coderabbit.yaml | 取得第三方 review、只修有效問題，follow-up 無剩餘 issues | 首輪 4 issues；確認 3 項成立並修正後，uncommitted follow-up 為 0 issues | 通過 | external |
+| 2026-06-20 | LLM-E1 | 0.4.1 候選包驗證 | npm test、npm run package、tar -tf dist/llmeeting-0.4.1.zip | 測試通過，並產生 0.4.1 zip 且只含 extension 檔案 | 81/81 pass；dist/llmeeting-0.4.1.zip 1,809,886 bytes；tar 內容只含 manifest、assets、src 與公開彩蛋 | 通過 | automated |

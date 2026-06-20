@@ -7,7 +7,7 @@ test("manifest declares the side-panel MV3 extension shell", async () => {
   const packageJson = JSON.parse(await readFile("package.json", "utf8"));
 
   assert.equal(manifest.name, "LLMeeting");
-  assert.equal(manifest.version, "0.4.0");
+  assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
   assert.equal(manifest.version, packageJson.version);
   assert.equal(manifest.action.default_title, "LLMeeting");
   assert.equal(manifest.manifest_version, 3);

@@ -2,7 +2,7 @@
 
 | ID | 標題 | 類型 | 上層 | 優先級 | 狀態 | 負責人 | 依賴 | 下一步 | 驗證方式 | 估算 | 標籤 | 備註 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| LLM-E1 | LLMeeting MVP 收尾 | Epic |  | P1 | In Progress | Codex |  | 完成 Gemini Chrome 實機確認後擷取商店截圖 | 自動測試、語法檢查、Chrome 實機試跑、CodeRabbit review | 12 | chrome-extension, ai-debate | 0.4.0 大改回歸已修復，剩實機與上架素材 |
+| LLM-E1 | LLMeeting MVP 收尾 | Epic |  | P1 | In Progress | Codex |  | 完成 Gemini Chrome 實機確認後擷取商店截圖 | 自動測試、語法檢查、Chrome 實機試跑、CodeRabbit review | 12 | chrome-extension, ai-debate | 0.4.1 候選包與 CodeRabbit follow-up 已完成，剩實機與上架素材 |
 | LLM-T1 | 多 AI 辯論基礎流程 | Task | LLM-E1 | P1 | Done | Codex |  | 無 | 使用 ChatGPT/Gemini/Grok 實際試跑，主人回報可運行 | 2 | mvp | 已完成 |
 | LLM-T2 | Claude 參與者支援 | Task | LLM-E1 | P2 | Done | Codex |  | 無 | 主人 Chrome 實機跑四家 AI 辯論，Claude 可參與 | 2 | provider, claude | 主人回報四家 AI 實機辯論正常 |
 | LLM-T3 | 快速鬥技場排程 | Task | LLM-E1 | P1 | Done | Codex |  | 無 | `npm test`、service worker 語法檢查 | 3 | pro-feature, scheduler | 已改成先送出再收回 |
@@ -22,3 +22,4 @@
 | LLM-T17 | 修復 0.4.0 RC 後大型功能回歸 | Task | LLM-E1 | P1 | Done | Codex | LLM-T16 | 無 | `npm test`、`node --check`、diff 審查 | 5 | review, regression, interaction | MV3 恢復、run token、Pro gate、動態輪次、插話對齊與 response artifact 均已修復 |
 | LLM-T18 | Free 五連點彩蛋對話 | Task | LLM-E1 | P2 | Done | Codex | LLM-T17 | 無 | 單元測試與封裝內容檢查 | 1 | easter-egg, ui | 第 1 次固定台詞，第 3 次從 10 句隨機挑選，第 5 次切換方案並顯示 YouTube 連結 |
 | LLM-T19 | Gemini 可靠送出與確認 | Task | LLM-E1 | P1 | Review | Codex | LLM-T17 | 在登入 Gemini 的 Chrome 跑一次完整送出與收回 | 單元測試、content script 安全檢查與 Chrome 實機試跑 | 2 | gemini, automation, reliability | 自動測試已通過；按鈕未確認時只補一次 Enter，仍失敗會明確報錯 |
+

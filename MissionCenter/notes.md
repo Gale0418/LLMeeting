@@ -7,6 +7,11 @@
   4. Gemini 送出由輸入清空、生成開始或使用者訊息新增確認；只有未確認時補一次 Enter。
   5. Free badge 第 1、3、5 次點擊行為已有可注入亂數、儲存與對話框的單元測試。
 
+- 2026-06-20 CodeRabbit follow-up：
+  1. 首輪 review 提出 4 項建議，其中 3 項成立：prompt 互動風格測試、persona prompt 測試、Free badge 極速連點重入保護。
+  2. sessionRecovery 的 createIdleState() 參數建議未採納，因為 service worker 端本來就以預設參數支援省略呼叫，並非真實 bug。
+  3. 升版目標改為 0.4.1，重新產出可上傳商店 zip。
+
 - 2026-06-18 審查發現：
   1. 自由群聊與劇場模式標示為 Pro，但 entitlement 和 background 都沒有 gate，Free 可直接啟動。
   2. MV3 service worker 恢復儲存的 `runtimeState` 時沒有恢復 `engine`，互動續聊在 worker 被回收後會用空 engine。
@@ -16,7 +21,7 @@
   6. 互動插話的 `userMessages` 以緊密陣列儲存，UI 卻以實際輪號取值，多輪後會顯示在錯的輪次。
   7. 回覆文字末尾的 `image` 會在所有 provider 被無條件移除，可能截斷合法回覆。
 - 補強優先順序：
-  1. reload LLMeeting 0.4.0 後手動試跑基礎辯論與多輪互評。
+  1. reload LLMeeting 0.4.1 後手動試跑基礎辯論與多輪互評。
   2. 五連點 Free badge 切換 Pro，試跑進階辯論設定裡的快速鬥技場與總結辯論。
   3. 依 `store/screenshot-checklist.md` 擷取商店截圖。
   4. 視實機結果補 retry、timeout、provider selector。
@@ -29,3 +34,4 @@
 - 可賣錢但暫時不做的東西：
   - 會議紀錄匯出、歷史記錄、模板、評分表、授權系統、雲端同步。
   - 快速鬥技場與總結辯論已先放進 Pro gate，等後續授權來源接上再解鎖。
+
