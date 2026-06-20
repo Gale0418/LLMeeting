@@ -367,12 +367,13 @@
         stableSince = Date.now();
       }
 
+      const timeStable = Date.now() - stableSince;
       if (
         currentText &&
         hasFreshAssistantResponse(baseline, current) &&
         !isPromptEcho(prompt, currentText) &&
-        !isGenerating(config) &&
-        Date.now() - stableSince > 2000
+        (!isGenerating(config) || timeStable > 15000) &&
+        timeStable > 2000
       ) {
         return;
       }
