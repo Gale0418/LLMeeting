@@ -22,10 +22,16 @@ export function attachDevUnlock({
   loadState,
   storage = globalThis.chrome?.storage?.local,
   tabs = globalThis.chrome?.tabs,
-  dialogs = { alert: globalThis.alert, confirm: globalThis.confirm },
+  dialogs = {
+    alert: (msg) => globalThis.alert?.(msg),
+    confirm: (msg) => globalThis.confirm?.(msg)
+  },
   openPage = globalThis.open,
   random = Math.random,
-  timers = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout },
+  timers = {
+    setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
+    clearTimeout: (id) => globalThis.clearTimeout(id)
+  },
   getDisplayedPlan = () => planBadge?.textContent,
 }) {
   if (!planBadge || !storage) {
