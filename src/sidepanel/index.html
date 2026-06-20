@@ -7,23 +7,33 @@
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LLMeeting</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
     <main class="shell">
       <header class="topbar">
         <div>
           <div class="brand-row">
             <h1>LLMeeting</h1>
             <span id="planBadge" class="plan-badge">Free</span>
-            <span class="version-badge">v0.4.1</span>
+            <span class="version-badge">v0.4.2</span>
           </div>
           <p id="statusText">等待開始</p>
         </div>
         <button id="resetButton" type="button" title="重置">Reset</button>
       </header>
 
-      <!-- 狀態進度條 -->
-      <div id="progressContainer" class="progress-container">
-        <div id="progressBar" class="progress-bar" style="width: 0%"></div>
-      </div>
+      <div class="main-content">
+        <!-- 狀態進度條 -->
+        <div id="progressContainer" class="progress-container">
+          <div id="progressBar" class="progress-bar" style="width: 0%"></div>
+        </div>
 
       <form id="debateForm" class="composer">
         <label for="questionInput" class="sr-only">問題</label>
@@ -210,6 +220,7 @@
         <summary>診斷資訊</summary>
         <pre id="diagnosticsOutput">尚未開始</pre>
       </details>
+      </div>
     </main>
     <script type="module" src="app.js"></script>
   </body>

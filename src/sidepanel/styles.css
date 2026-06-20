@@ -141,7 +141,11 @@ body {
   transform: translateY(-1px);
 }
 
-/* 進度條容器 */
+.main-content {
+  margin-top: 140px; /* 推下來留給背景圖空間 */
+}
+
+/* 狀態進度條 */
 .progress-container {
   width: 100%;
   height: 4px;
@@ -177,7 +181,6 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 16px;
-  margin-top: 140px; /* 推下來留給背景圖空間 */
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(16px);
 }
