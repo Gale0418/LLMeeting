@@ -16,55 +16,13 @@ export const THIRD_CLICK_TAUNTS = Object.freeze([
   "再按下去也不會有驚喜……大概。",
 ]);
 
-function customAlert(message) {
-  const overlay = document.createElement("div");
-  Object.assign(overlay.style, {
-    position: "fixed", top: "0", left: "0", width: "100vw", height: "100vh",
-    backgroundColor: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center",
-    zIndex: "9999", backdropFilter: "blur(2px)"
-  });
-  const box = document.createElement("div");
-  Object.assign(box.style, {
-    background: "#1e2032", border: "1px solid rgba(255,255,255,0.1)",
-    borderRadius: "12px", padding: "24px", color: "#f0f3fa", maxWidth: "280px", textAlign: "center",
-    boxShadow: "0 10px 30px rgba(0,0,0,0.5)"
-  });
-  box.innerHTML = `<p style="margin-bottom: 20px; font-size: 14px; line-height: 1.5;">${message.replace(/\n/g, '<br>')}</p>
-    <button style="background: #5856d6; color: white; border: none; padding: 8px 24px; border-radius: 6px; cursor: pointer; font-weight: 500;">確定</button>`;
-  box.querySelector("button").onclick = () => overlay.remove();
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-}
-
-function customConfirm(message, onYes) {
-  const overlay = document.createElement("div");
-  Object.assign(overlay.style, {
-    position: "fixed", top: "0", left: "0", width: "100vw", height: "100vh",
-    backgroundColor: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center",
-    zIndex: "9999", backdropFilter: "blur(2px)"
-  });
-  const box = document.createElement("div");
-  Object.assign(box.style, {
-    background: "#1e2032", border: "1px solid rgba(255,255,255,0.1)",
-    borderRadius: "12px", padding: "24px", color: "#f0f3fa", maxWidth: "280px", textAlign: "center",
-    boxShadow: "0 10px 30px rgba(0,0,0,0.5)"
-  });
-  box.innerHTML = `<p style="margin-bottom: 20px; font-size: 14px; line-height: 1.5;">${message.replace(/\n/g, '<br>')}</p>
-    <div style="display: flex; gap: 12px; justify-content: center;">
-      <button id="btnNo" style="background: rgba(255,255,255,0.1); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; flex: 1;">算了</button>
-      <button id="btnYes" style="background: #5856d6; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; flex: 1;">去看看</button>
-    </div>`;
-  box.querySelector("#btnNo").onclick = () => overlay.remove();
-  box.querySelector("#btnYes").onclick = () => { overlay.remove(); onYes(); };
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-}
-
 export function attachDevUnlock({
   planBadge,
   renderMessage,
   loadState,
   storage = globalThis.chrome?.storage?.local,
+  tabs = globalThis.chrome?.tabs,
+  dialogs = { alert: globalThis.alert, confirm: globalThis.confirm },
   openPage = globalThis.open,
   random = Math.random,
   timers = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout },
@@ -84,10 +42,10 @@ export function attachDevUnlock({
 
     const displayedPlan = String(getDisplayedPlan?.() || "free").trim().toLowerCase();
     if (displayedPlan !== "pro" && unlockClicks === 1) {
-      customAlert("想做什麼呢！按再多次都沒用的唷");
+      dialogs.alert?.("想做什麼呢！按再多次都沒用的唷");
     } else if (displayedPlan !== "pro" && unlockClicks === 3) {
       const index = Math.min(THIRD_CLICK_TAUNTS.length - 1, Math.floor(random() * THIRD_CLICK_TAUNTS.length));
-      customAlert(THIRD_CLICK_TAUNTS[index]);
+      dialogs.alert?.(THIRD_CLICK_TAUNTS[index]);
     }
 
     if (unlockClicks >= 5) {
@@ -104,10 +62,18 @@ export function attachDevUnlock({
         await storage.set({ [ENTITLEMENT_STORAGE_KEY]: nextPlan });
 
         if (nextPlan === "pro") {
-          renderMessage?.(`作者模式：Pro 已啟用！歡迎訂閱作者頻道！`);
-          customConfirm(`恭喜解鎖 PRO 模式！\n\n覺得這個擴充功能好用嗎？\n歡迎訂閱作者的 YouTube 頻道、按讚並分享：\n${AUTHOR_YOUTUBE_URL}\n\n要去看看嗎？ (被拖走)`, () => {
-            openPage?.(AUTHOR_YOUTUBE_URL, "_blank");
-          });
+          renderMessage?.(`作者模式：Pro 已啟用！歡迎大家訂閱分享按讚((被拖走`);
+          if (dialogs.confirm?.(`恭喜解鎖 PRO 模式！\n\n覺得這個擴充功能好用嗎？\n歡迎訂閱作者的 YouTube 頻道、按讚並分享：\n${AUTHOR_YOUTUBE_URL}\n\n要去看看嗎？ (被拖走)`)) {
+            try {
+              if (tabs?.create) {
+                tabs.create({ url: AUTHOR_YOUTUBE_URL });
+              } else {
+                openPage?.(AUTHOR_YOUTUBE_URL, "_blank");
+              }
+            } catch (e) {
+              console.error(e);
+            }
+          }
         } else {
           renderMessage?.(`作者模式：Free 已啟用`);
         }
