@@ -665,8 +665,18 @@ function renderDebateModeState() {
     return;
   }
 
+  let currentMode = selectedDebateMode();
+  let featureId = featureForMode(currentMode);
+  if (currentEntitlements.isPro && !featureId) {
+    const fastInput = document.querySelector('input.debate-mode-select[value="fast"]');
+    if (fastInput) fastInput.checked = true;
+  } else if (!currentEntitlements.isPro && featureId) {
+    const basicInput = document.querySelector('input.debate-mode-select[value="basic"]');
+    if (basicInput) basicInput.checked = true;
+  }
+
   const mode = selectedDebateMode();
-  const featureId = featureForMode(mode);
+  featureId = featureForMode(mode);
   const locked = Boolean(featureId && !canUseFeature(currentEntitlements, featureId));
   basicDebateButton.textContent = debateModeButtonLabel(mode);
   basicDebateButton.classList.toggle("is-locked", locked);
@@ -688,6 +698,12 @@ function renderDebateModeOptionStates() {
     const locked = !canUseFeature(currentEntitlements, featureId);
     optionEl.classList.toggle("is-locked", locked);
     optionEl.title = locked ? proRequiredMessage(featureId) : featureLabel(featureId);
+    
+    if (currentEntitlements.isPro) {
+      optionEl.style.display = featureId ? "" : "none";
+    } else {
+      optionEl.style.display = featureId ? "none" : "";
+    }
   }
 }
 
