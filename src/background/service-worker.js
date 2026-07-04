@@ -1068,11 +1068,12 @@ async function publishState(runToken) {
     runController.assertCurrent(runToken);
   }
 
-  const stateToPublish = JSON.parse(JSON.stringify(runtimeState));
+  let stateToPublish = JSON.parse(JSON.stringify(runtimeState));
   await chrome.storage.local.set({ [STORAGE_KEY]: stateToPublish });
 
   if (runToken !== undefined && !runController.isCurrent(runToken)) {
     await chrome.storage.local.set({ [STORAGE_KEY]: runtimeState });
+    stateToPublish = JSON.parse(JSON.stringify(runtimeState));
     runController.assertCurrent(runToken);
   }
 

@@ -2,6 +2,7 @@ import { ENTITLEMENT_STORAGE_KEY } from "../shared/entitlements.js";
 
 const CLICK_WINDOW_MS = 1800;
 const AUTHOR_YOUTUBE_URL = "https://www.youtube.com/@gale0418";
+const ATTACHED_KEY = "__llmeetingDevUnlockAttached";
 
 export const THIRD_CLICK_TAUNTS = Object.freeze([
   "你還真的繼續按嗎？",
@@ -37,6 +38,10 @@ export function attachDevUnlock({
   if (!planBadge || !storage) {
     return false;
   }
+  if (planBadge[ATTACHED_KEY]) {
+    return true;
+  }
+  planBadge[ATTACHED_KEY] = true;
 
   let unlockClicks = 0;
   let resetTimer = 0;
@@ -85,6 +90,8 @@ export function attachDevUnlock({
         }
 
         await loadState?.();
+      } catch (e) {
+        console.error(e);
       } finally {
         isTogglingPlan = false;
       }

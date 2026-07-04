@@ -94,6 +94,47 @@ test("rapid repeated click bursts only toggle the plan once", async () => {
   assert.equal(harness.confirms.length, 1);
 });
 
+test("attaching the unlocker twice still handles each badge click once", async () => {
+  let storedPlan = "free";
+  const alerts = [];
+  const clickHandlers = [];
+  const planBadge = {
+    addEventListener(type, handler) {
+      if (type === "click") clickHandlers.push(handler);
+    },
+  };
+  const storage = {
+    async get() { return { [ENTITLEMENT_STORAGE_KEY]: storedPlan }; },
+    async set(value) { storedPlan = value[ENTITLEMENT_STORAGE_KEY]; },
+  };
+  const options = {
+    planBadge,
+    renderMessage: () => {},
+    loadState: async () => {},
+    storage,
+    dialogs: {
+      alert: (message) => alerts.push(message),
+      confirm: () => false,
+    },
+    random: () => 0,
+    timers: { setTimeout: () => 1, clearTimeout: () => {} },
+    getDisplayedPlan: () => storedPlan,
+  };
+
+  assert.equal(attachDevUnlock(options), true);
+  assert.equal(attachDevUnlock(options), true);
+
+  for (let click = 0; click < 5; click += 1) {
+    for (const handler of clickHandlers) await handler();
+  }
+
+  assert.equal(storedPlan, "pro");
+  assert.deepEqual(alerts, [
+    "想做什麼呢！按再多次都沒用的唷",
+    THIRD_CLICK_TAUNTS[0],
+  ]);
+});
+
 test("Pro badge stays quiet on clicks one and three, then returns to Free on five", async () => {
   const harness = createHarness({ plan: "pro" });
 

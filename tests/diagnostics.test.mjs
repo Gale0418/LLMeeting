@@ -39,6 +39,15 @@ test("side panel exposes a visible provider diagnostics output", async () => {
   assert.match(app, /renderDiagnostics\(state\)/);
 });
 
+test("side panel html has a single document shell and app module", async () => {
+  const html = await readFile("src/sidepanel/index.html", "utf8");
+
+  assert.equal(html.match(/<!doctype html>/gi)?.length, 1);
+  assert.equal(html.match(/<html\b/gi)?.length, 1);
+  assert.equal(html.match(/<body\b/gi)?.length, 1);
+  assert.equal(html.match(/<script type="module" src="app\.js"><\/script>/g)?.length, 1);
+});
+
 test("side panel exposes one main debate button and advanced mutually exclusive debate modes", async () => {
   const html = await readFile("src/sidepanel/index.html", "utf8");
   const app = await readFile("src/sidepanel/app.js", "utf8");

@@ -32,6 +32,13 @@ export function buildConversationSummaryPrompt(userNote = "") {
   ].filter((line) => line !== null).join("\n");
 }
 
+function resolveProviders(activeProviders) {
+  if (Array.isArray(activeProviders) && activeProviders.length > 0) {
+    return PROVIDERS.filter((p) => activeProviders.includes(p.id));
+  }
+  return PROVIDERS;
+}
+
 export function buildInteractionPrompt({
   recipient,
   answers = {},
@@ -41,9 +48,7 @@ export function buildInteractionPrompt({
   activeProviders,
   interactionStyle = "critique",
 }) {
-  const providersList = activeProviders 
-    ? PROVIDERS.filter((p) => activeProviders.includes(p.id)) 
-    : PROVIDERS;
+  const providersList = resolveProviders(activeProviders);
   const others = providersList.filter((p) => p.id !== recipient);
   const usesPreviousCritiques = roundNumber > 1;
   const sourceMap = usesPreviousCritiques ? previousCritiques : answers;
@@ -123,9 +128,7 @@ export function buildFinalSummaryPrompt({
   maxChars,
   activeProviders,
 }) {
-  const providersList = activeProviders 
-    ? PROVIDERS.filter((p) => activeProviders.includes(p.id)) 
-    : PROVIDERS;
+  const providersList = resolveProviders(activeProviders);
 
   const answerBlocks = providersList.map((provider) =>
     formatSpeakerBlock(provider.label, answers[provider.id] || "[沒有取得回答]", { maxChars }),
