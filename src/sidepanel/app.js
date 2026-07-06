@@ -15,6 +15,13 @@ const basicDebateButton = document.querySelector("#basicDebateButton");
 const resetButton = document.querySelector("#resetButton");
 const statusText = document.querySelector("#statusText");
 const planBadge = document.querySelector("#planBadge");
+const versionBadge = document.querySelector("#versionBadge") || document.querySelector(".version-badge");
+if (versionBadge && typeof chrome !== "undefined" && chrome.runtime?.getManifest) {
+  const manifestVer = chrome.runtime.getManifest()?.version;
+  if (manifestVer) {
+    versionBadge.textContent = `v${manifestVer}`;
+  }
+}
 const transcriptOutput = document.querySelector("#transcriptOutput");
 const diagnosticsOutput = document.querySelector("#diagnosticsOutput");
 const chatTranscript = document.querySelector("#chatTranscript");
