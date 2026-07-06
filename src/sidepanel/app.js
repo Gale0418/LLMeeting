@@ -705,12 +705,7 @@ function renderDebateModeOptionStates() {
     const locked = !canUseFeature(currentEntitlements, featureId);
     optionEl.classList.toggle("is-locked", locked);
     optionEl.title = locked ? proRequiredMessage(featureId) : featureLabel(featureId);
-    
-    if (currentEntitlements.isPro) {
-      optionEl.style.display = featureId ? "" : "none";
-    } else {
-      optionEl.style.display = featureId ? "none" : "";
-    }
+    optionEl.style.display = "";
   }
 }
 
