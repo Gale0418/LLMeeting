@@ -19,6 +19,34 @@ test("engine starts a fixed first-round debate for all providers", () => {
   );
 });
 
+test("observer chair excludes summary provider from active debate participants", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini", "claude"], "chatgpt", 1, { summaryStrategy: "observer" });
+  const jobs = engine.start("什麼是 AI？");
+
+  assert.deepEqual(engine.activeProviders, ["gemini", "claude"]);
+  assert.equal(jobs.length, 2);
+  assert.equal(jobs.some((j) => j.provider === "chatgpt"), false);
+});
+
+test("anonymous review mode adds naming prompt and formats final summary with anonymous labels", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"], "claude", 1, { summaryStrategy: "anonymous" });
+  const firstJobs = engine.start("如何煮好咖啡？");
+
+  assert.match(firstJobs[0].prompt, /匿名名：<你的匿名名>/);
+
+  engine.recordAnswer("chatgpt", "匿名名：星砂小喵\n使用現磨咖啡豆。");
+  engine.recordAnswer("gemini", "匿名名：雲朵汪汪\n水溫抓90度。");
+  engine.buildCritiqueJobs(1);
+  engine.recordCritique("chatgpt", "同意。");
+  engine.recordCritique("gemini", "沒錯。");
+
+  const finalJob = engine.buildFinalJob();
+  assert.equal(finalJob.provider, "claude");
+  assert.equal(finalJob.forceNewTab, true);
+  assert.match(finalJob.prompt, /星砂小喵:\n匿名名：星砂小喵/);
+  assert.match(finalJob.prompt, /雲朵汪汪:\n匿名名：雲朵汪汪/);
+});
+
 test("engine builds critique jobs after all first answers are recorded", () => {
   const engine = new DebateEngine();
   engine.start("天為什麼是藍的？");

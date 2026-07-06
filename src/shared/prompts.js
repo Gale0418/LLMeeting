@@ -127,12 +127,14 @@ export function buildFinalSummaryPrompt({
   critiqueRounds,
   maxChars,
   activeProviders,
+  speakerLabels = {},
 }) {
   const providersList = resolveProviders(activeProviders);
 
-  const answerBlocks = providersList.map((provider) =>
-    formatSpeakerBlock(provider.label, answers[provider.id] || "[沒有取得回答]", { maxChars }),
-  ).join("\n\n");
+  const answerBlocks = providersList.map((provider) => {
+    const label = speakerLabels[provider.id] || provider.label;
+    return formatSpeakerBlock(label, answers[provider.id] || "[沒有取得回答]", { maxChars });
+  }).join("\n\n");
 
   const rounds = Array.isArray(critiqueRounds) && critiqueRounds.length
     ? critiqueRounds
@@ -142,9 +144,10 @@ export function buildFinalSummaryPrompt({
     if (roundCritiques.USER) {
       text += `[人類補充發言]:\n${normalizeText(roundCritiques.USER)}\n\n`;
     }
-    const critiqueBlocks = providersList.map((provider) =>
-      formatSpeakerBlock(provider.label, roundCritiques[provider.id] || "[沒有取得互評]", { maxChars }),
-    ).join("\n\n");
+    const critiqueBlocks = providersList.map((provider) => {
+      const label = speakerLabels[provider.id] || provider.label;
+      return formatSpeakerBlock(label, roundCritiques[provider.id] || "[沒有取得互評]", { maxChars });
+    }).join("\n\n");
     text += critiqueBlocks;
     return text;
   }).join("\n\n");

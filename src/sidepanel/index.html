@@ -78,10 +78,29 @@
                 <option value="gemini">Gemini</option>
                 <option value="grok">Grok</option>
                 <option value="claude">Claude</option>
+                <option value="random">隨機主席 🎲</option>
               </select>
             </div>
 
-            <div class="setting-item">
+            <fieldset class="mode-fieldset" style="margin-top: 12px;">
+              <legend>總結方式</legend>
+              <div class="mode-options">
+                <label class="mode-option">
+                  <input type="radio" class="summary-strategy-select" name="summaryStrategy" value="general" checked>
+                  <span>一般裁判總結</span>
+                </label>
+                <label class="mode-option" data-pro-feature="observerChair">
+                  <input type="radio" class="summary-strategy-select" name="summaryStrategy" value="observer">
+                  <span>圍觀主席制 👑 <span class="pro-pill">PRO</span></span>
+                </label>
+                <label class="mode-option" data-pro-feature="anonymousReview">
+                  <input type="radio" class="summary-strategy-select" name="summaryStrategy" value="anonymous">
+                  <span>匿名評論制 🎭 <span class="pro-pill">PRO</span></span>
+                </label>
+              </div>
+            </fieldset>
+
+            <div class="setting-item" style="margin-top: 12px;">
               <label><input type="checkbox" id="skipSummaryCheckbox"> 略過最後的總結裁決 (放空模式)</label>
             </div>
 

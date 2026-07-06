@@ -448,6 +448,13 @@ async function startQuestionDebate(question, options = {}) {
     throw new Error("目前已有辯論正在進行");
   }
 
+  const summaryStrategy = options.summaryStrategy || "general";
+  if (summaryStrategy === "observer") {
+    await requireProFeature("observerChair");
+  } else if (summaryStrategy === "anonymous") {
+    await requireProFeature("anonymousReview");
+  }
+
   const activeProviders = normalizeProviderIds(options.activeProviders);
   const summaryProvider = options.summaryProvider || "chatgpt";
   const entitlements = await getEntitlements();
@@ -458,17 +465,19 @@ async function startQuestionDebate(question, options = {}) {
 
   engine = new DebateEngine(activeProviders, summaryProvider, debateRounds, {
     interactionStyle: options.interactionStyle,
+    summaryStrategy,
   });
   runtimeState = {
-    ...createIdleState(activeProviders),
+    ...createIdleState(engine.activeProviders),
     busy: true,
     status: "running",
     mode,
     phase: "first-round",
     message: options.openingMessage || "基礎辯論：準備送出原始問題",
     question: trimmedQuestion,
-    activeProviders,
-    summaryProvider,
+    activeProviders: engine.activeProviders,
+    summaryProvider: engine.summaryProvider,
+    summaryStrategy,
     debateRounds,
     currentCritiqueRound: 0,
     entitlements,

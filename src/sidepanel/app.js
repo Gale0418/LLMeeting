@@ -126,6 +126,16 @@ async function startSelectedDebate() {
     return;
   }
 
+  const strategy = selectedSummaryStrategy();
+  if (strategy === "observer" && !canUseFeature(currentEntitlements, "observerChair")) {
+    renderLockedFeatureMessage("observerChair");
+    return;
+  }
+  if (strategy === "anonymous" && !canUseFeature(currentEntitlements, "anonymousReview")) {
+    renderLockedFeatureMessage("anonymousReview");
+    return;
+  }
+
   await startDebate(mode);
 }
 
@@ -144,6 +154,7 @@ async function startDebate(mode) {
   }
 
   const summaryProvider = document.querySelector("#summaryProviderSelect").value;
+  const summaryStrategy = selectedSummaryStrategy();
   const skipSummary = document.querySelector("#skipSummaryCheckbox").checked;
   const debateRounds = parseInt(debateRoundsInput?.value, 10) || 1;
   const interactionStyle = interactionStyleSelect?.value || "critique";
@@ -179,6 +190,7 @@ async function startDebate(mode) {
     mode,
     activeProviders,
     summaryProvider,
+    summaryStrategy,
     skipSummary,
     debateRounds,
     customPersonas,
@@ -347,6 +359,11 @@ function selectedProviderIds() {
 
 function selectedDebateMode() {
   return debateModeEls.find((el) => el.checked)?.value || "basic";
+}
+
+function selectedSummaryStrategy() {
+  const summaryStrategyEls = Array.from(document.querySelectorAll(".summary-strategy-select"));
+  return summaryStrategyEls.find((el) => el.checked)?.value || "general";
 }
 
 function selectedDebateRounds() {
@@ -705,7 +722,12 @@ function renderDebateModeOptionStates() {
     const locked = !canUseFeature(currentEntitlements, featureId);
     optionEl.classList.toggle("is-locked", locked);
     optionEl.title = locked ? proRequiredMessage(featureId) : featureLabel(featureId);
-    optionEl.style.display = "";
+    
+    if (currentEntitlements.isPro) {
+      optionEl.style.display = featureId ? "" : "none";
+    } else {
+      optionEl.style.display = featureId ? "none" : "";
+    }
   }
 }
 
