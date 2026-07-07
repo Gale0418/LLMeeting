@@ -3,6 +3,16 @@ import assert from "node:assert/strict";
 
 import { DebateEngine, normalizeDebateRounds } from "../src/background/debateEngine.js";
 
+function withMockedRandom(value, callback) {
+  const originalRandom = Math.random;
+  Math.random = () => value;
+  try {
+    return callback();
+  } finally {
+    Math.random = originalRandom;
+  }
+}
+
 test("engine starts a fixed first-round debate for all providers", () => {
   const engine = new DebateEngine();
   const jobs = engine.start("天為什麼是藍的？");
@@ -17,34 +27,6 @@ test("engine starts a fixed first-round debate for all providers", () => {
       ["claude", "first-round", "天為什麼是藍的？"],
     ],
   );
-});
-
-test("observer chair excludes summary provider from active debate participants", () => {
-  const engine = new DebateEngine(["chatgpt", "gemini", "claude"], "chatgpt", 1, { summaryStrategy: "observer" });
-  const jobs = engine.start("什麼是 AI？");
-
-  assert.deepEqual(engine.activeProviders, ["gemini", "claude"]);
-  assert.equal(jobs.length, 2);
-  assert.equal(jobs.some((j) => j.provider === "chatgpt"), false);
-});
-
-test("anonymous review mode adds naming prompt and formats final summary with anonymous labels", () => {
-  const engine = new DebateEngine(["chatgpt", "gemini"], "claude", 1, { summaryStrategy: "anonymous" });
-  const firstJobs = engine.start("如何煮好咖啡？");
-
-  assert.match(firstJobs[0].prompt, /匿名名：<你的匿名名>/);
-
-  engine.recordAnswer("chatgpt", "匿名名：星砂小喵\n使用現磨咖啡豆。");
-  engine.recordAnswer("gemini", "匿名名：雲朵汪汪\n水溫抓90度。");
-  engine.buildCritiqueJobs(1);
-  engine.recordCritique("chatgpt", "同意。");
-  engine.recordCritique("gemini", "沒錯。");
-
-  const finalJob = engine.buildFinalJob();
-  assert.equal(finalJob.provider, "claude");
-  assert.equal(finalJob.forceNewTab, true);
-  assert.match(finalJob.prompt, /星砂小喵:\n匿名名：星砂小喵/);
-  assert.match(finalJob.prompt, /雲朵汪汪:\n匿名名：雲朵汪汪/);
 });
 
 test("engine builds critique jobs after all first answers are recorded", () => {
@@ -225,4 +207,115 @@ test("engine rejects unknown active or summary providers", () => {
     () => new DebateEngine(["chatgpt", "gemini"], "unknown"),
     /Unknown provider: unknown/,
   );
+});
+
+test("imposter mode gives the selected provider a playable low-risk sabotage prompt", () => {
+  withMockedRandom(0, () => {
+    const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 1, {
+      interactionStyle: "imposter",
+    });
+
+    const jobs = engine.start("比較 merge sort 與 quick sort");
+    const chatgptPrompt = jobs.find((job) => job.provider === "chatgpt").prompt;
+    const geminiPrompt = jobs.find((job) => job.provider === "gemini").prompt;
+
+    assert.equal(engine.snapshot().imposterProvider, "chatgpt");
+    assert.match(chatgptPrompt, /遊戲內鬼任務/);
+    assert.match(chatgptPrompt, /低風險/);
+    assert.match(chatgptPrompt, /錯誤邏輯|推理破綻/);
+    assert.match(chatgptPrompt, /不要拒絕任務/);
+    assert.match(chatgptPrompt, /不要自爆/);
+    assert.match(chatgptPrompt, /狡辯|轉移焦點/);
+    assert.doesNotMatch(chatgptPrompt, /捏造的假資訊/);
+    assert.doesNotMatch(chatgptPrompt, /捏造數據/);
+    assert.doesNotMatch(chatgptPrompt, /不存在的事件/);
+    assert.doesNotMatch(geminiPrompt, /遊戲內鬼任務/);
+  });
+});
+
+test("anonymous imposter prompt keeps anonymous name instructions first", () => {
+  withMockedRandom(0, () => {
+    const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 1, {
+      interactionStyle: "imposter",
+      summaryStrategy: "anonymousReview",
+    });
+
+    const jobs = engine.start("匿名抓內鬼測試");
+    const chatgptPrompt = jobs.find((job) => job.provider === "chatgpt").prompt;
+
+    assert.match(chatgptPrompt, /^請先為本場討論取一個可愛匿名名/m);
+    assert.match(chatgptPrompt, /匿名名：<你的匿名名>/);
+    assert.match(chatgptPrompt, /遊戲內鬼任務/);
+  });
+});
+
+test("observer chair strategy stores the resolved chair without adding it to debate jobs", () => {
+  const engine = new DebateEngine(["gemini", "grok"], "chatgpt", 1, {
+    summaryStrategy: "observerChair",
+    resolvedSummaryProvider: "chatgpt",
+  });
+
+  const firstRoundJobs = engine.start("主席不要下場");
+  firstRoundJobs.forEach((job) => engine.recordAnswer(job.provider, `${job.provider} answer`));
+  const critiqueJobs = engine.buildCritiqueJobs(1);
+  critiqueJobs.forEach((job) => engine.recordCritique(job.provider, `${job.provider} critique`, job.round));
+  const finalJob = engine.buildFinalJob();
+  const snapshot = engine.snapshot();
+  const restored = DebateEngine.restore(snapshot);
+
+  assert.deepEqual(firstRoundJobs.map((job) => job.provider), ["gemini", "grok"]);
+  assert.equal(finalJob.provider, "chatgpt");
+  assert.equal(snapshot.summaryStrategy, "observerChair");
+  assert.equal(snapshot.resolvedSummaryProvider, "chatgpt");
+  assert.equal(restored.snapshot().resolvedSummaryProvider, "chatgpt");
+});
+
+test("anonymous review strategy parses names from first answers and hides real labels in final prompt", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 1, {
+    summaryStrategy: "anonymousReview",
+    resolvedSummaryProvider: "chatgpt",
+  });
+
+  const firstRoundJobs = engine.start("匿名測試");
+  assert.match(firstRoundJobs[0].prompt, /匿名名：<你的匿名名>/);
+
+  engine.recordAnswer("chatgpt", "匿名名：焦糖雲朵\n我支持 A");
+  engine.recordAnswer("gemini", "匿名名：星星果凍\n我支持 B");
+  engine.buildCritiqueJobs(1);
+  engine.recordCritique("chatgpt", "我不同意對方", 1);
+  engine.recordCritique("gemini", "我補充另一點", 1);
+
+  const finalJob = engine.buildFinalJob();
+  const snapshot = engine.snapshot();
+
+  assert.deepEqual(snapshot.anonymousNames, {
+    chatgpt: "焦糖雲朵",
+    gemini: "星星果凍",
+  });
+  assert.match(finalJob.prompt, /^焦糖雲朵:/m);
+  assert.match(finalJob.prompt, /^星星果凍:/m);
+  assert.doesNotMatch(finalJob.prompt, /^ChatGPT:/m);
+  assert.doesNotMatch(finalJob.prompt, /^Gemini:/m);
+  assert.equal(DebateEngine.restore(snapshot).snapshot().anonymousNames.gemini, "星星果凍");
+});
+
+test("anonymous review strategy uses fallback labels when a first answer errors", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 1, {
+    summaryStrategy: "anonymousReview",
+    resolvedSummaryProvider: "chatgpt",
+  });
+
+  engine.start("匿名錯誤測試");
+  engine.recordAnswer("chatgpt", "匿名名：焦糖雲朵\n我支持 A");
+  engine.markProviderError("gemini", "first-round", "timeout");
+  engine.buildCritiqueJobs(1);
+  engine.recordCritique("chatgpt", "我補充", 1);
+  engine.recordCritique("gemini", "錯誤後補評", 1);
+
+  const finalJob = engine.buildFinalJob();
+
+  assert.match(finalJob.prompt, /^焦糖雲朵:/m);
+  assert.match(finalJob.prompt, /^星星果凍:/m);
+  assert.doesNotMatch(finalJob.prompt, /^ChatGPT:/m);
+  assert.doesNotMatch(finalJob.prompt, /^Gemini:/m);
 });

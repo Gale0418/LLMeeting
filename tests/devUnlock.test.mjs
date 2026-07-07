@@ -135,6 +135,63 @@ test("attaching the unlocker twice still handles each badge click once", async (
   ]);
 });
 
+test("real extension attach guard survives duplicate module realms on the same badge", async () => {
+  const previousChrome = globalThis.chrome;
+  globalThis.chrome = {
+    runtime: { id: "extension-id" },
+    storage: { local: {} },
+  };
+
+  try {
+    let storedPlan = "free";
+    const alerts = [];
+    const clickHandlers = [];
+    const attrs = new Map();
+    const planBadge = {
+      addEventListener(type, handler) {
+        if (type === "click") clickHandlers.push(handler);
+      },
+      getAttribute(name) {
+        return attrs.get(name) || null;
+      },
+      setAttribute(name, value) {
+        attrs.set(name, String(value));
+      },
+      hasAttribute(name) {
+        return attrs.has(name);
+      },
+    };
+    const storage = {
+      async get() { return { [ENTITLEMENT_STORAGE_KEY]: storedPlan }; },
+      async set(value) { storedPlan = value[ENTITLEMENT_STORAGE_KEY]; },
+    };
+    const options = {
+      planBadge,
+      renderMessage: () => {},
+      loadState: async () => {},
+      storage,
+      dialogs: {
+        alert: (message) => alerts.push(message),
+        confirm: () => false,
+      },
+      random: () => 0,
+      timers: { setTimeout: () => 1, clearTimeout: () => {} },
+      getDisplayedPlan: () => storedPlan,
+    };
+
+    assert.equal(attachDevUnlock(options), true);
+    delete globalThis.__llmeetingDevUnlockAttached;
+    assert.equal(attachDevUnlock(options), true);
+
+    assert.equal(clickHandlers.length, 1);
+    await clickHandlers[0]();
+    assert.deepEqual(alerts, ["想做什麼呢！按再多次都沒用的唷"]);
+  } finally {
+    globalThis.chrome = previousChrome;
+    delete globalThis.__llmeetingDevUnlockAttached;
+  }
+});
+
 test("Pro badge stays quiet on clicks one and three, then returns to Free on five", async () => {
   const harness = createHarness({ plan: "pro" });
 

@@ -14,6 +14,7 @@ import { buildConversationSummaryPrompt } from "../shared/prompts.js";
 import {
   DEFAULT_ACTIVE_PROVIDER_IDS,
   PROVIDERS,
+  isProviderId,
   normalizeProviderIds,
   providerLabel,
 } from "../shared/providers.js";
@@ -57,7 +58,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "aiDebate:start") {
-    const { question, mode = "basic", activeProviders, summaryProvider, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode } = message;
+    const { question, mode = "basic", activeProviders, summaryProvider, summaryStrategy, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode } = message;
     const startAction = {
       basic: startBasicDebate,
       fast: startFastDebate,
@@ -78,7 +79,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           throw new Error("目前已有辯論正在進行");
         }
         runToken = runController.start();
-        return startAction(question, { activeProviders, summaryProvider, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode, runToken });
+        return startAction(question, { activeProviders, summaryProvider, summaryStrategy, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode, runToken });
       })
       .then((state) => sendResponse({ ok: true, state }))
       .catch(async (error) => {
@@ -195,6 +196,7 @@ function createIdleState(providerIds = DEFAULT_ACTIVE_PROVIDER_IDS) {
     errors: [],
     activeProviders,
     summaryProvider: "chatgpt",
+    summaryStrategy: "standard",
     debateRounds: 1,
     currentCritiqueRound: 0,
     entitlements: entitlementsForPlan(),
@@ -234,12 +236,17 @@ async function startChatDebate(question, options = {}) {
   if (!trimmedQuestion) throw new Error("請先輸入問題");
   if (runtimeState.busy) throw new Error("目前已有辯論正在進行");
 
-  const activeProviders = normalizeProviderIds(options.activeProviders);
+  const requestedProviders = normalizeProviderIds(options.activeProviders);
+  const summarySetup = await prepareSummarySetup(requestedProviders, options);
+  const activeProviders = summarySetup.debateProviders;
+  const summaryProvider = summarySetup.resolvedSummaryProvider;
   const debateRounds = normalizeDebateRounds(options.debateRounds);
   const entitlements = await getEntitlements();
   runController.assertCurrent(runToken);
-  engine = new DebateEngine(activeProviders, options.summaryProvider, debateRounds, {
+  engine = new DebateEngine(activeProviders, summaryProvider, debateRounds, {
     interactionStyle: options.interactionStyle,
+    summaryStrategy: summarySetup.summaryStrategy,
+    resolvedSummaryProvider: summaryProvider,
   });
   runtimeState = {
     ...createIdleState(activeProviders),
@@ -250,7 +257,8 @@ async function startChatDebate(question, options = {}) {
     message: "自由群聊開始：各就各位，準備送出第一句話",
     question: trimmedQuestion,
     activeProviders,
-    summaryProvider: options.summaryProvider || "chatgpt",
+    summaryProvider,
+    summaryStrategy: summarySetup.summaryStrategy,
     debateRounds: debateRounds,
     currentCritiqueRound: 0,
     entitlements,
@@ -312,7 +320,7 @@ async function startChatDebate(question, options = {}) {
   };
   await publishState(runToken);
 
-  const finalResult = await sendJob(engine.buildFinalJob(), runToken);
+  const finalResult = await sendJob(buildRuntimeFinalJob(), runToken);
   if (!finalResult.ok) {
     return finishWithError(finalResult, runToken);
   }
@@ -338,14 +346,19 @@ async function startTheaterDebate(question, options = {}) {
   if (!trimmedQuestion) throw new Error("請先輸入問題");
   if (runtimeState.busy) throw new Error("目前已有辯論正在進行");
 
-  const activeProviders = normalizeProviderIds(options.activeProviders);
+  const requestedProviders = normalizeProviderIds(options.activeProviders);
+  const summarySetup = await prepareSummarySetup(requestedProviders, options);
+  const activeProviders = summarySetup.debateProviders;
+  const summaryProvider = summarySetup.resolvedSummaryProvider;
   const debateRounds = normalizeDebateRounds(options.debateRounds);
   const entitlements = await getEntitlements();
   runController.assertCurrent(runToken);
-  engine = new DebateEngine(activeProviders, options.summaryProvider, debateRounds, {
+  engine = new DebateEngine(activeProviders, summaryProvider, debateRounds, {
     isTheaterMode: true,
     customPersonas: options.customPersonas,
     interactionStyle: options.interactionStyle,
+    summaryStrategy: summarySetup.summaryStrategy,
+    resolvedSummaryProvider: summaryProvider,
   });
   runtimeState = {
     ...createIdleState(activeProviders),
@@ -356,7 +369,8 @@ async function startTheaterDebate(question, options = {}) {
     message: "劇場大亂鬥：各就各位，準備送出第一句話",
     question: trimmedQuestion,
     activeProviders,
-    summaryProvider: options.summaryProvider || "chatgpt",
+    summaryProvider,
+    summaryStrategy: summarySetup.summaryStrategy,
     debateRounds: debateRounds,
     currentCritiqueRound: 0,
     entitlements,
@@ -418,7 +432,7 @@ async function startTheaterDebate(question, options = {}) {
   };
   await publishState(runToken);
 
-  const finalResult = await sendJob(engine.buildFinalJob(), runToken);
+  const finalResult = await sendJob(buildRuntimeFinalJob(), runToken);
   if (!finalResult.ok) {
     return finishWithError(finalResult, runToken);
   }
@@ -436,6 +450,69 @@ async function startTheaterDebate(question, options = {}) {
   return runtimeState;
 }
 
+function normalizeSummaryStrategy(value = "standard") {
+  return ["standard", "observerChair", "anonymousReview"].includes(value) ? value : "standard";
+}
+
+async function requireSummaryStrategyFeature(summaryStrategy) {
+  if (summaryStrategy === "observerChair") {
+    await requireProFeature("observerChair");
+  } else if (summaryStrategy === "anonymousReview") {
+    await requireProFeature("anonymousReview");
+  }
+}
+
+function resolveRandomProvider(candidates) {
+  if (!Array.isArray(candidates) || candidates.length < 1) {
+    throw new Error("請至少勾選 1 家 AI 才能隨機抽主席。");
+  }
+  return candidates[Math.floor(Math.random() * candidates.length)];
+}
+
+function resolveSummaryProvider(summaryProvider, candidates) {
+  const requestedProvider = summaryProvider || "chatgpt";
+  if (requestedProvider === "random") {
+    return resolveRandomProvider(candidates);
+  }
+  if (!isProviderId(requestedProvider)) {
+    throw new Error(`Unknown provider: ${requestedProvider}`);
+  }
+  if (!candidates.includes(requestedProvider)) {
+    throw new Error(`${providerLabel(requestedProvider)} 未勾選；請勾選後再讓它擔任主席，或改選隨機主席。`);
+  }
+  return requestedProvider;
+}
+
+async function prepareSummarySetup(requestedProviders, options = {}) {
+  const summaryStrategy = normalizeSummaryStrategy(options.summaryStrategy);
+  await requireSummaryStrategyFeature(summaryStrategy);
+
+  const resolvedSummaryProvider = resolveSummaryProvider(options.summaryProvider, requestedProviders);
+  let debateProviders = [...requestedProviders];
+  if (summaryStrategy === "observerChair") {
+    if (requestedProviders.length < 3) {
+      throw new Error("圍觀主席制至少需勾選 3 家 AI，扣掉主席後才有 2 家能辯論。");
+    }
+    debateProviders = requestedProviders.filter((providerId) => providerId !== resolvedSummaryProvider);
+    if (debateProviders.length < 2) {
+      throw new Error("圍觀主席制至少需勾選 3 家 AI，且主席必須來自已勾選 AI。");
+    }
+  }
+
+  return {
+    summaryStrategy,
+    resolvedSummaryProvider,
+    debateProviders,
+  };
+}
+
+function buildRuntimeFinalJob() {
+  return {
+    ...engine.buildFinalJob(),
+    forceNewTab: runtimeState.summaryStrategy === "anonymousReview",
+  };
+}
+
 async function startQuestionDebate(question, options = {}) {
   const runToken = options.runToken;
   runController.assertCurrent(runToken);
@@ -448,15 +525,10 @@ async function startQuestionDebate(question, options = {}) {
     throw new Error("目前已有辯論正在進行");
   }
 
-  const summaryStrategy = options.summaryStrategy || "general";
-  if (summaryStrategy === "observer") {
-    await requireProFeature("observerChair");
-  } else if (summaryStrategy === "anonymous") {
-    await requireProFeature("anonymousReview");
-  }
-
-  const activeProviders = normalizeProviderIds(options.activeProviders);
-  const summaryProvider = options.summaryProvider || "chatgpt";
+  const requestedProviders = normalizeProviderIds(options.activeProviders);
+  const summarySetup = await prepareSummarySetup(requestedProviders, options);
+  const activeProviders = summarySetup.debateProviders;
+  const summaryProvider = summarySetup.resolvedSummaryProvider;
   const entitlements = await getEntitlements();
   runController.assertCurrent(runToken);
   const mode = options.mode || "basic";
@@ -465,19 +537,20 @@ async function startQuestionDebate(question, options = {}) {
 
   engine = new DebateEngine(activeProviders, summaryProvider, debateRounds, {
     interactionStyle: options.interactionStyle,
-    summaryStrategy,
+    summaryStrategy: summarySetup.summaryStrategy,
+    resolvedSummaryProvider: summaryProvider,
   });
   runtimeState = {
-    ...createIdleState(engine.activeProviders),
+    ...createIdleState(activeProviders),
     busy: true,
     status: "running",
     mode,
     phase: "first-round",
     message: options.openingMessage || "基礎辯論：準備送出原始問題",
     question: trimmedQuestion,
-    activeProviders: engine.activeProviders,
-    summaryProvider: engine.summaryProvider,
-    summaryStrategy,
+    activeProviders,
+    summaryProvider,
+    summaryStrategy: summarySetup.summaryStrategy,
     debateRounds,
     currentCritiqueRound: 0,
     entitlements,
@@ -492,6 +565,8 @@ async function startQuestionDebate(question, options = {}) {
 async function startSummaryDebate(userNote, options = {}) {
   const runToken = options.runToken;
   await requireProFeature("summaryDebate");
+  const summaryStrategy = normalizeSummaryStrategy(options.summaryStrategy);
+  await requireSummaryStrategyFeature(summaryStrategy);
   runController.assertCurrent(runToken);
 
   if (runtimeState.busy) {
@@ -512,6 +587,8 @@ async function startSummaryDebate(userNote, options = {}) {
 
   engine = new DebateEngine(debateProviders, sourceProvider, debateRounds, {
     interactionStyle: options.interactionStyle,
+    summaryStrategy,
+    resolvedSummaryProvider: sourceProvider,
   });
   runtimeState = {
     ...createIdleState(debateProviders),
@@ -525,6 +602,7 @@ async function startSummaryDebate(userNote, options = {}) {
     activeProviders: debateProviders,
     sourceProvider,
     summaryProvider: sourceProvider,
+    summaryStrategy,
     debateRounds,
     currentCritiqueRound: 0,
     entitlements,
@@ -619,7 +697,7 @@ async function runDebateRounds(originalQuestion, options = {}) {
   };
   await publishState(runToken);
 
-  const finalResult = await sendJob(engine.buildFinalJob(), runToken);
+  const finalResult = await sendJob(buildRuntimeFinalJob(), runToken);
   if (!finalResult.ok) {
     return finishWithError(finalResult, runToken);
   }
@@ -683,7 +761,7 @@ async function handleNextRound(action, text, runToken) {
       transcript: engine.snapshot(),
     };
     await publishState(runToken);
-    const finalResult = await sendJob(engine.buildFinalJob(), runToken);
+    const finalResult = await sendJob(buildRuntimeFinalJob(), runToken);
     if (!finalResult.ok) return finishWithError(finalResult, runToken);
 
     runtimeState = {
@@ -773,7 +851,7 @@ async function submitProviderJob(job, runToken) {
       phase: job.phase,
       error: "",
     }, runToken);
-    const tab = await getOrCreateProviderTab(job.provider);
+    const tab = await getOrCreateProviderTab(job.provider, { forceNewTab: Boolean(job.forceNewTab) });
     await setProviderDiagnostic(job.provider, {
       stage: "activating-tab",
       phase: job.phase,
@@ -916,7 +994,7 @@ async function sendJob(job, runToken) {
       phase: job.phase,
       error: "",
     }, runToken);
-    const tab = await getOrCreateProviderTab(job.provider);
+    const tab = await getOrCreateProviderTab(job.provider, { forceNewTab: Boolean(job.forceNewTab) });
     await setProviderDiagnostic(job.provider, {
       stage: "activating-tab",
       phase: job.phase,
@@ -984,14 +1062,14 @@ async function getActiveProviderTab() {
   return { tab, provider };
 }
 
-async function getOrCreateProviderTab(providerId) {
+async function getOrCreateProviderTab(providerId, options = {}) {
   const provider = PROVIDERS.find((item) => item.id === providerId);
   if (!provider) {
     throw new Error(`Unknown provider: ${providerId}`);
   }
 
   const boundTabId = runtimeState.providerTabs?.[providerId];
-  if (typeof boundTabId === "number") {
+  if (!options.forceNewTab && typeof boundTabId === "number") {
     try {
       const boundTab = await chrome.tabs.get(boundTabId);
       if (isProviderTabReady(boundTab, provider)) {

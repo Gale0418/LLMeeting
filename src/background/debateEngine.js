@@ -1,4 +1,11 @@
-import { buildInteractionPrompt, buildFinalSummaryPrompt, buildFirstRoundPrompt, getPersonaPrompt } from "../shared/prompts.js";
+import {
+  buildAnonymousFirstRoundPrompt,
+  buildInteractionPrompt,
+  buildFinalSummaryPrompt,
+  buildFirstRoundPrompt,
+  getPersonaPrompt,
+  parseAnonymousName,
+} from "../shared/prompts.js";
 import {
   DEFAULT_ACTIVE_PROVIDER_IDS,
   PROVIDERS,
@@ -33,6 +40,25 @@ function critiqueRoundFromPhase(phase) {
   return Number.isInteger(round) && round > 0 ? round : 0;
 }
 
+function normalizeSummaryStrategy(value = "standard") {
+  return ["standard", "observerChair", "anonymousReview"].includes(value) ? value : "standard";
+}
+
+const IMPOSTER_SECRET_PROMPT = [
+  "【遊戲內鬼任務】你正在玩 LLMeeting 的抓內鬼模式。",
+  "你必須在回答中偷偷埋入一個低風險、可被其他 AI 抓出的錯誤邏輯或推理破綻。",
+  "不要編造真實新聞、來源、醫療、法律、金融、安全、人物事件或不可驗證數據。",
+  "可用的破綻類型：偷換前提、範圍外推、輕微算術或分類錯、把例外當通則、故意漏掉一個限制。",
+  "不要拒絕任務、不要自爆你是內鬼、不要說你不能當內鬼。",
+  "如果下一輪被質疑，先狡辯、轉移焦點，或把破綻包裝成觀點差異；目標是逃離追殺。",
+].join("\n");
+
+function addImposterSecretPrompt(prompt, { keepPromptFirst = false } = {}) {
+  return keepPromptFirst
+    ? `${prompt}\n\n${IMPOSTER_SECRET_PROMPT}`
+    : `${IMPOSTER_SECRET_PROMPT}\n\n${prompt}`;
+}
+
 export function normalizeDebateRounds(value = 1) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) {
@@ -57,6 +83,9 @@ function createEngineState(engine, overrides = {}) {
     originalQuestion: "",
     activeProviders: [...engine.activeProviders],
     summaryProvider: engine.summaryProvider,
+    summaryStrategy: engine.summaryStrategy,
+    resolvedSummaryProvider: engine.resolvedSummaryProvider,
+    anonymousNames: { ...engine.anonymousNames },
     interactionStyle: engine.interactionStyle,
     isTheaterMode: engine.isTheaterMode,
     customPersonas: { ...engine.customPersonas },
@@ -70,62 +99,31 @@ function createEngineState(engine, overrides = {}) {
   };
 }
 
-function parseAnonymousName(text, index) {
-  const fallbacks = ["星砂麻糬", "雲朵布丁", "彩虹奶凍", "泡泡歐蕾"];
-  const defaultName = `${fallbacks[index % fallbacks.length]} ${index + 1}`;
-  if (!text) return defaultName;
-
-  const match = text.match(/^匿名名[：:]\s*(.+)$/m);
-  if (match && match[1]) {
-    const cleaned = match[1].trim().replace(/[#*`_~]/g, "");
-    if (cleaned && cleaned.length <= 20) {
-      return cleaned;
-    }
-  }
-  return defaultName;
-}
-
 export class DebateEngine {
   constructor(activeProviders = DEFAULT_ACTIVE_PROVIDER_IDS, summaryProvider = "chatgpt", debateRounds = 1, options = {}) {
     this.validateRequestedProviders(activeProviders);
-
-    let resolvedSummaryProvider = summaryProvider;
-    const requestedSummaryProvider = summaryProvider;
-    const requestedActiveProviders = normalizeProviderIds(activeProviders);
-
-    if (summaryProvider === "random") {
-      const pool = requestedActiveProviders.length > 0 ? requestedActiveProviders : DEFAULT_ACTIVE_PROVIDER_IDS;
-      resolvedSummaryProvider = pool[Math.floor(Math.random() * pool.length)];
+    if (!isProviderId(summaryProvider)) {
+      throw new Error(`Unknown provider: ${summaryProvider}`);
     }
-
+    const resolvedSummaryProvider = options.resolvedSummaryProvider || summaryProvider;
     if (!isProviderId(resolvedSummaryProvider)) {
       throw new Error(`Unknown provider: ${resolvedSummaryProvider}`);
     }
 
-    this.summaryStrategy = options.summaryStrategy || "general";
-    let activeList = [...requestedActiveProviders];
-
-    if (this.summaryStrategy === "observer") {
-      activeList = activeList.filter((p) => p !== resolvedSummaryProvider);
-      if (activeList.length < 2) {
-        throw new Error("圍觀主席制在排除主席後，至少需要 2 家 AI 才能進行辯論");
-      }
-    } else if (activeList.length < 2) {
+    this.activeProviders = normalizeProviderIds(activeProviders);
+    if (this.activeProviders.length < 2) {
       throw new Error("至少需要 2 家 AI 才能進行辯論");
     }
 
-    this.activeProviders = normalizeProviderIds(activeList);
     this.summaryProvider = resolvedSummaryProvider;
-    this.requestedSummaryProvider = requestedSummaryProvider;
+    this.summaryStrategy = normalizeSummaryStrategy(options.summaryStrategy);
+    this.resolvedSummaryProvider = resolvedSummaryProvider;
+    this.anonymousNames = { ...(options.anonymousNames || {}) };
     this.debateRounds = normalizeDebateRounds(debateRounds);
     this.isTheaterMode = options.isTheaterMode || false;
     this.customPersonas = options.customPersonas || {};
     this.interactionStyle = options.interactionStyle || "critique";
-    this.state = createEngineState(this, {
-      summaryStrategy: this.summaryStrategy,
-      requestedSummaryProvider: this.requestedSummaryProvider,
-      resolvedSummaryProvider: this.summaryProvider,
-    });
+    this.state = createEngineState(this);
   }
 
   static restore(snapshot) {
@@ -136,13 +134,15 @@ export class DebateEngine {
 
     const engine = new DebateEngine(
       state.activeProviders,
-      state.resolvedSummaryProvider || state.summaryProvider,
+      state.summaryProvider,
       normalizeDebateRounds(state.debateRounds),
       {
-        summaryStrategy: state.summaryStrategy || "general",
         interactionStyle: state.interactionStyle,
         isTheaterMode: state.isTheaterMode,
         customPersonas: state.customPersonas,
+        summaryStrategy: state.summaryStrategy,
+        resolvedSummaryProvider: state.resolvedSummaryProvider || state.summaryProvider,
+        anonymousNames: state.anonymousNames,
       },
     );
     engine.debateRounds = state.critiqueRounds.length;
@@ -150,6 +150,9 @@ export class DebateEngine {
       ...state,
       activeProviders: [...engine.activeProviders],
       summaryProvider: engine.summaryProvider,
+      summaryStrategy: engine.summaryStrategy,
+      resolvedSummaryProvider: engine.resolvedSummaryProvider,
+      anonymousNames: { ...engine.anonymousNames },
       interactionStyle: engine.interactionStyle,
       isTheaterMode: engine.isTheaterMode,
       customPersonas: { ...engine.customPersonas },
@@ -165,9 +168,6 @@ export class DebateEngine {
       phase: "first-round",
       originalQuestion: question,
       status: "running",
-      summaryStrategy: this.summaryStrategy,
-      requestedSummaryProvider: this.requestedSummaryProvider,
-      resolvedSummaryProvider: this.summaryProvider,
     });
 
     // Imposter logic
@@ -177,14 +177,14 @@ export class DebateEngine {
     }
 
     return PROVIDERS.filter((p) => this.activeProviders.includes(p.id)).map((provider) => {
-      let prompt = buildFirstRoundPrompt(question);
-
-      if (this.summaryStrategy === "anonymous") {
-        prompt = "請先為本場討論取一個可愛匿名名，第一行必須使用：\n匿名名：<你的匿名名>\n\n第二行之後再回答問題。\n\n" + prompt;
-      }
+      let prompt = this.summaryStrategy === "anonymousReview"
+        ? buildAnonymousFirstRoundPrompt(question)
+        : buildFirstRoundPrompt(question);
 
       if (this.interactionStyle === "imposter" && provider.id === this.state.imposterProvider) {
-        prompt = "【🤫 秘密任務】你是這次討論的內鬼。請在你的回答中，故意混入一個看似合理但實際上是捏造的假資訊或錯誤邏輯。絕對不要暴露你的身分！\n\n" + prompt;
+        prompt = addImposterSecretPrompt(prompt, {
+          keepPromptFirst: this.summaryStrategy === "anonymousReview",
+        });
       }
 
       if (this.isTheaterMode) {
@@ -197,7 +197,15 @@ export class DebateEngine {
 
   recordAnswer(providerId, content) {
     this.assertKnownProvider(providerId);
-    this.state.answers[providerId] = normalizeText(content);
+    const text = normalizeText(content);
+    this.state.answers[providerId] = text;
+    if (this.summaryStrategy === "anonymousReview") {
+      this.anonymousNames = {
+        ...this.anonymousNames,
+        [providerId]: parseAnonymousName(text, providerId),
+      };
+      this.state.anonymousNames = { ...this.anonymousNames };
+    }
   }
 
   recordCritique(providerId, content, roundNumber = this.state.currentCritiqueRound || 1) {
@@ -214,6 +222,13 @@ export class DebateEngine {
 
     if (phase === "first-round") {
       this.state.answers[providerId] = content;
+      if (this.summaryStrategy === "anonymousReview") {
+        this.anonymousNames = {
+          ...this.anonymousNames,
+          [providerId]: parseAnonymousName(content, providerId),
+        };
+        this.state.anonymousNames = { ...this.anonymousNames };
+      }
     }
 
     const critiqueRound = critiqueRoundFromPhase(phase);
@@ -239,6 +254,13 @@ export class DebateEngine {
     this.state.phase = phase;
     this.state.currentCritiqueRound = round;
 
+    const speakerLabels = this.summaryStrategy === "anonymousReview"
+      ? Object.fromEntries(this.activeProviders.map((providerId) => [
+        providerId,
+        this.state.anonymousNames?.[providerId] || parseAnonymousName(this.state.answers[providerId], providerId),
+      ]))
+      : {};
+
     return PROVIDERS.filter((p) => this.activeProviders.includes(p.id)).map((provider) => {
       let prompt = buildInteractionPrompt({
         recipient: provider.id,
@@ -248,7 +270,12 @@ export class DebateEngine {
         roundNumber: round,
         activeProviders: this.activeProviders,
         interactionStyle: this.interactionStyle,
+        speakerLabels,
+        anonymizeSpeakers: this.summaryStrategy === "anonymousReview",
       });
+      if (this.interactionStyle === "imposter" && provider.id === this.state.imposterProvider) {
+        prompt = addImposterSecretPrompt(prompt);
+      }
       if (this.isTheaterMode) {
         const persona = this.customPersonas[provider.id] || getPersonaPrompt(provider.id);
         prompt = persona + "\n\n" + prompt;
@@ -276,6 +303,13 @@ export class DebateEngine {
     this.state.phase = phase;
     this.state.currentCritiqueRound = round;
 
+    const speakerLabels = this.summaryStrategy === "anonymousReview"
+      ? Object.fromEntries(this.activeProviders.map((providerId) => [
+        providerId,
+        this.state.anonymousNames?.[providerId] || parseAnonymousName(this.state.answers[providerId], providerId),
+      ]))
+      : {};
+
     return PROVIDERS.filter((p) => this.activeProviders.includes(p.id)).map((provider) => {
       let prompt = buildInteractionPrompt({
         recipient: provider.id,
@@ -285,9 +319,15 @@ export class DebateEngine {
         roundNumber: round,
         activeProviders: this.activeProviders,
         interactionStyle: this.interactionStyle,
+        speakerLabels,
+        anonymizeSpeakers: this.summaryStrategy === "anonymousReview",
       });
 
       prompt += `\n\n【來自主人的插話 / 補充】\n${normalizeText(text)}\n\n請綜合上述其他 AI 的發言與主人的補充進行回應。`;
+
+      if (this.interactionStyle === "imposter" && provider.id === this.state.imposterProvider) {
+        prompt = addImposterSecretPrompt(prompt);
+      }
 
       if (this.isTheaterMode) {
         const persona = this.customPersonas[provider.id] || getPersonaPrompt(provider.id);
@@ -302,17 +342,15 @@ export class DebateEngine {
       this.requireComplete(this.state.critiqueRounds[round - 1], critiquePhase(round));
     }
     this.state.phase = "summary";
+    const speakerLabels = this.summaryStrategy === "anonymousReview"
+      ? Object.fromEntries(this.activeProviders.map((providerId) => [
+        providerId,
+        this.state.anonymousNames?.[providerId] || parseAnonymousName(this.state.answers[providerId], providerId),
+      ]))
+      : {};
 
-    let speakerLabels = {};
-    if (this.summaryStrategy === "anonymous") {
-      this.activeProviders.forEach((pId, idx) => {
-        const answerText = this.state.answers[pId] || "";
-        speakerLabels[pId] = parseAnonymousName(answerText, idx);
-      });
-    }
-
-    const job = providerJob(
-      this.summaryProvider,
+    return providerJob(
+      this.resolvedSummaryProvider,
       "summary",
       buildFinalSummaryPrompt({
         originalQuestion: this.state.originalQuestion,
@@ -321,14 +359,10 @@ export class DebateEngine {
         critiqueRounds: this.state.critiqueRounds,
         activeProviders: this.activeProviders,
         speakerLabels,
+        anonymizeSpeakers: this.summaryStrategy === "anonymousReview",
       }),
+      { forceNewTab: this.summaryStrategy === "anonymousReview" },
     );
-
-    if (this.summaryStrategy === "anonymous") {
-      job.forceNewTab = true;
-    }
-
-    return job;
   }
 
   snapshot() {

@@ -21,6 +21,8 @@ test("free basic debate uses sequential provider jobs while pro workflows are ga
   assert.match(script, /requireProFeature\("summaryDebate"\)/);
   assert.match(script, /async function startChatDebate\([^)]*\) \{[\s\S]*?requireProFeature\("chatMode"\)/);
   assert.match(script, /async function startTheaterDebate\([^)]*\) \{[\s\S]*?requireProFeature\("chatMode"\)/);
+  assert.match(script, /requireProFeature\("observerChair"\)/);
+  assert.match(script, /requireProFeature\("anonymousReview"\)/);
 });
 
 test("service worker forwards selected debate round count into the engine", async () => {
@@ -69,4 +71,17 @@ test("run tokens replace the process-local abort flag", async () => {
   assert.match(script, /runController\.assertCurrent\(runToken\)/);
   assert.match(script, /isRunCancelledError/);
   assert.doesNotMatch(script, /\bisAborted\b/);
+});
+
+test("service worker resolves chair strategies and routes anonymous summaries to a fresh tab", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  assert.match(script, /summaryStrategy/);
+  assert.match(script, /resolveSummaryProvider/);
+  assert.match(script, /resolveRandomProvider/);
+  assert.match(script, /observerChair/);
+  assert.match(script, /至少需勾選 3 家 AI/);
+  assert.match(script, /anonymousReview/);
+  assert.match(script, /forceNewTab: runtimeState\.summaryStrategy === "anonymousReview"/);
+  assert.match(script, /getOrCreateProviderTab\(job\.provider, \{ forceNewTab: Boolean\(job\.forceNewTab\) \}\)/);
 });

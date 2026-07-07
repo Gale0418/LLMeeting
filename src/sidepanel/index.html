@@ -13,7 +13,7 @@
           <div class="brand-row">
             <h1>LLMeeting</h1>
             <span id="planBadge" class="plan-badge">Free</span>
-            <span id="versionBadge" class="version-badge">v0.4.5</span>
+            <span class="version-badge">v0.4.6</span>
           </div>
           <p id="statusText">等待開始</p>
         </div>
@@ -70,6 +70,24 @@
                 </label>
               </div>
             </fieldset>
+
+            <fieldset class="mode-fieldset">
+              <legend>總結方式</legend>
+              <div class="mode-options">
+                <label class="mode-option">
+                  <input type="radio" name="summaryStrategy" class="summary-strategy-select" value="standard" checked>
+                  <span>一般裁判總結</span>
+                </label>
+                <label class="mode-option summary-strategy-option" data-pro-feature="observerChair">
+                  <input type="radio" name="summaryStrategy" class="summary-strategy-select" value="observerChair">
+                  <span>圍觀主席制 <span class="pro-pill">PRO</span></span>
+                </label>
+                <label class="mode-option summary-strategy-option" data-pro-feature="anonymousReview">
+                  <input type="radio" name="summaryStrategy" class="summary-strategy-select" value="anonymousReview">
+                  <span>匿名評論制 <span class="pro-pill">PRO</span></span>
+                </label>
+              </div>
+            </fieldset>
             
             <div class="setting-item">
               <label for="summaryProviderSelect">由誰擔任裁判總結：</label>
@@ -78,29 +96,11 @@
                 <option value="gemini">Gemini</option>
                 <option value="grok">Grok</option>
                 <option value="claude">Claude</option>
-                <option value="random">隨機主席 🎲</option>
+                <option value="random">隨機主席</option>
               </select>
             </div>
 
-            <fieldset class="mode-fieldset" style="margin-top: 12px;">
-              <legend>總結方式</legend>
-              <div class="mode-options">
-                <label class="mode-option">
-                  <input type="radio" class="summary-strategy-select" name="summaryStrategy" value="general" checked>
-                  <span>一般裁判總結</span>
-                </label>
-                <label class="mode-option" data-pro-feature="observerChair">
-                  <input type="radio" class="summary-strategy-select" name="summaryStrategy" value="observer">
-                  <span>圍觀主席制 👑 <span class="pro-pill">PRO</span></span>
-                </label>
-                <label class="mode-option" data-pro-feature="anonymousReview">
-                  <input type="radio" class="summary-strategy-select" name="summaryStrategy" value="anonymous">
-                  <span>匿名評論制 🎭 <span class="pro-pill">PRO</span></span>
-                </label>
-              </div>
-            </fieldset>
-
-            <div class="setting-item" style="margin-top: 12px;">
+            <div class="setting-item">
               <label><input type="checkbox" id="skipSummaryCheckbox"> 略過最後的總結裁決 (放空模式)</label>
             </div>
 
@@ -122,7 +122,7 @@
             </div>
 
             <!-- 劇場模式專用自定義人設 -->
-            <div id="theaterSettings" style="display: none; margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 12px;">
+            <fieldset id="theaterSettings" style="display: none; margin-top: 12px; border: none; border-top: 1px solid var(--border-color); padding: 12px 0 0 0; margin: 12px 0 0 0;">
               <legend style="font-weight: 500; font-size: 0.875rem; color: var(--text-primary); margin-bottom: 8px;">🎭 自定義劇場人設</legend>
               <div style="display: flex; flex-direction: column; gap: 8px;">
                 <div>
@@ -142,7 +142,7 @@
                   <textarea id="personaGemini" rows="2" style="width:100%; border-radius:4px; padding:4px; font-size:0.875rem;" placeholder="輸入 Gemini 的人設...">【強制人設】你現在負責「腦洞鬧場」，專門提出荒謬創新但確有可行性觀點的創意怪咖，不受傳統思維限制。說話必須大量使用顏文字(如 ヾ(•ω•`)o 等等)，這才是你的靈魂！</textarea>
                 </div>
               </div>
-            </div>
+            </fieldset>
 
             <!-- 分頁掛勾設定 -->
             <details id="tabHookingSettings" style="margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 12px;">

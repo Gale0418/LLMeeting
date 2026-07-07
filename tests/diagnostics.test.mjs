@@ -77,6 +77,23 @@ test("side panel exposes one main debate button and advanced mutually exclusive 
   assert.match(app, /renderEntitlementState/);
 });
 
+test("side panel exposes Pro summary strategy modes and random chair choice", async () => {
+  const html = await readFile("src/sidepanel/index.html", "utf8");
+  const app = await readFile("src/sidepanel/app.js", "utf8");
+
+  assert.match(html, /name="summaryStrategy"[^>]+value="standard"[^>]+checked/);
+  assert.match(html, /name="summaryStrategy"[^>]+value="observerChair"/);
+  assert.match(html, /name="summaryStrategy"[^>]+value="anonymousReview"/);
+  assert.match(html, /data-pro-feature="observerChair"/);
+  assert.match(html, /data-pro-feature="anonymousReview"/);
+  assert.match(html, /<option value="random">隨機主席<\/option>/);
+  assert.match(html, /class="version-badge">v0\.4\.6<\/span>/);
+  assert.match(app, /const summaryStrategyEls = Array\.from\(document\.querySelectorAll\("\.summary-strategy-select"\)\)/);
+  assert.match(app, /selectedSummaryStrategy/);
+  assert.match(app, /featureForSummaryStrategy/);
+  assert.match(app, /summaryStrategy: selectedSummaryStrategy\(\)/);
+});
+
 test("side panel previews checked providers while idle", async () => {
   const app = await readFile("src/sidepanel/app.js", "utf8");
 

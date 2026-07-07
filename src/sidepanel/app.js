@@ -15,13 +15,6 @@ const basicDebateButton = document.querySelector("#basicDebateButton");
 const resetButton = document.querySelector("#resetButton");
 const statusText = document.querySelector("#statusText");
 const planBadge = document.querySelector("#planBadge");
-const versionBadge = document.querySelector("#versionBadge") || document.querySelector(".version-badge");
-if (versionBadge && typeof chrome !== "undefined" && chrome.runtime?.getManifest) {
-  const manifestVer = chrome.runtime.getManifest()?.version;
-  if (manifestVer) {
-    versionBadge.textContent = `v${manifestVer}`;
-  }
-}
 const transcriptOutput = document.querySelector("#transcriptOutput");
 const diagnosticsOutput = document.querySelector("#diagnosticsOutput");
 const chatTranscript = document.querySelector("#chatTranscript");
@@ -33,6 +26,8 @@ const interactionStyleSelect = document.querySelector("#interactionStyleSelect")
 const providerSelectEls = Array.from(document.querySelectorAll(".provider-select"));
 const debateModeEls = Array.from(document.querySelectorAll(".debate-mode-select"));
 const debateModeOptionEls = Array.from(document.querySelectorAll(".mode-option[data-pro-feature]"));
+const summaryStrategyEls = Array.from(document.querySelectorAll(".summary-strategy-select"));
+const summaryStrategyOptionEls = Array.from(document.querySelectorAll(".summary-strategy-option[data-pro-feature]"));
 const skipSummaryCheckbox = document.querySelector("#skipSummaryCheckbox");
 
 const chatControls = document.querySelector("#chatControls");
@@ -59,7 +54,7 @@ const providerStateEls = {
 
 let latestState = null;
 let currentEntitlements = entitlementsForPlan();
-const fallbackProviderIds = ["chatgpt", "gemini", "grok", "claude"];
+const fallbackProviderIds = PROVIDERS.map((provider) => provider.id);
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -74,6 +69,10 @@ debateModeEls.forEach((el) => {
   el.addEventListener("change", renderDebateModeState);
 });
 
+summaryStrategyEls.forEach((el) => {
+  el.addEventListener("change", renderSummaryStrategyState);
+});
+
 debateRoundsInput?.addEventListener("change", normalizeDebateRoundsInput);
 debateRoundsInput?.addEventListener("blur", normalizeDebateRoundsInput);
 
@@ -81,6 +80,7 @@ refreshHooksBtn?.addEventListener("click", scanAndPopulateHookTabs);
 
 loadDevUnlock();
 renderDebateModeState();
+renderSummaryStrategyState();
 scanAndPopulateHookTabs();
 
 async function scanAndPopulateHookTabs() {
@@ -126,13 +126,10 @@ async function startSelectedDebate() {
     return;
   }
 
-  const strategy = selectedSummaryStrategy();
-  if (strategy === "observer" && !canUseFeature(currentEntitlements, "observerChair")) {
-    renderLockedFeatureMessage("observerChair");
-    return;
-  }
-  if (strategy === "anonymous" && !canUseFeature(currentEntitlements, "anonymousReview")) {
-    renderLockedFeatureMessage("anonymousReview");
+  const summaryFeatureId = featureForSummaryStrategy(selectedSummaryStrategy());
+  if (summaryFeatureId && !canUseFeature(currentEntitlements, summaryFeatureId)) {
+    renderLockedFeatureMessage(summaryFeatureId);
+    renderSummaryStrategyState();
     return;
   }
 
@@ -153,8 +150,13 @@ async function startDebate(mode) {
     return;
   }
 
-  const summaryProvider = document.querySelector("#summaryProviderSelect").value;
   const summaryStrategy = selectedSummaryStrategy();
+  if (summaryStrategy === "observerChair" && activeProviders.length < 3) {
+    renderMessage("❌ 圍觀主席制至少需勾選 3 家 AI，扣掉主席後才有 2 家能辯論。");
+    return;
+  }
+
+  const summaryProvider = document.querySelector("#summaryProviderSelect").value;
   const skipSummary = document.querySelector("#skipSummaryCheckbox").checked;
   const debateRounds = parseInt(debateRoundsInput?.value, 10) || 1;
   const interactionStyle = interactionStyleSelect?.value || "critique";
@@ -190,7 +192,7 @@ async function startDebate(mode) {
     mode,
     activeProviders,
     summaryProvider,
-    summaryStrategy,
+    summaryStrategy: selectedSummaryStrategy(),
     skipSummary,
     debateRounds,
     customPersonas,
@@ -205,6 +207,7 @@ async function startDebate(mode) {
     } else {
       renderMessage(response?.error || "啟動失敗");
     }
+    setActionButtonsDisabled(false);
   }
   renderState(response?.state);
 }
@@ -301,6 +304,12 @@ function renderState(state) {
     if (state.summaryProvider && summaryProviderSelect.querySelector(`option[value="${state.summaryProvider}"]`)) {
       summaryProviderSelect.value = state.summaryProvider;
     }
+    if (state.summaryStrategy) {
+      const summaryStrategyInput = document.querySelector(`input.summary-strategy-select[value="${state.summaryStrategy}"]`);
+      if (summaryStrategyInput) {
+        summaryStrategyInput.checked = true;
+      }
+    }
     if (debateRoundsInput) {
       debateRoundsInput.value = normalizeDebateRounds(state.debateRounds || state.transcript?.debateRounds || 1);
     }
@@ -362,8 +371,7 @@ function selectedDebateMode() {
 }
 
 function selectedSummaryStrategy() {
-  const summaryStrategyEls = Array.from(document.querySelectorAll(".summary-strategy-select"));
-  return summaryStrategyEls.find((el) => el.checked)?.value || "general";
+  return summaryStrategyEls.find((el) => el.checked)?.value || "standard";
 }
 
 function selectedDebateRounds() {
@@ -393,6 +401,13 @@ function featureForMode(mode) {
   }[mode] || "";
 }
 
+function featureForSummaryStrategy(summaryStrategy) {
+  return {
+    observerChair: "observerChair",
+    anonymousReview: "anonymousReview",
+  }[summaryStrategy] || "";
+}
+
 function renderProviderStatuses(state) {
   const transcript = state.transcript;
   const answers = transcript?.answers || {};
@@ -400,6 +415,7 @@ function renderProviderStatuses(state) {
   const activeSet = new Set([
     ...(state.activeProviders || fallbackProviderIds),
     state.sourceProvider,
+    state.summaryProvider,
   ].filter(Boolean));
 
   for (const provider of Object.keys(providerStateEls)) {
@@ -431,6 +447,7 @@ function renderDiagnostics(state) {
   const activeProviders = [
     ...(state.activeProviders || fallbackProviderIds),
     state.sourceProvider,
+    state.summaryProvider,
   ].filter((providerId, index, list) => providerId && list.indexOf(providerId) === index);
   const blocks = activeProviders.map((providerId) => {
     const details = diagnostics[providerId] || {};
@@ -612,6 +629,7 @@ function providerLabel(id) {
     gemini: "Gemini",
     grok: "Grok",
     claude: "Claude",
+    random: "隨機主席",
   };
   return labels[id] || id;
 }
@@ -682,6 +700,7 @@ function renderEntitlementState() {
   }
 
   renderDebateModeState();
+  renderSummaryStrategyState();
 }
 
 function renderDebateModeState() {
@@ -691,10 +710,7 @@ function renderDebateModeState() {
 
   let currentMode = selectedDebateMode();
   let featureId = featureForMode(currentMode);
-  if (currentEntitlements.isPro && !featureId) {
-    const fastInput = document.querySelector('input.debate-mode-select[value="fast"]');
-    if (fastInput) fastInput.checked = true;
-  } else if (!currentEntitlements.isPro && featureId) {
+  if (!currentEntitlements.isPro && featureId) {
     const basicInput = document.querySelector('input.debate-mode-select[value="basic"]');
     if (basicInput) basicInput.checked = true;
   }
@@ -723,6 +739,32 @@ function renderDebateModeOptionStates() {
     optionEl.classList.toggle("is-locked", locked);
     optionEl.title = locked ? proRequiredMessage(featureId) : featureLabel(featureId);
     
+    if (currentEntitlements.isPro) {
+      optionEl.style.display = featureId ? "" : "none";
+    } else {
+      optionEl.style.display = featureId ? "none" : "";
+    }
+  }
+}
+
+function renderSummaryStrategyState() {
+  const currentStrategy = selectedSummaryStrategy();
+  const featureId = featureForSummaryStrategy(currentStrategy);
+  if (featureId && !canUseFeature(currentEntitlements, featureId)) {
+    const standardInput = document.querySelector('input.summary-strategy-select[value="standard"]');
+    if (standardInput) standardInput.checked = true;
+  }
+
+  renderSummaryStrategyOptionStates();
+}
+
+function renderSummaryStrategyOptionStates() {
+  for (const optionEl of summaryStrategyOptionEls) {
+    const featureId = optionEl.dataset.proFeature;
+    const locked = !canUseFeature(currentEntitlements, featureId);
+    optionEl.classList.toggle("is-locked", locked);
+    optionEl.title = locked ? proRequiredMessage(featureId) : featureLabel(featureId);
+
     if (currentEntitlements.isPro) {
       optionEl.style.display = featureId ? "" : "none";
     } else {

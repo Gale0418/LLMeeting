@@ -3,6 +3,7 @@ import { ENTITLEMENT_STORAGE_KEY } from "../shared/entitlements.js";
 const CLICK_WINDOW_MS = 1800;
 const AUTHOR_YOUTUBE_URL = "https://www.youtube.com/@gale0418";
 const ATTACHED_KEY = "__llmeetingDevUnlockAttached";
+const ATTACHED_ATTR = "data-llmeeting-dev-unlock-attached";
 
 export const THIRD_CLICK_TAUNTS = Object.freeze([
   "你還真的繼續按嗎？",
@@ -38,10 +39,15 @@ export function attachDevUnlock({
   if (!planBadge || !storage) {
     return false;
   }
-  if (planBadge[ATTACHED_KEY]) {
+  if (planBadge[ATTACHED_KEY] || planBadge.getAttribute?.(ATTACHED_ATTR) === "true" || planBadge.hasAttribute?.(ATTACHED_ATTR)) {
     return true;
   }
   planBadge[ATTACHED_KEY] = true;
+  try {
+    planBadge.setAttribute?.(ATTACHED_ATTR, "true");
+  } catch (_error) {
+    // Plain test doubles and unusual DOM wrappers may not allow attributes.
+  }
 
   let unlockClicks = 0;
   let resetTimer = 0;
