@@ -710,7 +710,10 @@ function renderDebateModeState() {
 
   let currentMode = selectedDebateMode();
   let featureId = featureForMode(currentMode);
-  if (!currentEntitlements.isPro && featureId) {
+  if (currentEntitlements.isPro && !featureId) {
+    const fastInput = document.querySelector('input.debate-mode-select[value="fast"]');
+    if (fastInput) fastInput.checked = true;
+  } else if (!currentEntitlements.isPro && featureId) {
     const basicInput = document.querySelector('input.debate-mode-select[value="basic"]');
     if (basicInput) basicInput.checked = true;
   }
