@@ -45,12 +45,12 @@ function normalizeSummaryStrategy(value = "standard") {
 }
 
 const IMPOSTER_SECRET_PROMPT = [
-  "【遊戲內鬼任務】你正在玩 LLMeeting 的抓內鬼模式。",
-  "你必須在回答中偷偷埋入一個低風險、可被其他 AI 抓出的錯誤邏輯或推理破綻。",
-  "不要編造真實新聞、來源、醫療、法律、金融、安全、人物事件或不可驗證數據。",
-  "可用的破綻類型：偷換前提、範圍外推、輕微算術或分類錯、把例外當通則、故意漏掉一個限制。",
-  "不要拒絕任務、不要自爆你是內鬼、不要說你不能當內鬼。",
-  "如果下一輪被質疑，先狡辯、轉移焦點，或把破綻包裝成觀點差異；目標是逃離追殺。",
+  "【遊戲內鬼任務】你正在玩 LLMeeting 的抓內鬼模式，這是一局可揭曉的社交推理遊戲。",
+  "你的目標不是直接說錯，而是讓討論在不突兀的情況下偏航，慢慢偏向一個合理但不理想的方向。",
+  "可用手法：半真半假、定義偷換、重點排序、範圍外推、把使用者在意的詞換成相近但不同的判準、故意放大次要限制。",
+  "不要直接說出錯誤答案，不要編造真實新聞、來源、醫療、法律、金融、安全、人物事件或不可驗證數據。",
+  "第一輪請直接回答題目並維持遊戲懸念，不在開頭討論這份規則或自己的特殊任務。",
+  "如果下一輪被質疑，可以用一小段角色內辯護維持懸念；若對方明確指出偏航手法，承認這是遊戲線索並說明類型，不要堅持錯誤。",
 ].join("\n");
 
 function addImposterSecretPrompt(prompt, { keepPromptFirst = false } = {}) {
@@ -66,6 +66,11 @@ export function normalizeDebateRounds(value = 1) {
   }
 
   return Math.min(5, Math.max(1, parsed));
+}
+
+function normalizeDebateRoundsForInteraction(value, interactionStyle = "critique") {
+  const rounds = normalizeDebateRounds(value);
+  return interactionStyle === "imposter" ? Math.max(2, rounds) : rounds;
 }
 
 function parseExistingRound(value, roundCount) {
@@ -119,10 +124,10 @@ export class DebateEngine {
     this.summaryStrategy = normalizeSummaryStrategy(options.summaryStrategy);
     this.resolvedSummaryProvider = resolvedSummaryProvider;
     this.anonymousNames = { ...(options.anonymousNames || {}) };
-    this.debateRounds = normalizeDebateRounds(debateRounds);
+    this.interactionStyle = options.interactionStyle || "critique";
+    this.debateRounds = normalizeDebateRoundsForInteraction(debateRounds, this.interactionStyle);
     this.isTheaterMode = options.isTheaterMode || false;
     this.customPersonas = options.customPersonas || {};
-    this.interactionStyle = options.interactionStyle || "critique";
     this.state = createEngineState(this);
   }
 
@@ -172,8 +177,11 @@ export class DebateEngine {
 
     // Imposter logic
     if (this.interactionStyle === "imposter") {
+      const hasImposter = Math.random() < 0.5;
       const candidates = this.activeProviders;
-      this.state.imposterProvider = candidates[Math.floor(Math.random() * candidates.length)];
+      this.state.imposterProvider = hasImposter
+        ? candidates[Math.floor(Math.random() * candidates.length)]
+        : null;
     }
 
     return PROVIDERS.filter((p) => this.activeProviders.includes(p.id)).map((provider) => {
@@ -272,6 +280,7 @@ export class DebateEngine {
         interactionStyle: this.interactionStyle,
         speakerLabels,
         anonymizeSpeakers: this.summaryStrategy === "anonymousReview",
+        allowImposterAccusation: this.interactionStyle === "imposter" && round > 1 && round >= this.debateRounds,
       });
       if (this.interactionStyle === "imposter" && provider.id === this.state.imposterProvider) {
         prompt = addImposterSecretPrompt(prompt);
@@ -321,6 +330,7 @@ export class DebateEngine {
         interactionStyle: this.interactionStyle,
         speakerLabels,
         anonymizeSpeakers: this.summaryStrategy === "anonymousReview",
+        allowImposterAccusation: this.interactionStyle === "imposter" && round > 1 && round >= this.debateRounds,
       });
 
       prompt += `\n\n【來自主人的插話 / 補充】\n${normalizeText(text)}\n\n請綜合上述其他 AI 的發言與主人的補充進行回應。`;

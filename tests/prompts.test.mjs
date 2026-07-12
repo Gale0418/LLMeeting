@@ -56,7 +56,7 @@ test("interaction prompt applies every supported interaction style", () => {
   }
 });
 
-test("imposter interaction prompt hunts game-style logic flaws without asking for factual fabrication", () => {
+test("imposter first critique prompt investigates drift without allowing accusations", () => {
   const prompt = buildInteractionPrompt({
     recipient: "chatgpt",
     originalQuestion: "比較兩種排序法",
@@ -66,15 +66,44 @@ test("imposter interaction prompt hunts game-style logic flaws without asking fo
       grok: "要看資料分布。",
     },
     interactionStyle: "imposter",
+    roundNumber: 1,
   });
 
   assert.match(prompt, /遊戲內鬼任務|抓內鬼時間/);
-  assert.match(prompt, /錯誤邏輯|推理破綻/);
-  assert.match(prompt, /偷換前提|範圍外推/);
-  assert.match(prompt, /辯護|轉移焦點/);
+  assert.match(prompt, /偏航|帶偏/);
+  assert.match(prompt, /釐清前提|追問/);
+  assert.match(prompt, /第一輪先不要指認/);
+  assert.doesNotMatch(prompt, /誰最像內鬼/);
+  assert.doesNotMatch(prompt, /沒有內鬼/);
   assert.doesNotMatch(prompt, /塞入假資訊/);
   assert.doesNotMatch(prompt, /捏造數據/);
   assert.doesNotMatch(prompt, /不存在的事件/);
+  assert.doesNotMatch(prompt, /狡辯/);
+  assert.doesNotMatch(prompt, /轉移焦點/);
+});
+
+test("imposter final critique prompt allows no-imposter or one-imposter judgment", () => {
+  const prompt = buildInteractionPrompt({
+    recipient: "chatgpt",
+    answers: {
+      chatgpt: "merge sort 穩定。",
+      gemini: "quick sort 平均很快。",
+      grok: "要看資料分布。",
+    },
+    previousCritiques: {
+      chatgpt: "我追問定義。",
+      gemini: "我懷疑焦點偏了。",
+      grok: "我補充限制。",
+    },
+    interactionStyle: "imposter",
+    roundNumber: 2,
+    allowImposterAccusation: true,
+  });
+
+  assert.match(prompt, /最後判斷/);
+  assert.match(prompt, /沒有內鬼/);
+  assert.match(prompt, /誰最像內鬼/);
+  assert.match(prompt, /偏航|帶偏/);
 });
 
 test("later critique prompt quotes previous critique round with speaker labels", () => {
@@ -148,24 +177,45 @@ test("conversation summary prompt asks the current AI to preserve context for ot
   assert.match(prompt, /不是要你現在回答新問題/);
 });
 
-test("anonymous first round prompt asks each provider to declare a cute anonymous name first", () => {
+test("anonymous first round prompt asks each provider to declare a cute nickname first", () => {
   assert.equal(typeof promptModule.buildAnonymousFirstRoundPrompt, "function");
 
   const prompt = promptModule.buildAnonymousFirstRoundPrompt("請比較 A 與 B");
 
-  assert.match(prompt, /^請先為本場討論取一個可愛匿名名/m);
-  assert.match(prompt, /匿名名：<你的匿名名>/);
+  assert.match(prompt, /^現在是化裝舞會/m);
+  assert.match(prompt, /請先為本場討論取一個可愛暱稱/);
+  assert.match(prompt, /暱稱：<你的暱稱>/);
   assert.match(prompt, /請比較 A 與 B/);
+  assert.doesNotMatch(prompt, /匿名名/);
+  assert.doesNotMatch(prompt, /匿名名稱/);
+});
+
+test("anonymous first round prompt frames anonymity as a display name instead of identity concealment", () => {
+  const prompt = promptModule.buildAnonymousFirstRoundPrompt("冬呱?");
+
+  assert.match(prompt, /化裝舞會/);
+  assert.match(prompt, /暱稱/);
+  assert.match(prompt, /不要求你否認真實身份/);
+  assert.match(prompt, /使用者題目/);
+  assert.match(prompt, /【使用者題目】\n冬呱\?/);
+  assert.doesNotMatch(prompt, /<<<|>>>/);
+  assert.doesNotMatch(prompt, /匿名名/);
+  assert.doesNotMatch(prompt, /匿名顯示名/);
+  assert.doesNotMatch(prompt, /嚴格匿名/);
+  assert.doesNotMatch(prompt, /絕對不要提及/);
+  assert.doesNotMatch(prompt, /絕對不要透露/);
+  assert.doesNotMatch(prompt, /完全以你自訂/);
 });
 
 test("anonymous name parser accepts the required first line and falls back safely", () => {
   assert.equal(typeof promptModule.parseAnonymousName, "function");
 
-  assert.equal(promptModule.parseAnonymousName("匿名名：焦糖雲朵\n我覺得..."), "焦糖雲朵");
-  assert.equal(promptModule.parseAnonymousName("Claude responded: 匿名名：小奶茶🧋\n我覺得...", "claude"), "小奶茶🧋");
-  assert.equal(promptModule.parseAnonymousName("Claude responded: 匿名名：小奶茶🧋 拒絕隱瞞身份，堅守誠實透明原則。", "claude"), "小奶茶🧋");
+  assert.equal(promptModule.parseAnonymousName("暱稱：焦糖雲朵\n我覺得..."), "焦糖雲朵");
+  assert.equal(promptModule.parseAnonymousName("Claude responded: 暱稱：小奶茶🧋\n我覺得...", "claude"), "小奶茶🧋");
+  assert.equal(promptModule.parseAnonymousName("Claude responded: 暱稱：小奶茶🧋 拒絕隱瞞身份，堅守誠實透明原則。", "claude"), "小奶茶🧋");
   assert.equal(promptModule.parseAnonymousName("我忘記格式了", "gemini"), "星星果凍");
-  assert.equal(promptModule.parseAnonymousName("匿名名：" + "很".repeat(80), "grok"), "閃電麻糬");
+  assert.equal(promptModule.parseAnonymousName("匿名名：小奶茶\n我覺得...", "claude"), "月光布丁");
+  assert.equal(promptModule.parseAnonymousName("暱稱：" + "很".repeat(80), "grok"), "閃電麻糬");
 });
 
 test("final summary prompt can replace real provider labels with anonymous speaker labels", () => {
@@ -196,10 +246,10 @@ test("final summary prompt can replace real provider labels with anonymous speak
 
 test("anonymous final summary prompt strips name declarations and redacts provider names inside content", () => {
   const prompt = buildFinalSummaryPrompt({
-    originalQuestion: "匿名整理",
+    originalQuestion: "整理",
     answers: {
-      gemini: "匿名名：星星果凍\nGemini 說了第一點。",
-      claude: "Claude responded: 匿名名：小奶茶🧋\nClaude 補充第二點。",
+      gemini: "暱稱：星星果凍\nGemini 說了第一點。",
+      claude: "Claude responded: 暱稱：小奶茶🧋\nClaude 補充第二點。",
     },
     critiqueRounds: [
       {
@@ -219,7 +269,9 @@ test("anonymous final summary prompt strips name declarations and redacts provid
   assert.match(prompt, /^小奶茶🧋:\n小奶茶🧋 補充第二點。/m);
   assert.match(prompt, /我同意 小奶茶🧋 的第二點。/);
   assert.match(prompt, /我回應 星星果凍 的第一點。/);
+  assert.match(prompt, /舞會暱稱/);
   assert.doesNotMatch(prompt, /匿名名[:：]/);
+  assert.doesNotMatch(prompt, /匿名名稱/);
   assert.doesNotMatch(prompt, /Claude responded/);
   assert.doesNotMatch(prompt, /\bGemini\b/);
   assert.doesNotMatch(prompt, /\bClaude\b/);
@@ -252,9 +304,9 @@ test("anonymous interaction prompt redacts provider names inside quoted content"
   const prompt = buildInteractionPrompt({
     recipient: "chatgpt",
     answers: {
-      chatgpt: "匿名名：焦糖雲朵\n我支持 A",
-      gemini: "匿名名：星星果凍\nGemini 說了 B",
-      claude: "Claude responded: 匿名名：小奶茶🧋\nClaude 說了 C",
+      chatgpt: "暱稱：焦糖雲朵\n我支持 A",
+      gemini: "暱稱：星星果凍\nGemini 說了 B",
+      claude: "Claude responded: 暱稱：小奶茶🧋\nClaude 說了 C",
     },
     activeProviders: ["chatgpt", "gemini", "claude"],
     speakerLabels: {
@@ -267,8 +319,11 @@ test("anonymous interaction prompt redacts provider names inside quoted content"
 
   assert.match(prompt, /星星果凍:\n星星果凍 說了 B/);
   assert.match(prompt, /小奶茶🧋:\n小奶茶🧋 說了 C/);
+  assert.match(prompt, /舞會暱稱規則/);
   assert.doesNotMatch(prompt, /匿名名[:：]/);
+  assert.doesNotMatch(prompt, /匿名名稱/);
   assert.doesNotMatch(prompt, /Claude responded/);
+  assert.doesNotMatch(prompt, /不要提及任何真實模型/);
   assert.doesNotMatch(prompt, /\bGemini\b/);
   assert.doesNotMatch(prompt, /\bClaude\b/);
 });

@@ -126,6 +126,7 @@ export function buildInteractionPrompt({
   interactionStyle = "critique",
   speakerLabels = {},
   anonymizeSpeakers = false,
+  allowImposterAccusation = false,
 }) {
   const providersList = resolveProviders(activeProviders);
   const others = providersList.filter((p) => p.id !== recipient);
@@ -168,12 +169,23 @@ export function buildInteractionPrompt({
       "3. 開頭必須先表達強烈同意。"
     ].join("\n");
   } else if (interactionStyle === "imposter") {
-    interactionRules = [
-      `【🕵️‍♂️ 抓內鬼時間】這是一局可揭曉的社交推理遊戲，剛剛的發言中可能有人埋了低風險錯誤邏輯或推理破綻。`,
+    const imposterIntro = [
+      `【🕵️‍♂️ 抓內鬼時間】這是一局可揭曉的社交推理遊戲，發言中可能有人嘗試用半真半假、定義偷換、重點排序或範圍外推帶偏結論。`,
       `請仔細檢視 ${others.map((p) => getLabel(p)).join(" 與 ")} 的發言。`,
-      "1. 找出偷換前提、範圍外推、輕微算術或分類錯、把例外當通則、故意漏限制等可疑破綻。",
-      "2. 如果你被懷疑，可以用一小段角色內辯護維持懸念；若破綻已被清楚指出，承認並說明破綻類型。",
-      "3. 在結尾大聲指控你認為誰最像內鬼！"
+    ];
+    const imposterInvestigationRules = [
+      "1. 第一輪先不要指認誰是內鬼，也不要硬選嫌疑人。",
+      "2. 請釐清前提、追問定義、標出可能帶偏討論的焦點變換或判準偷換。",
+      "3. 若你被質疑，請回到論點本身補強或修正，不要把討論變成投票。"
+    ];
+    const imposterAccusationRules = [
+      "1. 最後判斷：先說你認為本局沒有內鬼，或指出誰最像內鬼。",
+      "2. 理由必須聚焦偏航手法，例如半真半假、定義偷換、重點排序、範圍外推或判準偷換。",
+      "3. 如果證據不足，請明確選擇沒有內鬼，不要為了投票而硬指控。"
+    ];
+    interactionRules = [
+      ...imposterIntro,
+      ...(allowImposterAccusation ? imposterAccusationRules : imposterInvestigationRules),
     ].join("\n");
   } else {
     // 預設 (critique)

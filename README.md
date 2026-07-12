@@ -56,3 +56,11 @@
 ```powershell
 npm test
 ```
+
+---
+<p align="right">
+  <sup>
+    <b>聲明</b>：本專案僅供個人學習與非商業用途。嚴禁未經授權的商業使用、重新封裝或上架。<br>
+    Copyright &copy; 2026 Gale0418. All Rights Reserved. (See <a href="LICENSE">LICENSE</a>)
+  </sup>
+</p>

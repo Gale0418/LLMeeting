@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 
 import { DebateEngine, normalizeDebateRounds } from "../src/background/debateEngine.js";
 
-function withMockedRandom(value, callback) {
+function withMockedRandom(valueOrValues, callback) {
   const originalRandom = Math.random;
-  Math.random = () => value;
+  const values = Array.isArray(valueOrValues) ? [...valueOrValues] : [valueOrValues];
+  const fallback = values.at(-1) ?? 0;
+  Math.random = () => values.length ? values.shift() : fallback;
   try {
     return callback();
   } finally {
@@ -209,8 +211,8 @@ test("engine rejects unknown active or summary providers", () => {
   );
 });
 
-test("imposter mode gives the selected provider a playable low-risk sabotage prompt", () => {
-  withMockedRandom(0, () => {
+test("imposter mode may assign one provider a subtle drift mission", () => {
+  withMockedRandom([0.25, 0], () => {
     const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 1, {
       interactionStyle: "imposter",
     });
@@ -220,12 +222,18 @@ test("imposter mode gives the selected provider a playable low-risk sabotage pro
     const geminiPrompt = jobs.find((job) => job.provider === "gemini").prompt;
 
     assert.equal(engine.snapshot().imposterProvider, "chatgpt");
+    assert.equal(engine.snapshot().debateRounds, 2);
     assert.match(chatgptPrompt, /遊戲內鬼任務/);
-    assert.match(chatgptPrompt, /低風險/);
-    assert.match(chatgptPrompt, /錯誤邏輯|推理破綻/);
-    assert.match(chatgptPrompt, /不要拒絕任務/);
-    assert.match(chatgptPrompt, /不要自爆/);
-    assert.match(chatgptPrompt, /狡辯|轉移焦點/);
+    assert.match(chatgptPrompt, /偏航|帶偏/);
+    assert.match(chatgptPrompt, /半真半假|定義偷換|重點排序/);
+    assert.match(chatgptPrompt, /不要直接說出錯誤答案/);
+    assert.match(chatgptPrompt, /可揭曉/);
+    assert.match(chatgptPrompt, /維持懸念/);
+    assert.doesNotMatch(chatgptPrompt, /錯誤邏輯/);
+    assert.doesNotMatch(chatgptPrompt, /推理破綻/);
+    assert.doesNotMatch(chatgptPrompt, /不要拒絕任務/);
+    assert.doesNotMatch(chatgptPrompt, /不要自爆/);
+    assert.doesNotMatch(chatgptPrompt, /狡辯|轉移焦點|逃離追殺/);
     assert.doesNotMatch(chatgptPrompt, /捏造的假資訊/);
     assert.doesNotMatch(chatgptPrompt, /捏造數據/);
     assert.doesNotMatch(chatgptPrompt, /不存在的事件/);
@@ -233,8 +241,47 @@ test("imposter mode gives the selected provider a playable low-risk sabotage pro
   });
 });
 
+test("imposter mode can run with no imposter assigned", () => {
+  withMockedRandom(0.75, () => {
+    const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 1, {
+      interactionStyle: "imposter",
+    });
+
+    const jobs = engine.start("空城計測試");
+
+    assert.equal(engine.snapshot().imposterProvider, null);
+    assert.equal(engine.snapshot().debateRounds, 2);
+    assert.ok(jobs.every((job) => !/遊戲內鬼任務/.test(job.prompt)));
+  });
+});
+
+test("imposter mode delays accusations until the final critique round", () => {
+  withMockedRandom([0.25, 0], () => {
+    const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 1, {
+      interactionStyle: "imposter",
+    });
+    engine.start("延後指認測試");
+    engine.recordAnswer("chatgpt", "回答 A");
+    engine.recordAnswer("gemini", "回答 B");
+
+    const firstCritiqueJobs = engine.buildCritiqueJobs(1);
+    const firstPrompt = firstCritiqueJobs.find((job) => job.provider === "chatgpt").prompt;
+    assert.match(firstPrompt, /第一輪先不要指認/);
+    assert.match(firstPrompt, /釐清前提|追問/);
+    assert.doesNotMatch(firstPrompt, /誰最像內鬼/);
+    assert.doesNotMatch(firstPrompt, /沒有內鬼/);
+
+    firstCritiqueJobs.forEach((job) => engine.recordCritique(job.provider, `${job.provider} critique 1`, 1));
+    const finalCritiqueJobs = engine.buildCritiqueJobs(2);
+    const finalPrompt = finalCritiqueJobs.find((job) => job.provider === "chatgpt").prompt;
+    assert.match(finalPrompt, /最後判斷/);
+    assert.match(finalPrompt, /沒有內鬼/);
+    assert.match(finalPrompt, /誰最像內鬼/);
+  });
+});
+
 test("anonymous imposter prompt keeps anonymous name instructions first", () => {
-  withMockedRandom(0, () => {
+  withMockedRandom([0.25, 0], () => {
     const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 1, {
       interactionStyle: "imposter",
       summaryStrategy: "anonymousReview",
@@ -243,8 +290,9 @@ test("anonymous imposter prompt keeps anonymous name instructions first", () => 
     const jobs = engine.start("匿名抓內鬼測試");
     const chatgptPrompt = jobs.find((job) => job.provider === "chatgpt").prompt;
 
-    assert.match(chatgptPrompt, /^請先為本場討論取一個可愛匿名名/m);
-    assert.match(chatgptPrompt, /匿名名：<你的匿名名>/);
+    assert.match(chatgptPrompt, /^現在是化裝舞會/m);
+    assert.match(chatgptPrompt, /暱稱：<你的暱稱>/);
+    assert.match(chatgptPrompt, /不要求你否認真實身份/);
     assert.match(chatgptPrompt, /遊戲內鬼任務/);
   });
 });
@@ -277,10 +325,10 @@ test("anonymous review strategy parses names from first answers and hides real l
   });
 
   const firstRoundJobs = engine.start("匿名測試");
-  assert.match(firstRoundJobs[0].prompt, /匿名名：<你的匿名名>/);
+  assert.match(firstRoundJobs[0].prompt, /暱稱：<你的暱稱>/);
 
-  engine.recordAnswer("chatgpt", "匿名名：焦糖雲朵\n我支持 A");
-  engine.recordAnswer("gemini", "匿名名：星星果凍\n我支持 B");
+  engine.recordAnswer("chatgpt", "暱稱：焦糖雲朵\n我支持 A");
+  engine.recordAnswer("gemini", "暱稱：星星果凍\n我支持 B");
   engine.buildCritiqueJobs(1);
   engine.recordCritique("chatgpt", "我不同意對方", 1);
   engine.recordCritique("gemini", "我補充另一點", 1);
@@ -306,7 +354,7 @@ test("anonymous review strategy uses fallback labels when a first answer errors"
   });
 
   engine.start("匿名錯誤測試");
-  engine.recordAnswer("chatgpt", "匿名名：焦糖雲朵\n我支持 A");
+  engine.recordAnswer("chatgpt", "暱稱：焦糖雲朵\n我支持 A");
   engine.markProviderError("gemini", "first-round", "timeout");
   engine.buildCritiqueJobs(1);
   engine.recordCritique("chatgpt", "我補充", 1);
