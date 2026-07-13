@@ -39,8 +39,16 @@ export function buildAnonymousFirstRoundPrompt(originalQuestion) {
   ].join("\n");
 }
 
+export function isSafeAnonymousLabel(label) {
+  const normalized = normalizeText(label).replace(/[<>]/g, "");
+  return Boolean(normalized)
+    && normalized !== "你的暱稱"
+    && !PROVIDERS.some((provider) =>
+      normalized.toLowerCase().includes(provider.label.toLowerCase()));
+}
+
 export function parseAnonymousName(content, providerId = "") {
-  const fallback = ANONYMOUS_FALLBACK_NAMES[providerId] || "舞會小點心";
+  const fallback = ANONYMOUS_FALLBACK_NAMES[providerId] || "神秘小幫手";
   const text = normalizeText(content);
   const match = text.match(/暱稱[:：]\s*([^\n\r]+)/);
   if (!match) {
@@ -48,15 +56,26 @@ export function parseAnonymousName(content, providerId = "") {
   }
 
   let name = normalizeText(match[1]).replace(/[<>]/g, "").replace(/^[#*`_~\-\s]+/, "");
-  name = name.replace(/[。；;，,].*$/, "").trim();
+  name = name.replace(/[。；;，,].*$/, "").replace(/[（(].*$/, "").trim();
   const tailAfterSpace = name.split(/\s+/).slice(1).join(" ");
-  if (tailAfterSpace && /拒絕|堅守|回答|補充|我|這|請/.test(tailAfterSpace)) {
+  if (tailAfterSpace && /拒絕|堅守|回答|回覆|意見|總結|評析|補充|我|這|請/.test(tailAfterSpace)) {
     name = name.split(/\s+/)[0];
   }
-  if (!name || name.length > 24) {
+  if (!isSafeAnonymousLabel(name) || name.length > 24) {
     return fallback;
   }
   return name;
+}
+
+export function resolveSpeakerLabels(speakerLabels, anonymizeSpeakers) {
+  return Object.fromEntries(PROVIDERS.map((provider) => {
+    const candidate = normalizeText(speakerLabels[provider.id]);
+    return [provider.id, anonymizeSpeakers
+      ? (isSafeAnonymousLabel(candidate)
+        ? candidate
+        : ANONYMOUS_FALLBACK_NAMES[provider.id])
+      : (candidate || provider.label)];
+  }));
 }
 
 function escapeRegExp(value) {
@@ -133,7 +152,8 @@ export function buildInteractionPrompt({
   const usesPreviousCritiques = roundNumber > 1;
   const sourceMap = usesPreviousCritiques ? previousCritiques : answers;
 
-  const getLabel = (p) => speakerLabels[p.id] || p.label;
+  const resolvedLabels = resolveSpeakerLabels(speakerLabels, anonymizeSpeakers);
+  const getLabel = (p) => resolvedLabels[p.id];
 
   const quotedBlocks = others
     .map((provider) => formatSpeakerBlock(
@@ -228,7 +248,8 @@ export function buildFinalSummaryPrompt({
   anonymizeSpeakers = false,
 }) {
   const providersList = resolveProviders(activeProviders);
-  const labelFor = (provider) => speakerLabels[provider.id] || provider.label;
+  const resolvedLabels = resolveSpeakerLabels(speakerLabels, anonymizeSpeakers);
+  const labelFor = (provider) => resolvedLabels[provider.id];
 
   const answerBlocks = providersList.map((provider) =>
     formatSpeakerBlock(

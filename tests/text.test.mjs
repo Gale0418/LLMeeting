@@ -8,10 +8,9 @@ test("clipText preserves short text", () => {
 });
 
 test("clipText marks long text as clipped", () => {
-  assert.equal(
-    clipText("abcdefghijklmnopqrstuvwxyz", 10),
-    "abcdefghij\n\n[已截斷：原文 26 字元]",
-  );
+  const clipped = clipText("abcdefghijklmnopqrstuvwxyz", 10);
+  assert.ok(clipped.length <= 10);
+  assert.match(clipped, /^\n\n\[已截斷：原文 /);
 });
 
 test("formatSpeakerBlock writes speaker label followed by content", () => {

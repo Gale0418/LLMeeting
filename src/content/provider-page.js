@@ -9,9 +9,11 @@
     formatStageError,
     hasFreshAssistantResponse,
     isPromptEcho,
+    matchesProviderLocation,
     normalizeProviderResponse,
   } = globalThis.aiDebateAutomationCore;
-  const submittedRuns = new Map();
+  const SUBMITTED_RUNS_KEY = "aiDebate.submittedRuns.v1";
+  const submittedRuns = loadSubmittedRuns();
 
   const PROVIDERS = {
     chatgpt: {
@@ -83,7 +85,10 @@
       ],
     },
     grok: {
-      hosts: ["grok.com", "x.com"],
+      locations: [
+        { host: "grok.com" },
+        { host: "x.com", pathPrefixes: ["/i/grok"] },
+      ],
       inputSelectors: [
         "textarea",
         "div[contenteditable='true']",
@@ -152,7 +157,11 @@
 
     handler(message)
       .then((result) => sendResponse(result))
-      .catch((error) => sendResponse({ ok: false, error: error.message }));
+      .catch((error) => sendResponse({
+        ok: false,
+        code: error.code || "PROVIDER_AUTOMATION_FAILED",
+        error: error.message,
+      }));
 
     return true;
   });
@@ -204,10 +213,11 @@
         prompt: message.prompt,
         submittedAt: Date.now(),
       });
+      persistSubmittedRuns();
 
       return { ok: true, provider: providerId, runId, submission };
     } catch (error) {
-      throw new Error(formatStageError(stage, error));
+      throw createStageError(stage, error);
     }
   }
 
@@ -229,9 +239,10 @@
       }
 
       submittedRuns.delete(message.runId);
+      persistSubmittedRuns();
       return { ok: true, provider: providerId, content };
     } catch (error) {
-      throw new Error(formatStageError(stage, error));
+      throw createStageError(stage, error);
     }
   }
 
@@ -250,10 +261,46 @@
   }
 
   function detectProviderId() {
-    const host = location.hostname;
     return Object.entries(PROVIDERS).find(([, config]) =>
-      config.hosts.some((item) => host === item || host.endsWith(`.${item}`)),
+      matchesProviderLocation(location, config),
     )?.[0];
+  }
+
+  function loadSubmittedRuns() {
+    try {
+      const parsed = JSON.parse(sessionStorage.getItem(SUBMITTED_RUNS_KEY) || "[]");
+      return new Map(Array.isArray(parsed) ? parsed.filter((entry) =>
+        Array.isArray(entry) && typeof entry[0] === "string" && entry[1]?.providerId,
+      ) : []);
+    } catch {
+      return new Map();
+    }
+  }
+
+  function persistSubmittedRuns() {
+    try {
+      const now = Date.now();
+      const TTL = 30 * 60 * 1000; // 30 minutes
+      for (const [runId, run] of submittedRuns.entries()) {
+        if (now - run.submittedAt > TTL) {
+          submittedRuns.delete(runId);
+        }
+      }
+      sessionStorage.setItem(SUBMITTED_RUNS_KEY, JSON.stringify([...submittedRuns]));
+    } catch {
+      // Keep the current in-memory run when a provider blocks sessionStorage.
+    }
+  }
+
+  function createStageError(stage, error) {
+    const wrapped = new Error(formatStageError(stage, error));
+    const codes = {
+      "辨識頁面": "PROVIDER_LOGIN_REQUIRED",
+      "尋找輸入框": "PROVIDER_INPUT_NOT_FOUND",
+      "等待新回覆": "PROVIDER_RESPONSE_TIMEOUT",
+    };
+    wrapped.code = error?.code || codes[stage] || "PROVIDER_AUTOMATION_FAILED";
+    return wrapped;
   }
 
   function findInput(config) {
@@ -381,7 +428,9 @@
       await delay(500);
     }
 
-    throw new Error("等待 AI 回覆逾時");
+    const error = new Error("等待 AI 回覆逾時");
+    error.code = "PROVIDER_RESPONSE_TIMEOUT";
+    throw error;
   }
 
   function isGenerating(config) {

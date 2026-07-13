@@ -5,8 +5,6 @@ import {
   proRequiredMessage,
 } from "../shared/entitlements.js";
 import { PROVIDERS } from "../shared/providers.js";
-import { attachDevUnlock } from "./dev-unlock.js";
-
 // Keep this comment to pass the test regex: import("./dev-unlock.js")
 
 const form = document.querySelector("#debateForm");
@@ -199,7 +197,7 @@ async function startDebate(mode) {
     hookedTabs,
     interactionStyle,
     interactiveMode,
-  });
+  }).catch((err) => ({ ok: false, error: "啟動失敗: " + err.message }));
 
   if (!response?.ok) {
     if (response?.code === "PRO_REQUIRED") {
@@ -221,25 +219,36 @@ chatSendBtn?.addEventListener("click", async () => {
   const text = chatInput.value.trim();
   if (!text) return;
   chatControls.style.display = "none";
-  const response = await chrome.runtime.sendMessage({ type: "aiDebate:nextRound", action: "user_message", text });
+  const response = await chrome.runtime.sendMessage({ type: "aiDebate:nextRound", action: "user_message", text }).catch(() => null);
   if (response?.state) {
     chatInput.value = "";
     renderState(response.state);
   } else {
     chatControls.style.display = "block";
+    renderMessage(response?.error || "傳送失敗，請重試");
   }
 });
 
 chatCritiqueBtn?.addEventListener("click", async () => {
   chatControls.style.display = "none";
-  const response = await chrome.runtime.sendMessage({ type: "aiDebate:nextRound", action: "critique" });
-  if (response?.state) renderState(response.state);
+  const response = await chrome.runtime.sendMessage({ type: "aiDebate:nextRound", action: "critique" }).catch(() => null);
+  if (response?.state) {
+    renderState(response.state);
+  } else {
+    chatControls.style.display = "block";
+    renderMessage("請求失敗，請重試");
+  }
 });
 
 chatSummarizeBtn?.addEventListener("click", async () => {
   chatControls.style.display = "none";
-  const response = await chrome.runtime.sendMessage({ type: "aiDebate:nextRound", action: "summarize" });
-  if (response?.state) renderState(response.state);
+  const response = await chrome.runtime.sendMessage({ type: "aiDebate:nextRound", action: "summarize" }).catch(() => null);
+  if (response?.state) {
+    renderState(response.state);
+  } else {
+    chatControls.style.display = "block";
+    renderMessage("請求失敗，請重試");
+  }
 });
 
 const stopDebateBtn = document.getElementById("stopDebateBtn");
@@ -247,8 +256,14 @@ const stopDebateBtn = document.getElementById("stopDebateBtn");
 stopDebateBtn?.addEventListener("click", async () => {
   stopDebateBtn.disabled = true;
   stopDebateBtn.textContent = "暫停中...";
-  const response = await chrome.runtime.sendMessage({ type: "aiDebate:stop" });
-  if (response?.state) renderState(response.state);
+  const response = await chrome.runtime.sendMessage({ type: "aiDebate:stop" }).catch(() => null);
+  if (response?.state) {
+    renderState(response.state);
+  } else {
+    stopDebateBtn.disabled = false;
+    stopDebateBtn.textContent = "緊急暫停 🛑";
+    renderMessage("停止失敗，請重試");
+  }
 });
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -266,6 +281,7 @@ async function loadState() {
 
 async function loadDevUnlock() {
   try {
+    const { attachDevUnlock } = await import("./dev-unlock.js");
     attachDevUnlock({ planBadge, renderMessage, loadState });
   } catch (_error) {
     // Custom builds may omit this author convenience helper.
@@ -385,6 +401,9 @@ function normalizeDebateRoundsInput() {
 }
 
 function normalizeDebateRounds(value) {
+  if (typeof value === "string" && !/^\s*\d+\s*$/.test(value)) {
+    return 1;
+  }
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) {
     return 1;

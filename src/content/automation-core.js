@@ -32,6 +32,23 @@
     return value.replace(/(?:^|\r?\n)[ \t]*image[ \t]*$/i, "").trimEnd();
   }
 
+  function matchesProviderLocation(locationLike, config) {
+    const hostname = String(locationLike?.hostname || "").toLowerCase();
+    const pathname = String(locationLike?.pathname || "/");
+    const hostMatches = (host) => hostname === host || hostname.endsWith(`.${host}`);
+
+    if (Array.isArray(config?.locations)) {
+      return config.locations.some(({ host, pathPrefixes }) =>
+        hostMatches(host) && (
+          !Array.isArray(pathPrefixes) ||
+          pathPrefixes.length === 0 ||
+          pathPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+        ),
+      );
+    }
+    return Array.isArray(config?.hosts) && config.hosts.some(hostMatches);
+  }
+
   async function ensurePromptSubmitted({ clickButton, pressEnter, confirmSubmission }) {
     const clicked = Boolean(await clickButton());
     let method = clicked ? "button" : "enter";
@@ -62,6 +79,7 @@
     formatStageError,
     hasFreshAssistantResponse,
     isPromptEcho,
+    matchesProviderLocation,
     normalizeProviderResponse,
   };
 

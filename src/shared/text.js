@@ -10,7 +10,11 @@ export function clipText(value, maxChars = DEFAULT_SAFE_CHAR_LIMIT) {
     return text;
   }
 
-  return `${text.slice(0, maxChars)}\n\n[已截斷：原文 ${text.length} 字元]`;
+  const notice = `\n\n[已截斷：原文 ${text.length} 字元]`;
+  if (maxChars <= notice.length) {
+    return notice.slice(0, Math.max(0, maxChars));
+  }
+  return `${text.slice(0, maxChars - notice.length)}${notice}`;
 }
 
 export function formatSpeakerBlock(speaker, content, options = {}) {

@@ -77,6 +77,16 @@ test("side panel exposes one main debate button and advanced mutually exclusive 
   assert.match(app, /renderEntitlementState/);
 });
 
+test("debate mode entitlement keeps Pro on Fast and Free on Basic", async () => {
+  const app = await readFile("src/sidepanel/app.js", "utf8");
+
+  // Product semantics: Pro does not expose ordinary Basic; Basic is the Free fallback.
+  assert.match(app, /currentEntitlements\.isPro && !featureId/);
+  assert.match(app, /input\.debate-mode-select\[value="fast"\]/);
+  assert.match(app, /!currentEntitlements\.isPro && featureId/);
+  assert.match(app, /input\.debate-mode-select\[value="basic"\]/);
+});
+
 test("side panel exposes Pro summary strategy modes and random chair choice", async () => {
   const html = await readFile("src/sidepanel/index.html", "utf8");
   const app = await readFile("src/sidepanel/app.js", "utf8");

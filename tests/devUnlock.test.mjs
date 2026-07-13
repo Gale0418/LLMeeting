@@ -202,11 +202,17 @@ test("Pro badge stays quiet on clicks one and three, then returns to Free on fiv
   assert.equal(harness.getPlan(), "free");
 });
 
-test("Chrome Web Store package keeps the five-click Pro unlocker easter egg", async () => {
-  const packager = await readFile("scripts/package-extension.mjs", "utf8");
-  const unlocker = await readFile("src/sidepanel/dev-unlock.js", "utf8");
+import { execSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-  assert.match(packager, /INCLUDED_PATHS/);
-  assert.doesNotMatch(packager, /EXCLUDED_ARCHIVE_NAMES/);
-  assert.match(unlocker, /unlockClicks >= 5/);
+test("Chrome Web Store package keeps the five-click Pro unlocker easter egg", async () => {
+  const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  execSync("node scripts/package-extension.mjs", { cwd: rootDir, stdio: "ignore" });
+
+  const manifest = JSON.parse(await readFile(path.join(rootDir, "manifest.json"), "utf8"));
+  const zipPath = path.join(rootDir, "dist", `llmeeting-${manifest.version}.zip`);
+  const zipBuffer = await readFile(zipPath);
+
+  assert.ok(zipBuffer.includes(Buffer.from("src/sidepanel/dev-unlock.js")), "ZIP archive should contain dev-unlock.js");
 });

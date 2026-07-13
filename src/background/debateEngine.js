@@ -60,6 +60,9 @@ function addImposterSecretPrompt(prompt, { keepPromptFirst = false } = {}) {
 }
 
 export function normalizeDebateRounds(value = 1) {
+  if (typeof value === "string" && !/^\s*\d+\s*$/.test(value)) {
+    return 1;
+  }
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) {
     return 1;

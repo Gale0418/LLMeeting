@@ -10,8 +10,22 @@ const {
   formatStageError,
   hasFreshAssistantResponse,
   isPromptEcho,
+  matchesProviderLocation,
   normalizeProviderResponse,
 } = globalThis.aiDebateAutomationCore;
+
+test("provider location matching limits X to the Grok route", () => {
+  const grok = {
+    locations: [
+      { host: "grok.com" },
+      { host: "x.com", pathPrefixes: ["/i/grok"] },
+    ],
+  };
+  assert.equal(matchesProviderLocation({ hostname: "grok.com", pathname: "/chat" }, grok), true);
+  assert.equal(matchesProviderLocation({ hostname: "x.com", pathname: "/i/grok" }, grok), true);
+  assert.equal(matchesProviderLocation({ hostname: "x.com", pathname: "/i/grok/abc" }, grok), true);
+  assert.equal(matchesProviderLocation({ hostname: "x.com", pathname: "/home" }, grok), false);
+});
 
 test("assistantSnapshot records assistant message count and latest text", () => {
   assert.deepEqual(
@@ -101,6 +115,8 @@ test("provider page automation can submit first and read the reply later", async
   assert.match(script, /aiDebate:submitPrompt/);
   assert.match(script, /aiDebate:readSubmittedResponse/);
   assert.match(script, /submittedRuns/);
+  assert.match(script, /sessionStorage/);
+  assert.match(script, /PROVIDER_RESPONSE_TIMEOUT/);
   assert.match(script, /sendAndRead\(message\)/);
   assert.match(script, /readAssistantSnapshot\(config, providerId\)/);
 });

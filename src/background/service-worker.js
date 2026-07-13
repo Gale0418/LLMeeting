@@ -1243,7 +1243,7 @@ function phaseLabel(phase, round) {
 function critiqueRoundLabel(round, totalRounds = 1) {
   const normalizedRound = normalizeDebateRounds(round);
   const total = normalizeDebateRounds(totalRounds);
-  return total > 1 ? `第 ${normalizedRound}/${total} 輪互評` : "第二輪";
+  return total > 1 ? `第 ${normalizedRound}/${total} 輪互評` : "互評";
 }
 
 function critiqueRoundFromPhase(phase) {
