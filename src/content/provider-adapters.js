@@ -123,8 +123,11 @@
     meta: {
       hosts: ["meta.ai"],
       inputWriteStrategy: "single-editor-replace",
+      // findInput checks the verified Lexical editor before generic fallbacks.
+      preferredInputSelector: "div[data-lexical-editor='true'][contenteditable='true'][role='textbox']",
       generatingStableFallbackMs: 30000,
       inputSelectors: [
+        "div[data-lexical-editor='true'][contenteditable='true'][role='textbox']",
         "textarea[placeholder]",
         "div[contenteditable='true'][role='textbox']",
         "div[contenteditable='true']",

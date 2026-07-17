@@ -19,6 +19,42 @@ const {
   normalizeProviderResponse,
 } = globalThis.aiDebateAutomationCore;
 
+async function loadProviderPageTestContext(overrides = {}) {
+  const script = await readFile("src/content/provider-page.js", "utf8");
+  const instrumentedScript = script.replace(
+    /\}\)\(\);\s*$/,
+    "globalThis.aiDebateProviderPageTest = { findInput, waitForInputWritten };\n})();",
+  );
+  assert.notEqual(instrumentedScript, script);
+
+  const context = {
+    aiDebateAutomationCore: {
+      assistantSnapshot: () => ({ count: 0, lastText: "" }),
+      classifyProviderResponseError: () => null,
+      ensurePromptSubmitted: () => {},
+      formatStageError: (_stage, error) => error.message,
+      hasFreshAssistantResponse: () => false,
+      hasFreshProviderError: () => false,
+      isPromptEcho: () => false,
+      matchesProviderLocation: () => false,
+      normalizeProviderResponse: (_providerId, text) => text,
+      providerErrorFingerprint: () => "",
+    },
+    aiDebateProviderAdapters: {},
+    chrome: { runtime: { onMessage: { addListener: () => {} } } },
+    location: {},
+    sessionStorage: { getItem: () => "[]", setItem: () => {}, removeItem: () => {} },
+    HTMLInputElement: class {},
+    HTMLTextAreaElement: class {},
+    setTimeout,
+    clearTimeout,
+    ...overrides,
+  };
+  context.globalThis = context;
+  vm.runInNewContext(instrumentedScript, context);
+  return context;
+}
+
 test("provider location matching limits X to the Grok route", () => {
   const grok = {
     locations: [
@@ -41,44 +77,70 @@ test("Meta AI adapter only matches the packaged meta.ai hosts", () => {
   assert.ok(meta.inputSelectors.length >= 3);
   assert.ok(meta.responseSelectors.length >= 3);
   assert.equal(meta.inputWriteStrategy, "single-editor-replace");
+  assert.equal(meta.inputSelectors[0], "div[data-lexical-editor='true'][contenteditable='true'][role='textbox']");
+  assert.equal(meta.preferredInputSelector, meta.inputSelectors[0]);
+  assert.ok(meta.inputSelectors.includes("div[contenteditable='true'][role='textbox']"));
 });
 
-test("Meta AI contenteditable writing has one native replacement and no duplicate fallback", async () => {
+test("Meta AI prefers the verified Lexical editor over a later generic DOM candidate", async () => {
+  const lexicalEditor = {
+    disabled: false,
+    getAttribute: () => null,
+    getBoundingClientRect: () => ({ width: 100, height: 40 }),
+  };
+  const genericEditor = {
+    disabled: false,
+    getAttribute: () => null,
+    getBoundingClientRect: () => ({ width: 100, height: 40 }),
+  };
+  const preferredSelector = globalThis.aiDebateProviderAdapters.meta.preferredInputSelector;
+  const context = await loadProviderPageTestContext({
+    document: {
+      querySelectorAll: (selector) => selector === preferredSelector
+        ? [lexicalEditor]
+        : [lexicalEditor, genericEditor],
+    },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+  });
+
+  assert.equal(context.aiDebateProviderPageTest.findInput(globalThis.aiDebateProviderAdapters.meta), lexicalEditor);
+});
+
+test("Meta AI contenteditable writing uses one ordered beforeinput/input pair without fallback", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
   const metaWrite = script.match(/if \(writeStrategy === "single-editor-replace"\) \{[\s\S]*?\n    \}/)?.[0];
+  const beforeinputCall = "dispatchEvent(new InputEvent(\"beforeinput\"";
+  const inputCall = "dispatchEvent(new InputEvent(\"input\"";
 
   assert.ok(metaWrite);
-  assert.equal((metaWrite.match(/execCommand\("insertText"/g) || []).length, 1);
-  assert.doesNotMatch(metaWrite, /dispatchEvent/);
+  assert.doesNotMatch(metaWrite, /execCommand\("insertText"/);
+  assert.equal((metaWrite.match(/dispatchEvent\(new InputEvent\("beforeinput"/g) || []).length, 1);
+  assert.equal((metaWrite.match(/dispatchEvent\(new InputEvent\("input"/g) || []).length, 1);
+  assert.ok(metaWrite.indexOf(beforeinputCall) < metaWrite.indexOf(inputCall));
+  assert.match(metaWrite, /new InputEvent\("beforeinput", \{[\s\S]*?bubbles: true,[\s\S]*?cancelable: true,[\s\S]*?inputType: "insertText",[\s\S]*?data: text/);
+  assert.match(metaWrite, /new InputEvent\("input", \{ bubbles: true, inputType: "insertText", data: text \}\)/);
+  assert.match(metaWrite, /await waitForInputWritten\(element, text\)/);
   assert.doesNotMatch(metaWrite, /textContent\s*=/);
   assert.match(script, /writeInput\(input, message\.prompt, config\.inputWriteStrategy\)/);
   assert.match(script, /PROVIDER_INPUT_WRITE_FAILED/);
 });
 
+test("Meta AI input verification polls until normalized Lexical text matches", async () => {
+  const context = await loadProviderPageTestContext();
+  const element = { innerText: "" };
+  setTimeout(() => {
+    element.innerText = "  第一行\r\n第二行  ";
+  }, 20);
+
+  await context.aiDebateProviderPageTest.waitForInputWritten(element, "第一行\n第二行", 200);
+  await assert.rejects(
+    context.aiDebateProviderPageTest.waitForInputWritten({ innerText: "錯誤內容" }, "預期內容", 20),
+    (error) => error.code === "PROVIDER_INPUT_WRITE_FAILED",
+  );
+});
+
 test("completion timing extends inactivity but never passes the hard cap", async () => {
-  const script = await readFile("src/content/provider-page.js", "utf8");
-  const context = {
-    aiDebateAutomationCore: {
-      assistantSnapshot: () => ({ count: 0, lastText: "" }),
-      classifyProviderResponseError: () => null,
-      ensurePromptSubmitted: () => {},
-      formatStageError: (_stage, error) => error.message,
-      hasFreshAssistantResponse: () => false,
-      hasFreshProviderError: () => false,
-      isPromptEcho: () => false,
-      matchesProviderLocation: () => false,
-      normalizeProviderResponse: (_providerId, text) => text,
-      providerErrorFingerprint: () => "",
-    },
-    aiDebateProviderAdapters: {},
-    chrome: { runtime: { onMessage: { addListener: () => {} } } },
-    location: {},
-    sessionStorage: { getItem: () => "[]", setItem: () => {}, removeItem: () => {} },
-    setTimeout,
-    clearTimeout,
-  };
-  context.globalThis = context;
-  vm.runInNewContext(script, context);
+  const context = await loadProviderPageTestContext();
 
   const timing = context.aiDebateProviderPageTiming;
   const initial = timing.createCompletionWindow(240000, 1000);

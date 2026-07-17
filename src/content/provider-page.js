@@ -17,6 +17,7 @@
   } = globalThis.aiDebateAutomationCore;
   const SUBMITTED_RUNS_KEY = "aiDebate.submittedRuns.v1";
   const RESPONSE_HARD_CAP_MS = 12 * 60 * 1000;
+  const INPUT_WRITE_TIMEOUT_MS = 2000;
   const submittedRuns = loadSubmittedRuns();
   const PROVIDERS = globalThis.aiDebateProviderAdapters || {};
 
@@ -226,10 +227,17 @@
   }
 
   function findInput(config) {
-    const candidates = collectElements(config.inputSelectors)
+    const preferredInput = config.preferredInputSelector
+      ? findLastAvailableInput([config.preferredInputSelector])
+      : null;
+    return preferredInput || findLastAvailableInput(config.inputSelectors) || findLikelyInput();
+  }
+
+  function findLastAvailableInput(selectors) {
+    const candidates = collectElements(selectors)
       .filter(isVisible)
       .filter((element) => !element.disabled && element.getAttribute("aria-disabled") !== "true");
-    return candidates[candidates.length - 1] || findLikelyInput();
+    return candidates[candidates.length - 1] || null;
   }
 
   function findLikelyInput() {
@@ -293,13 +301,14 @@
     }
 
     if (writeStrategy === "single-editor-replace") {
-      const selection = document.getSelection();
-      if (!selection || typeof document.execCommand !== "function") {
-        throw createInputWriteError();
-      }
-      selection.selectAllChildren(element);
-      document.execCommand("insertText", false, text);
-      assertInputWritten(element, text);
+      element.dispatchEvent(new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "insertText",
+        data: text,
+      }));
+      element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+      await waitForInputWritten(element, text);
       return;
     }
 
@@ -313,11 +322,19 @@
     }
   }
 
-  function assertInputWritten(element, expectedText) {
-    if (normalizeInputText(readInputText(element)) === normalizeInputText(expectedText)) {
-      return;
+  async function waitForInputWritten(element, expectedText, timeoutMs = INPUT_WRITE_TIMEOUT_MS) {
+    const expected = normalizeInputText(expectedText);
+    const deadline = Date.now() + timeoutMs;
+    while (true) {
+      if (normalizeInputText(readInputText(element)) === expected) {
+        return;
+      }
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        throw createInputWriteError();
+      }
+      await delay(Math.min(50, remainingMs));
     }
-    throw createInputWriteError();
   }
 
   function normalizeInputText(text) {
