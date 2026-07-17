@@ -1,9 +1,12 @@
 # 專案
 
-- 目標：完成 LLMeeting Chrome 插件 MVP，支援多 AI 辯論、快速鬥技場、從目前 AI 對話總結後開啟辯論，並保留可追蹤的補強清單。
-- 週期：2026-06-18 大型功能回歸審查
-- 標籤：chrome-extension, llmeeting, ai-debate, pro-feature, verification
+- 目標：完成 LLMeeting 0.4.7 信任與穩定性版本，讓多 AI 辯論具備一致文件、透明資料治理、可維護 provider adapter、長文本保護與 Meta AI Beta。
+- 週期：2026-07-17 信任、穩定性與 Meta AI
+- 標籤：chrome-extension, llmeeting, ai-debate, privacy, reliability, meta-ai
 - 活動紀錄：
+  - [2026-07-17] 從誤用 `git restore` 事故重建未提交的 service worker 功能，並修復 content script 重複區塊；完整測試恢復為 116/116。
+  - [2026-07-17] 完成 0.4.7 自動驗證與候選包：116/116 測試通過；加入可見服務錯誤原文轉述、超載最多 3 次自動重新整理重送，額度不足不重試。
+  - [2026-07-17] 主人核准全方位審查補強項全部實作，並加入 Meta AI Beta；建立 LLM-E2 與 0.4.7 驗收範圍。
   - [2026-06-20] 依主人要求升版為 0.4.1，準備重新封裝可上傳的 Chrome Web Store zip。
   - [2026-06-20] CodeRabbit 完成第三方審查：首輪 4 項建議中確認 3 項成立並已修正，follow-up uncommitted review 為 0 issues。
   - [2026-06-20] 0.4.1 候選包驗證完成：`npm test` 81/81 pass，`dist\llmeeting-0.4.1.zip` 1,809,886 bytes，封裝內容符合上傳需求。

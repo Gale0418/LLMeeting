@@ -26,13 +26,13 @@ export function attachDevUnlock({
   tabs = globalThis.chrome?.tabs,
   dialogs = {
     alert: (msg) => globalThis.alert?.(msg),
-    confirm: (msg) => globalThis.confirm?.(msg)
+    confirm: (msg) => globalThis.confirm?.(msg),
   },
   openPage = globalThis.open,
   random = Math.random,
   timers = {
     setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-    clearTimeout: (id) => globalThis.clearTimeout(id)
+    clearTimeout: (id) => globalThis.clearTimeout(id),
   },
   getDisplayedPlan = () => planBadge?.textContent,
 }) {
@@ -79,7 +79,7 @@ export function attachDevUnlock({
         await storage.set({ [ENTITLEMENT_STORAGE_KEY]: nextPlan });
 
         if (nextPlan === "pro") {
-          renderMessage?.(`作者模式：Pro 已啟用！歡迎大家訂閱分享按讚((被拖走`);
+          renderMessage?.("作者模式：Pro 已啟用！歡迎大家訂閱分享按讚((被拖走");
           if (dialogs.confirm?.(`恭喜解鎖 PRO 模式！\n\n覺得這個擴充功能好用嗎？\n歡迎訂閱作者的 YouTube 頻道、按讚並分享：\n${AUTHOR_YOUTUBE_URL}\n\n要去看看嗎？ (被拖走)`)) {
             try {
               if (tabs?.create) {
@@ -87,17 +87,17 @@ export function attachDevUnlock({
               } else {
                 openPage?.(AUTHOR_YOUTUBE_URL, "_blank");
               }
-            } catch (e) {
-              console.error(e);
+            } catch (error) {
+              console.error(error);
             }
           }
         } else {
-          renderMessage?.(`作者模式：Free 已啟用`);
+          renderMessage?.("作者模式：Free 已啟用");
         }
 
         await loadState?.();
-      } catch (e) {
-        console.error(e);
+      } catch (error) {
+        console.error(error);
       } finally {
         isTogglingPlan = false;
       }

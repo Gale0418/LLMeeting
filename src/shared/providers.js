@@ -23,6 +23,13 @@ export const PROVIDERS = [
     startUrl: "https://claude.ai/",
     matchPatterns: ["https://claude.ai/*"],
   },
+  {
+    id: "meta",
+    label: "Meta AI",
+    startUrl: "https://www.meta.ai/",
+    matchPatterns: ["https://www.meta.ai/*", "https://meta.ai/*"],
+    beta: true,
+  },
 ];
 
 export const PROVIDER_IDS = PROVIDERS.map((provider) => provider.id);

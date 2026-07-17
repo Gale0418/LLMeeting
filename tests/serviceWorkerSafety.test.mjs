@@ -73,6 +73,74 @@ test("run tokens replace the process-local abort flag", async () => {
   assert.doesNotMatch(script, /\bisAborted\b/);
 });
 
+test("service worker persists workflow checkpoints and supports clearing local debate data", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  assert.match(script, /workflowCheckpoint/);
+  assert.match(script, /createWorkflowCheckpoint/);
+  assert.match(script, /aiDebate:clearLocalData/);
+  assert.match(script, /chrome\.storage\.local\.remove\(STORAGE_KEY\)/);
+  assert.match(script, /aiDebate:clearSubmittedRuns/);
+});
+
+test("provider overload and quota error codes survive the service-worker boundary", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  assert.match(script, /providerResponseError/);
+  assert.match(script, /response\?\.code \|\| "PROVIDER_AUTOMATION_FAILED"/);
+  assert.match(script, /formatProviderFailure/);
+  assert.match(script, /code: error\.code \|\| "PROVIDER_AUTOMATION_FAILED"/);
+  assert.match(script, /error\.providerContent = response\?\.providerContent/);
+  assert.match(script, /errorContent: error\.providerContent/);
+  assert.match(script, /result\.errorContent \|\| ""/);
+  assert.match(script, /OVERLOAD_REFRESH_RETRIES = 3/);
+  assert.match(script, /error\.code === "PROVIDER_OVERLOADED"/);
+  assert.match(script, /chrome\.tabs\.reload\(tabId\)/);
+  assert.match(script, /overload-refresh/);
+});
+
+
+
+test("nextRound validates phase, mode, and action before starting a run", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const nextRoundHandler = script.slice(
+    script.indexOf('if (message.type === "aiDebate:nextRound")'),
+    script.indexOf('if (message.type === "aiDebate:stop")'),
+  );
+
+  assert.ok(
+    nextRoundHandler.indexOf("validateNextRound(message.action)") <
+      nextRoundHandler.indexOf("runToken = runController.start()"),
+  );
+  assert.ok(nextRoundHandler.includes("if (!runToken) {"));
+});
+
+test("runtime retention, entitlement fallback, and reset preservation are explicit", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  assert.ok(script.includes("await ensureRuntimeStateRetention();"));
+  assert.ok(script.includes("if (!Number.isFinite(runtimeState.savedAt))"));
+  assert.equal(script.includes("savedAt: Date.now(),\n  };\n  let stateToPublish"), false);
+  assert.ok(script.includes("return runtimeState.entitlements || cachedEntitlements || entitlementsForPlan()"));
+  assert.ok(script.includes("createIdleState(undefined, runtimeState.entitlements)"));
+});
+
+test("automatic provider tabs query matching complete tabs before creating one", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  assert.ok(script.includes("chrome.tabs.query({ url: provider.matchPatterns })"));
+  assert.ok(script.includes("matchingTabs.find((tab) => isProviderTabReady(tab, provider))"));
+  assert.ok(script.indexOf("chrome.tabs.get(boundTabId)") < script.indexOf("chrome.tabs.query({ url: provider.matchPatterns })"));
+});
+
+test("overload recovery failures are converted to provider results", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  assert.ok(script.includes("try {\n        await refreshOverloadedProvider"));
+  assert.ok(script.includes("catch (retryError)"));
+  assert.ok(script.includes("error = retryError;"));
+});
+
 test("service worker resolves chair strategies and routes anonymous summaries to a fresh tab", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 

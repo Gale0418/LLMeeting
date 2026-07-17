@@ -8,9 +8,10 @@ import {
   providerLabel,
 } from "../src/shared/providers.js";
 
-test("default active providers include every supported provider", () => {
+test("default active providers keep the proven four while Meta AI stays opt-in beta", () => {
   assert.deepEqual(DEFAULT_ACTIVE_PROVIDER_IDS, ["chatgpt", "gemini", "grok", "claude"]);
-  assert.deepEqual(DEFAULT_ACTIVE_PROVIDER_IDS, PROVIDER_IDS);
+  assert.ok(PROVIDER_IDS.includes("meta"));
+  assert.equal(DEFAULT_ACTIVE_PROVIDER_IDS.includes("meta"), false);
 });
 
 test("normalizeProviderIds dedupes valid providers and falls back to defaults", () => {
@@ -21,4 +22,5 @@ test("normalizeProviderIds dedupes valid providers and falls back to defaults", 
 
 test("providerLabel returns a stable label for optional Claude", () => {
   assert.equal(providerLabel("claude"), "Claude");
+  assert.equal(providerLabel("meta"), "Meta AI");
 });

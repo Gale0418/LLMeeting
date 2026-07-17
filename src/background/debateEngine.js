@@ -226,9 +226,15 @@ export class DebateEngine {
     this.state.critiques = this.state.critiqueRounds[0];
   }
 
-  markProviderError(providerId, phase, message) {
+  markProviderError(providerId, phase, message, providerContent = "") {
     this.assertKnownProvider(providerId);
-    const content = `[錯誤：${normalizeText(message) || "unknown"}]`;
+    const normalizedMessage = normalizeText(message) || "unknown";
+    const rawProviderContent = normalizeText(providerContent);
+    const content = rawProviderContent
+      ? `[服務狀態：${normalizedMessage}]
+以下是該 AI 網頁顯示的原文，不是這位 AI 對題目的正式回答：
+${rawProviderContent}`
+      : `[錯誤：${normalizedMessage}]`;
     this.state.errors.push({ provider: providerId, phase, message: content });
 
     if (phase === "first-round") {

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "LLMeeting",
   "description": "Run a private multi-AI debate flow from a Chrome side panel.",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "icons": {
     "16": "assets/icons/icon-16.png",
     "32": "assets/icons/icon-32.png",
@@ -16,7 +16,9 @@
     "https://gemini.google.com/*",
     "https://grok.com/*",
     "https://x.com/i/grok*",
-    "https://claude.ai/*"
+    "https://claude.ai/*",
+    "https://www.meta.ai/*",
+    "https://meta.ai/*"
   ],
   "action": {
     "default_title": "LLMeeting",
@@ -40,9 +42,15 @@
         "https://gemini.google.com/*",
         "https://grok.com/*",
         "https://x.com/i/grok*",
-        "https://claude.ai/*"
+        "https://claude.ai/*",
+        "https://www.meta.ai/*",
+        "https://meta.ai/*"
       ],
-      "js": ["src/content/automation-core.js", "src/content/provider-page.js"],
+      "js": [
+        "src/content/automation-core.js",
+        "src/content/provider-adapters.js",
+        "src/content/provider-page.js"
+      ],
       "run_at": "document_idle"
     }
   ]

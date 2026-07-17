@@ -2,6 +2,8 @@
 
 | 日期 | 關聯任務 ID | 測試內容 | 測試方式 | 預期結果 | 實際結果 | 通過 / 失敗 | 執行類型 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-07-17 | LLM-T22, LLM-T24, LLM-T25 | 誤還原事故復原驗證 | `npm test`、變更 JavaScript `node --check`、`git diff --check` | 重建 service worker 未提交功能、清除 content script 重複區塊，所有測試與語法恢復通過 | 116/116 pass；23 個 JavaScript 語法通過；事故造成的 4 項失敗歸零 | 通過 | recovery |
+| 2026-07-17 | LLM-T20, LLM-T21, LLM-T22, LLM-T23, LLM-T24, LLM-T25 | 0.4.7 信任、穩定性、Meta AI 與服務錯誤復原 | `npm test`、變更 JavaScript `node --check`、`git diff --check`、`npm run package`、zip 內容檢查 | 所有測試與語法通過；超載最多 3 次 F5 重送、額度不足保留原文且不重試；產生只含 extension 檔案的 0.4.7 zip | 116/116 pass；23 個 JavaScript 語法通過；diff 無 whitespace error；`dist/llmeeting-0.4.7.zip` 內容為 manifest、assets、src | 通過 | automated |
 | 2026-07-10 | LLM-E1 | 抓內鬼高級規則回歸 | `node --test tests/debateEngine.test.mjs`、`node --test tests/prompts.test.mjs`、`npm test`、`npm run package` | 0/1 內鬼、偏航任務、第一輪不指認、最後一輪可判斷沒有內鬼或最像內鬼；全套測試通過並產生 0.4.6 zip | debateEngine 19/19 pass；prompts 15/15 pass；全套 102/102 pass；`dist/llmeeting-0.4.6.zip` 2,140,413 bytes | 通過 | automated |
 | 2026-06-05 | LLM-T6 | 完整自動化測試 | `npm test` | 所有測試通過 | 43/43 pass | 通過 | automated |
 | 2026-06-05 | LLM-T6 | Service worker 語法 | `node --check src\background\service-worker.js` | 無語法錯誤 | 無輸出，exit 0 | 通過 | automated |

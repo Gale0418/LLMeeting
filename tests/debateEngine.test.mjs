@@ -175,6 +175,24 @@ test("engine records provider errors without blocking the next phase", () => {
   assert.match(jobs.find((job) => job.provider === "chatgpt").prompt, /Gemini:\n\[錯誤：timeout\]/);
 });
 
+test("engine shares provider service notices with the other AIs without treating them as formal answers", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"]);
+  engine.start("測試服務狀態轉述");
+  engine.recordAnswer("chatgpt", "正常回答");
+  engine.markProviderError(
+    "gemini",
+    "first-round",
+    "Gemini 額度已用完",
+    "You've reached your limit. Please try again later.",
+  );
+
+  const [job] = engine.buildCritiqueJobs();
+
+  assert.match(job.prompt, /\[服務狀態：Gemini 額度已用完\]/);
+  assert.match(job.prompt, /不是這位 AI 對題目的正式回答/);
+  assert.match(job.prompt, /You've reached your limit/);
+});
+
 test("engine supports optional Claude as a participant", () => {
   const engine = new DebateEngine(["chatgpt", "gemini", "grok", "claude"]);
   const jobs = engine.start("比較四個 AI 的觀點");

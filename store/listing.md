@@ -1,6 +1,6 @@
 # LLMeeting
 
-LLMeeting 是一個 Chrome 側邊欄工具，可以把同一個問題交給 ChatGPT、Gemini、Grok、Claude，收集回答後再讓它們互評，最後由指定 AI 做總結。
+LLMeeting 是一個 Chrome 側邊欄 AI 議事空間，可以把同一個問題交給 ChatGPT、Gemini、Grok、Claude，以及預設關閉的 Meta AI Beta。它不只並排回答，還會讓 AI 互相閱讀、質疑、扮演角色，並接受使用者中途插話。
 
 ## Short description
 
@@ -8,35 +8,38 @@ Host a private multi-AI debate from your Chrome side panel.
 
 ## Detailed description
 
-LLMeeting helps you compare answers from multiple AI web apps without manually copying every reply. Open the side panel, choose participating providers, enter a question, and let the extension coordinate a debate flow across your logged-in AI tabs.
+LLMeeting helps you run an interactive debate across AI web apps you are already signed in to. Open the side panel, choose participants, enter a question, and let the extension coordinate answers, cross-critiques, optional user interjections, and a final chair summary.
 
-Free features:
+Core features:
 
 - Four-provider basic debate with ChatGPT, Gemini, Grok, and Claude.
+- Optional Meta AI Beta participation; it stays disabled by default because availability and page structure may vary by account or region.
 - One to five cross-critique rounds.
-- Provider selection and summary judge selection.
+- Serious critique, casual chat, brawl, Yes-and, and imposter interaction styles.
+- Provider selection, random chair, observer chair, and anonymous review strategies.
+- Pro chat and theater modes with user interjections and custom personas.
 - Bubble-style transcript and provider diagnostics.
-- Local Chrome storage for the latest session state.
-
-Planned Pro entries:
-
 - Fast arena scheduling.
 - Summarize the current AI conversation and send it to the other providers.
-- Export and history.
+- Local storage for the latest session only, with a 24-hour retention limit and an explicit clear-data control.
+
+LLMeeting does not send chat content to an LLMeeting developer server. Prompts and quoted AI replies are submitted only to the AI websites selected by the user and are processed under those providers' own terms and privacy policies.
 
 ## Test instructions
 
 1. Install the unpacked extension.
 2. Sign in to ChatGPT, Gemini, Grok, and Claude in Chrome.
-3. Open the LLMeeting side panel from the toolbar icon.
-4. Enter a short question such as `天為什麼是藍的？`.
-5. Set 交叉評析輪次 to 2, run 基礎辯論, and confirm each provider receives the prompt, replies, two critique prompts, and final summary prompt.
-6. In 進階辯論設定, select 快速鬥技場 or 總結辯論 while on Free, then click the main debate button; it should show a Pro locked message without sending prompts.
+3. Optionally open Meta AI in a signed-in account; Meta AI Beta is not required for the stable four-provider flow.
+4. Open the LLMeeting side panel from the toolbar icon.
+5. Enter a short question such as `天為什麼是藍的？`.
+6. Set 交叉評析輪次 to 2, run 基礎辯論, and confirm every selected provider receives the initial prompt and two critique prompts, and only the chair provider receives the final summary prompt.
+7. Confirm Meta AI Beta is unchecked after a fresh install.
+8. Click 清除紀錄 and confirm the transcript returns to an empty local state.
 
 ## Permissions rationale
 
 - `sidePanel`: show the LLMeeting control panel.
-- `storage`: keep the latest local debate state and future entitlement state.
+- `storage`: keep the latest local debate state for up to 24 hours and remember the local author-mode easter egg preference.
 - `tabs`: find or open provider tabs.
 - `scripting`: reinject the content script when a provider page is already open.
-- Host permissions for ChatGPT, Gemini, Grok, X Grok, and Claude: automate prompt entry and read replies only on supported AI web apps.
+- Host permissions for ChatGPT, Gemini, Grok, X Grok, Claude, and Meta AI: automate prompt entry and read replies only on explicitly supported AI web apps. Meta AI remains opt-in in the side panel.

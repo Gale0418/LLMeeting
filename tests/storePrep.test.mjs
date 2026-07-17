@@ -9,6 +9,9 @@ test("package script builds a Chrome Web Store zip from extension files only", a
   assert.equal(packageJson.scripts.package, "node scripts/package-extension.mjs");
   assert.match(packager, /INCLUDED_PATHS/);
   assert.match(packager, /manifest\.json/);
+  assert.match(packager, /validateReleaseMetadata/);
+  assert.match(packager, /Version mismatch/);
+  assert.match(packager, /version-badge/);
   assert.match(packager, /assets/);
   assert.match(packager, /src/);
   assert.doesNotMatch(packager, /EXCLUDED_ARCHIVE_NAMES/);
@@ -28,5 +31,15 @@ test("store listing prep documents privacy, permissions, and screenshots", async
   assert.match(privacy, /Gemini/);
   assert.match(privacy, /Grok/);
   assert.match(privacy, /Claude/);
+  assert.match(privacy, /Meta AI/);
+  assert.match(privacy, /24 hours|24 小時/);
+  assert.match(listing, /Meta AI Beta/);
+  assert.match(listing, /Pro chat and theater modes/);
+  assert.doesNotMatch(listing, /Free chat and theater modes/);
+  assert.match(listing, /initial prompt and two critique prompts/);
+  assert.match(listing, /only the chair provider receives the final summary prompt/);
+  assert.match(listing, /author-mode easter egg/);
+  assert.match(listing, /清除紀錄/);
+  assert.match(privacy, /Last updated: 2026-07-17/);
   assert.match(screenshots, /Chrome Web Store/);
 });

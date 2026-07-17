@@ -66,6 +66,8 @@ test("side panel exposes one main debate button and advanced mutually exclusive 
   assert.match(html, /data-pro-feature="fastDebate"/);
   assert.match(html, /data-pro-feature="summaryDebate"/);
   assert.match(html, /value="claude" checked> Claude/);
+  assert.match(html, /value="meta"> Meta AI/);
+  assert.doesNotMatch(html, /value="meta" checked/);
   assert.match(app, /startSelectedDebate/);
   assert.match(app, /selectedDebateMode/);
   assert.match(app, /selectedDebateRounds/);
@@ -97,11 +99,21 @@ test("side panel exposes Pro summary strategy modes and random chair choice", as
   assert.match(html, /data-pro-feature="observerChair"/);
   assert.match(html, /data-pro-feature="anonymousReview"/);
   assert.match(html, /<option value="random">隨機主席<\/option>/);
-  assert.match(html, /class="version-badge">v0\.4\.6<\/span>/);
+  assert.match(html, /class="version-badge">v0\.4\.7<\/span>/);
   assert.match(app, /const summaryStrategyEls = Array\.from\(document\.querySelectorAll\("\.summary-strategy-select"\)\)/);
   assert.match(app, /selectedSummaryStrategy/);
   assert.match(app, /featureForSummaryStrategy/);
   assert.match(app, /summaryStrategy: selectedSummaryStrategy\(\)/);
+});
+
+test("side panel exposes local retention notice and clear-data control", async () => {
+  const html = await readFile("src/sidepanel/index.html", "utf8");
+  const app = await readFile("src/sidepanel/app.js", "utf8");
+
+  assert.match(html, /id="clearLocalDataButton"/);
+  assert.match(html, /最長 24 小時/);
+  assert.match(html, /不會傳給 LLMeeting 開發者伺服器/);
+  assert.match(app, /aiDebate:clearLocalData/);
 });
 
 test("side panel previews checked providers while idle", async () => {

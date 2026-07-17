@@ -1,5 +1,12 @@
 # 筆記
 
+- 2026-07-17 0.4.7 補強範圍：
+  1. 商店目前版本與 repo 0.4.6 不一致，README 的 API 敘述也與實作不符。
+  2. 最新 transcript、summary 與 diagnostics 會存在 `chrome.storage.local`，需要保留期限與真正清除入口。
+  3. Provider DOM 設定將抽成封裝內 adapter；Meta AI 只作為預設未勾選的 Beta。
+  4. 長文本採總字元預算與可見截斷，不以關鍵字刪除代替提示注入防護。
+  5. 群聊與劇場共通流程需去重；MV3 running 中斷保留 checkpoint 診斷，不宣稱能無條件續跑第三方 DOM 操作。
+  6. 錯誤辨識同時檢查回覆區與可見 alert／aria-live 錯誤提示；超載自動 F5 重送 3 次，額度不足直接轉述原文給其他 AI。
 - 2026-07-10 抓內鬼模式高級化：
   1. Antigravity/Gemini 透過本機 bridge 參與規則審查，確認 0/1 內鬼、偏航任務與延後指認可改善第一輪秒殺。
   2. 內鬼 secret prompt 從「放錯誤」改成「用半真半假、定義偷換、重點排序、範圍外推等手法讓討論偏航」。

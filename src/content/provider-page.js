@@ -5,150 +5,26 @@
   globalThis.__aiDebateContentLoaded = true;
   const {
     assistantSnapshot,
+    classifyProviderResponseError,
     ensurePromptSubmitted,
     formatStageError,
     hasFreshAssistantResponse,
+    hasFreshProviderError,
     isPromptEcho,
     matchesProviderLocation,
     normalizeProviderResponse,
+    providerErrorFingerprint,
   } = globalThis.aiDebateAutomationCore;
   const SUBMITTED_RUNS_KEY = "aiDebate.submittedRuns.v1";
   const submittedRuns = loadSubmittedRuns();
-
-  const PROVIDERS = {
-    chatgpt: {
-      hosts: ["chatgpt.com", "chat.openai.com"],
-      inputSelectors: [
-        "#prompt-textarea",
-        "textarea",
-        "div[contenteditable='true']",
-        "[role='textbox']",
-      ],
-      sendSelectors: [
-        "button[data-testid='send-button']",
-        "button[type='submit']",
-        "button[aria-label*='Send']",
-        "button[aria-label*='送出']",
-        "button[aria-label*='Submit']",
-      ],
-      stopSelectors: [
-        "button[data-testid='stop-button']",
-        "button[aria-label*='Stop']",
-        "button[aria-label*='停止']",
-      ],
-      responseSelectors: [
-        "[data-message-author-role='assistant']",
-        "article .markdown",
-        "main .markdown",
-        "div.agent-turn",
-        "div[data-message-role='assistant']"
-      ],
-    },
-    gemini: {
-      hosts: ["gemini.google.com"],
-      inputSelectors: [
-        "rich-textarea div[contenteditable='true']",
-        "div[contenteditable='true']",
-        "textarea",
-        "[role='textbox']",
-      ],
-      sendSelectors: [
-        "button.send-button",
-        "button[aria-label*='Send']",
-        "button[aria-label*='送出']",
-        "button[type='submit']",
-      ],
-      stopSelectors: [
-        "button[aria-label*='Stop']",
-        "button[aria-label*='停止']",
-      ],
-      responseSelectors: [
-        "model-response",
-        "message-content",
-        "[id^='model-response-message-content']",
-        ".model-response-text",
-        "[data-response-index]",
-        "response-container",
-        "div[data-message-author='model']",
-        "div[data-message-author='assistant']",
-        ".message-content",
-        ".model-response",
-        "div.message-content",
-        "div.model-response",
-        "[data-testid='message-content']"
-      ],
-      userMessageSelectors: [
-        "user-query",
-        ".user-query-container",
-        "[data-message-author='user']",
-        "[data-author='user']",
-      ],
-    },
-    grok: {
-      locations: [
-        { host: "grok.com" },
-        { host: "x.com", pathPrefixes: ["/i/grok"] },
-      ],
-      inputSelectors: [
-        "textarea",
-        "div[contenteditable='true']",
-        "[role='textbox']",
-      ],
-      sendSelectors: [
-        "button[data-testid='send-button']",
-        "button[type='submit']",
-        "button[aria-label*='Send']",
-        "button[aria-label*='送出']",
-      ],
-      stopSelectors: [
-        "button[aria-label*='Stop']",
-        "button[aria-label*='停止']",
-      ],
-      responseSelectors: [
-        "[data-testid='message-bubble']",
-        ".markdown",
-        "article",
-        "main [role='article']",
-        "div.grok-message",
-        "[data-message-author='assistant']"
-      ],
-    },
-    claude: {
-      hosts: ["claude.ai"],
-      inputSelectors: [
-        "div[contenteditable='true']",
-        "div.ProseMirror",
-        "textarea",
-        "[role='textbox']",
-      ],
-      sendSelectors: [
-        "button[type='submit']",
-        "button[aria-label*='Send']",
-        "button[aria-label*='送出']",
-        "button[aria-label*='傳送']",
-        "button[aria-label*='Send Message']",
-      ],
-      stopSelectors: [
-        "button[aria-label*='Stop']",
-        "button[aria-label*='停止']",
-      ],
-      responseSelectors: [
-        ".font-claude-message",
-        "[data-message-author='assistant']",
-        "[data-is-streaming]",
-        "[data-testid='message-bubble']",
-        ".prose",
-        "article",
-        "div.claude-message"
-      ],
-    },
-  };
+  const PROVIDERS = globalThis.aiDebateProviderAdapters || {};
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const handlers = {
       "aiDebate:sendAndRead": sendAndRead,
       "aiDebate:submitPrompt": submitPrompt,
       "aiDebate:readSubmittedResponse": readSubmittedResponse,
+      "aiDebate:clearSubmittedRuns": clearSubmittedRuns,
     };
     const handler = handlers[message?.type];
     if (!handler) {
@@ -161,6 +37,7 @@
         ok: false,
         code: error.code || "PROVIDER_AUTOMATION_FAILED",
         error: error.message,
+        providerContent: error.providerContent || "",
       }));
 
     return true;
@@ -187,6 +64,7 @@
         () => providerId === "gemini" ? findSendButton(config, input) : findSendButton(config),
         3000,
       );
+      const errorBaseline = readProviderErrorFingerprintBaseline(config, providerId);
       let submission = { method: sendButton ? "button" : "enter", evidence: "not-required", retried: false };
       if (providerId === "gemini") {
         const userMessageCount = countUserMessages(config);
@@ -210,6 +88,7 @@
         providerId,
         phase: message.phase,
         baseline,
+        errorBaseline,
         prompt: message.prompt,
         submittedAt: Date.now(),
       });
@@ -227,15 +106,21 @@
       const { providerId, config } = requireProviderPage(message.provider);
       const run = submittedRuns.get(message.runId);
       if (!run || run.providerId !== providerId) {
-        throw new Error(`找不到 ${message.provider} 這次送出的等待紀錄。`);
+        const error = new Error(`找不到 ${message.provider} 這次送出的等待紀錄。`);
+        error.code = "PROVIDER_RESPONSE_MISMATCH";
+        throw error;
       }
 
       stage = "等待新回覆";
-      await waitForCompletion(config, providerId, message.timeoutMs || 120000, run.baseline, run.prompt);
+      await waitForCompletion(config, providerId, message.timeoutMs || 120000, run.baseline, run.prompt, run.errorBaseline);
       stage = "讀取新回覆";
       const content = readLastAssistantMessage(config, providerId);
       if (!content) {
         throw new Error(`無法讀取 ${message.provider} 的 AI 回覆。`);
+      }
+      const providerError = classifyProviderResponseError(providerId, content);
+      if (providerError) {
+        throw createProviderResponseError(providerError, content);
       }
 
       submittedRuns.delete(message.runId);
@@ -266,11 +151,23 @@
     )?.[0];
   }
 
+  async function clearSubmittedRuns() {
+    submittedRuns.clear();
+    try {
+      sessionStorage.removeItem(SUBMITTED_RUNS_KEY);
+    } catch {
+      // Some provider pages can block sessionStorage.
+    }
+    return { ok: true };
+  }
+
   function loadSubmittedRuns() {
     try {
       const parsed = JSON.parse(sessionStorage.getItem(SUBMITTED_RUNS_KEY) || "[]");
+      const now = Date.now();
+      const TTL = 30 * 60 * 1000;
       return new Map(Array.isArray(parsed) ? parsed.filter((entry) =>
-        Array.isArray(entry) && typeof entry[0] === "string" && entry[1]?.providerId,
+        Array.isArray(entry) && typeof entry[0] === "string" && entry[1]?.providerId && (now - entry[1].submittedAt <= TTL)
       ) : []);
     } catch {
       return new Map();
@@ -300,6 +197,7 @@
       "等待新回覆": "PROVIDER_RESPONSE_TIMEOUT",
     };
     wrapped.code = error?.code || codes[stage] || "PROVIDER_AUTOMATION_FAILED";
+    wrapped.providerContent = error?.providerContent || "";
     return wrapped;
   }
 
@@ -401,12 +299,17 @@
     }
   }
 
-  async function waitForCompletion(config, providerId, timeoutMs, baseline, prompt) {
+  async function waitForCompletion(config, providerId, timeoutMs, baseline, prompt, errorBaseline = []) {
     const deadline = Date.now() + timeoutMs;
     let lastText = "";
     let stableSince = Date.now();
 
     while (Date.now() < deadline) {
+      const pageError = readKnownProviderPageError(config, providerId, errorBaseline);
+      if (pageError) {
+        throw createProviderResponseError(pageError.classification, pageError.content);
+      }
+
       const current = readAssistantSnapshot(config, providerId);
       const currentText = current.lastText;
       if (currentText !== lastText) {
@@ -415,11 +318,16 @@
       }
 
       const timeStable = Date.now() - stableSince;
+      const generating = isGenerating(config);
+      const stableFallbackMs = config.generatingStableFallbackMs || 30000;
       if (
         currentText &&
         hasFreshAssistantResponse(baseline, current) &&
         !isPromptEcho(prompt, currentText) &&
-        (!isGenerating(config) || timeStable > 15000) &&
+        (
+          !generating ||
+          (!config.requireGenerationEnd && timeStable > stableFallbackMs)
+        ) &&
         timeStable > 2000
       ) {
         return;
@@ -446,6 +354,42 @@
 
   function readLastAssistantMessage(config, providerId) {
     return readAssistantSnapshot(config, providerId).lastText;
+  }
+
+  function readProviderErrorFingerprintBaseline(config, providerId) {
+    return readProviderErrorCandidates(config, providerId)
+      .map((candidate) => candidate.fingerprint);
+  }
+
+  function readKnownProviderPageError(config, providerId, errorBaseline = []) {
+    const candidates = readProviderErrorCandidates(config, providerId);
+
+    for (let index = candidates.length - 1; index >= 0; index -= 1) {
+      const candidate = candidates[index];
+      const classification = classifyProviderResponseError(providerId, candidate.content);
+      if (classification && hasFreshProviderError(errorBaseline, candidate.content)) {
+        return { classification, content: candidate.content };
+      }
+    }
+    return null;
+  }
+
+  function readProviderErrorCandidates(config, providerId) {
+    return collectElements(config.errorSelectors)
+      .filter(isVisible)
+      .map((element) => normalizeProviderResponse(providerId, element.innerText || element.textContent || "").trim())
+      .filter(Boolean)
+      .map((content) => ({
+        content,
+        fingerprint: providerErrorFingerprint(content),
+      }));
+  }
+
+  function createProviderResponseError(classification, content) {
+    const error = new Error(classification.message);
+    error.code = classification.code;
+    error.providerContent = content;
+    return error;
   }
 
   async function observeGeminiSubmission(config, input, initialUserMessageCount, timeoutMs = 4000) {

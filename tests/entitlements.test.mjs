@@ -6,14 +6,15 @@ import {
   entitlementsForPlan,
   featureLabel,
 } from "../src/shared/entitlements.js";
-import { DEFAULT_ACTIVE_PROVIDER_IDS } from "../src/shared/providers.js";
+import { PROVIDER_IDS } from "../src/shared/providers.js";
 
-test("free entitlement keeps four-provider basic debate and locks pro workflows", () => {
+test("free entitlement includes opt-in Meta AI beta and locks pro workflows", () => {
   const free = entitlementsForPlan("free");
 
   assert.equal(free.plan, "free");
   assert.equal(free.isPro, false);
-  assert.deepEqual(free.includedProviders, DEFAULT_ACTIVE_PROVIDER_IDS);
+  assert.deepEqual(free.includedProviders, PROVIDER_IDS);
+  assert.ok(free.includedProviders.includes("meta"));
   assert.equal(canUseFeature(free, "basicDebate"), true);
   assert.equal(canUseFeature(free, "fastDebate"), false);
   assert.equal(canUseFeature(free, "summaryDebate"), false);
@@ -29,7 +30,7 @@ test("pro entitlement unlocks every advanced debate mode without changing provid
 
   assert.equal(pro.plan, "pro");
   assert.equal(pro.isPro, true);
-  assert.deepEqual(pro.includedProviders, DEFAULT_ACTIVE_PROVIDER_IDS);
+  assert.deepEqual(pro.includedProviders, PROVIDER_IDS);
   assert.equal(canUseFeature(pro, "basicDebate"), true);
   assert.equal(canUseFeature(pro, "fastDebate"), true);
   assert.equal(canUseFeature(pro, "summaryDebate"), true);

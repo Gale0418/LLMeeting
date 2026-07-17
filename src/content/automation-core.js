@@ -32,6 +32,61 @@
     return value.replace(/(?:^|\r?\n)[ \t]*image[ \t]*$/i, "").trimEnd();
   }
 
+  function providerErrorFingerprint(text) {
+    return normalizeWhitespace(text).toLowerCase();
+  }
+
+  function hasFreshProviderError(baseline, text) {
+    const fingerprint = providerErrorFingerprint(text);
+    return Boolean(fingerprint) && !new Set(baseline || []).has(fingerprint);
+  }
+
+  function classifyProviderResponseError(providerId, text) {
+    const value = providerErrorFingerprint(text);
+    if (!value) {
+      return null;
+    }
+
+    const patterns = [
+      {
+        code: "PROVIDER_QUOTA_EXCEEDED",
+        message: `${providerId} 額度或使用上限已達`,
+        tests: [
+          /(?:usage|message|rate)\s+(?:limit|quota)\b(?:\s+has been)?\s+(?:reached|exceeded)/,
+          /(?:you|you've|you have)\s+(?:have\s+)?(?:hit|reached)\s+your\s+(?:(?:usage|message)\s+)?(?:limit|quota)(?:\s+for\s+now)?/,
+          /(?:out of|no)\s+(?:credits?|messages?)/,
+          /(?:quota)\s+(?:reached|exceeded)/,
+          /^(?:抱歉[，,\s]*)?額度(?:已)?(?:用完|耗盡|不足|達到上限)/,
+          /^(?:抱歉[，,\s]*)?使用(?:量|次數)?(?:已)?達(?:到)?上限/,
+        ],
+      },
+      {
+        code: "PROVIDER_OVERLOADED",
+        message: `${providerId} 服務目前超載`,
+        tests: [
+          /server(?:s)? (?:are |is )?(?:overloaded|over capacity|busy)/,
+          /\bserver(?:s)?\b.*\b(?:reached|exceeded|at)\b.*\bcapacity\b/,
+          /\bserver(?:s)?\b.*\bcapacity\b.*\b(?:reached|exceeded|full)\b/,
+          /service (?:is )?(?:overloaded|temporarily unavailable)/,
+          /too many requests/,
+          /\b(?:temporary|temporarily)\s+high demand\b/,
+          /\bhigh demand\b.*(?:try|retry|again|later|unavailable|capacity)/,
+          /(?:something went wrong|temporary error).*(?:try|retry|again)/,
+          /(?:please )?(?:try|retry) again (?:in a (?:few|moment)|later)/,
+          /伺服器(?:目前)?(?:超載|忙碌).*(?:稍後|重試|再試)/,
+          /服務(?:目前)?(?:超載|暫時無法使用).*(?:稍後|重試|再試)/,
+          /(?:發生錯誤|暫時錯誤).*(?:重試|再試|稍後)/,
+        ],
+      },
+    ];
+
+    for (const candidate of patterns) {
+      if (candidate.tests.some((pattern) => pattern.test(value))) {
+        return { code: candidate.code, message: candidate.message };
+      }
+    }
+    return null;
+  }
   function matchesProviderLocation(locationLike, config) {
     const hostname = String(locationLike?.hostname || "").toLowerCase();
     const pathname = String(locationLike?.pathname || "/");
@@ -76,7 +131,10 @@
   globalThis.aiDebateAutomationCore = {
     assistantSnapshot,
     ensurePromptSubmitted,
+    classifyProviderResponseError,
     formatStageError,
+    hasFreshProviderError,
+    providerErrorFingerprint,
     hasFreshAssistantResponse,
     isPromptEcho,
     matchesProviderLocation,

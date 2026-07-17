@@ -1,4 +1,4 @@
-import { DEFAULT_ACTIVE_PROVIDER_IDS } from "./providers.js";
+import { PROVIDER_IDS } from "./providers.js";
 
 export const ENTITLEMENT_STORAGE_KEY = "aiDebate.entitlementPlan";
 
@@ -45,7 +45,7 @@ export function entitlementsForPlan(plan = "free") {
   return {
     plan: normalizedPlan,
     isPro: normalizedPlan === "pro",
-    includedProviders: [...DEFAULT_ACTIVE_PROVIDER_IDS],
+    includedProviders: [...PROVIDER_IDS],
     features: { ...PLAN_FEATURES[normalizedPlan] },
   };
 }

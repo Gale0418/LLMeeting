@@ -123,7 +123,13 @@ body {
   font-weight: 400;
 }
 
-#resetButton {
+.topbar-actions {
+  display: flex;
+  gap: 6px;
+}
+
+#resetButton,
+#clearLocalDataButton {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--border-color);
   color: var(--text-primary);
@@ -135,7 +141,8 @@ body {
   transition: all 0.2s ease;
 }
 
-#resetButton:hover {
+#resetButton:hover,
+#clearLocalDataButton:hover {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.2);
   transform: translateY(-1px);
@@ -440,6 +447,15 @@ input[type="number"]:focus {
   font-weight: 800;
 }
 
+.beta-pill {
+  border-radius: 999px;
+  padding: 1px 5px;
+  background: rgba(59, 130, 246, 0.18);
+  color: #93c5fd;
+  font-size: 8px;
+  font-weight: 800;
+}
+
 .primary-action:hover:not(:disabled),
 .secondary-action:hover:not(:disabled) {
   transform: translateY(-2px);
@@ -472,7 +488,7 @@ input[type="number"]:focus {
 /* AI 狀態網格 */
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -502,6 +518,7 @@ input[type="number"]:focus {
 .provider-badge.gemini { background: rgba(142, 117, 255, 0.15); color: var(--gemini-color); }
 .provider-badge.grok { background: rgba(230, 237, 243, 0.1); color: var(--grok-color); }
 .provider-badge.claude { background: rgba(217, 119, 6, 0.15); color: var(--claude-color); }
+.provider-badge.meta { background: rgba(59, 130, 246, 0.15); color: #93c5fd; }
 
 .provider strong {
   font-size: 11px;
@@ -684,6 +701,19 @@ input[type="number"]:focus {
 .bubble-group.claude .bubble-content {
   background: var(--claude-bg);
   border: 1px solid var(--claude-border);
+}
+
+.bubble-group.meta .bubble-meta { color: #93c5fd; }
+.bubble-group.meta .bubble-content {
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.privacy-note {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 0 4px 8px;
 }
 
 /* 第二輪互評的特殊底紋或角標 */

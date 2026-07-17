@@ -1,6 +1,6 @@
 {
   "name": "llmeeting",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "Cross-AI automated debate engine across multiple active tabs",
   "private": true,
   "type": "module",

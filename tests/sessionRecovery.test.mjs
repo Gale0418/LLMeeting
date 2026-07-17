@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { DebateEngine } from "../src/background/debateEngine.js";
-import { recoverSession } from "../src/background/sessionRecovery.js";
+import { isSessionExpired, recoverSession, SESSION_RETENTION_MS } from "../src/background/sessionRecovery.js";
 
 function createIdleState() {
   return {
@@ -78,4 +78,41 @@ test("corrupt waiting session falls back to idle with an explanation", () => {
   assert.match(recovered.state.message, /無法恢復先前對話/);
   assert.equal(recovered.engine, null);
   assert.equal(recovered.shouldPersist, true);
+});
+
+test("stored debate state expires after the local retention window", () => {
+  const result = recoverSession({
+    ...createIdleState(),
+    savedAt: 1_000,
+    transcript: { originalQuestion: "敏感內容" },
+  }, createIdleState, 24 * 60 * 60 * 1000 + 1_001);
+
+  assert.equal(result.engine, null);
+  assert.equal(result.shouldPersist, true);
+  assert.equal(result.state.transcript, null);
+  assert.match(result.state.message, /超過 24 小時/);
+});
+
+test("interrupted state reports the last persisted workflow checkpoint", () => {
+  const result = recoverSession({
+    ...createIdleState(),
+    busy: true,
+    status: "running",
+    workflowCheckpoint: {
+      provider: "gemini",
+      phase: "critique-2",
+      stage: "collecting",
+    },
+  }, createIdleState);
+
+  assert.match(result.state.message, /gemini／critique-2/);
+});
+
+
+test("retention check expires only after more than 24 hours", () => {
+  const savedAt = 10_000;
+
+  assert.equal(isSessionExpired({ savedAt }, savedAt + SESSION_RETENTION_MS), false);
+  assert.equal(isSessionExpired({ savedAt }, savedAt + SESSION_RETENTION_MS + 1), true);
+  assert.equal(isSessionExpired({ savedAt: undefined }, savedAt + SESSION_RETENTION_MS + 1), false);
 });

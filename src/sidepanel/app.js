@@ -5,12 +5,12 @@ import {
   proRequiredMessage,
 } from "../shared/entitlements.js";
 import { PROVIDERS } from "../shared/providers.js";
-// Keep this comment to pass the test regex: import("./dev-unlock.js")
 
 const form = document.querySelector("#debateForm");
 const questionInput = document.querySelector("#questionInput");
 const basicDebateButton = document.querySelector("#basicDebateButton");
 const resetButton = document.querySelector("#resetButton");
+const clearLocalDataButton = document.querySelector("#clearLocalDataButton");
 const statusText = document.querySelector("#statusText");
 const planBadge = document.querySelector("#planBadge");
 const transcriptOutput = document.querySelector("#transcriptOutput");
@@ -41,6 +41,7 @@ const hookSelects = {
   claude: document.querySelector("#hookClaude"),
   grok: document.querySelector("#hookGrok"),
   gemini: document.querySelector("#hookGemini"),
+  meta: document.querySelector("#hookMeta"),
 };
 
 const providerStateEls = {
@@ -48,6 +49,7 @@ const providerStateEls = {
   gemini: document.querySelector("#geminiState"),
   grok: document.querySelector("#grokState"),
   claude: document.querySelector("#claudeState"),
+  meta: document.querySelector("#metaState"),
 };
 
 let latestState = null;
@@ -136,7 +138,7 @@ async function startSelectedDebate() {
 
 async function startDebate(mode) {
   const question = questionInput.value.trim();
-  if ((mode === "basic" || mode === "fast") && !question) {
+  if (mode !== "summary" && !question) {
     renderMessage("請先輸入問題");
     return;
   }
@@ -183,7 +185,7 @@ async function startDebate(mode) {
 
   setActionButtonsDisabled(true);
   renderMessage(startingMessage(mode));
-  
+
   const response = await chrome.runtime.sendMessage({
     type: "aiDebate:start",
     question,
@@ -213,6 +215,16 @@ async function startDebate(mode) {
 resetButton.addEventListener("click", async () => {
   const response = await chrome.runtime.sendMessage({ type: "aiDebate:reset" });
   renderState(response?.state);
+});
+
+clearLocalDataButton?.addEventListener("click", async () => {
+  const confirmed = globalThis.confirm("確定要清除本機保存的辯論內容與等待紀錄嗎？");
+  if (!confirmed) {
+    return;
+  }
+  const response = await chrome.runtime.sendMessage({ type: "aiDebate:clearLocalData" }).catch(() => null);
+  renderState(response?.state);
+  renderMessage(response?.ok ? "本機辯論紀錄已清除" : (response?.error || "清除失敗"));
 });
 
 chatSendBtn?.addEventListener("click", async () => {
@@ -283,9 +295,8 @@ async function loadDevUnlock() {
   try {
     const { attachDevUnlock } = await import("./dev-unlock.js");
     attachDevUnlock({ planBadge, renderMessage, loadState });
-  } catch (_error) {
-    // Custom builds may omit this author convenience helper.
-    renderMessage("作者模式載入失敗: " + _error.message);
+  } catch (error) {
+    renderMessage("作者模式載入失敗: " + error.message);
   }
 }
 
@@ -331,6 +342,10 @@ function renderState(state) {
     }
     if (skipSummaryCheckbox && state.skipSummary !== undefined) {
       skipSummaryCheckbox.checked = state.skipSummary;
+    }
+    if (state.mode) {
+      const modeInput = document.querySelector(`input.debate-mode-select[value="${state.mode}"]`);
+      if (modeInput) modeInput.checked = true;
     }
   }
 
@@ -643,14 +658,8 @@ function renderChatBubbles(state) {
 }
 
 function providerLabel(id) {
-  const labels = {
-    chatgpt: "ChatGPT",
-    gemini: "Gemini",
-    grok: "Grok",
-    claude: "Claude",
-    random: "隨機主席",
-  };
-  return labels[id] || id;
+  return PROVIDERS.find((provider) => provider.id === id)?.label
+    || (id === "random" ? "隨機主席" : id);
 }
 
 function critiqueRoundMaps(transcript) {
@@ -729,12 +738,15 @@ function renderDebateModeState() {
 
   let currentMode = selectedDebateMode();
   let featureId = featureForMode(currentMode);
-  if (currentEntitlements.isPro && !featureId) {
-    const fastInput = document.querySelector('input.debate-mode-select[value="fast"]');
-    if (fastInput) fastInput.checked = true;
-  } else if (!currentEntitlements.isPro && featureId) {
-    const basicInput = document.querySelector('input.debate-mode-select[value="basic"]');
-    if (basicInput) basicInput.checked = true;
+
+  if (!latestState || latestState.phase !== "waiting_for_user") {
+    if (currentEntitlements.isPro && !featureId) {
+      const fastInput = document.querySelector('input.debate-mode-select[value="fast"]');
+      if (fastInput) fastInput.checked = true;
+    } else if (!currentEntitlements.isPro && featureId) {
+      const basicInput = document.querySelector('input.debate-mode-select[value="basic"]');
+      if (basicInput) basicInput.checked = true;
+    }
   }
 
   const mode = selectedDebateMode();
@@ -846,20 +858,14 @@ function buildTranscriptText(state) {
     transcript.originalQuestion || state.question || "",
     "",
     "第一輪回答:",
-    speakerBlock("ChatGPT", transcript.answers?.chatgpt),
-    speakerBlock("Gemini", transcript.answers?.gemini),
-    speakerBlock("Grok", transcript.answers?.grok),
-    speakerBlock("Claude", transcript.answers?.claude),
+    ...PROVIDERS.map((provider) => speakerBlock(provider.label, transcript.answers?.[provider.id])),
   ];
 
   critiqueRoundMaps(transcript).forEach((critiques, index) => {
     lines.push(
       "",
       `${zhRoundLabel(index + 2)}互評:`,
-      speakerBlock("ChatGPT", critiques?.chatgpt),
-      speakerBlock("Gemini", critiques?.gemini),
-      speakerBlock("Grok", critiques?.grok),
-      speakerBlock("Claude", critiques?.claude),
+      ...PROVIDERS.map((provider) => speakerBlock(provider.label, critiques?.[provider.id])),
     );
   });
 

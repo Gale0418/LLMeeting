@@ -13,11 +13,14 @@
           <div class="brand-row">
             <h1>LLMeeting</h1>
             <span id="planBadge" class="plan-badge">Free</span>
-            <span class="version-badge">v0.4.6</span>
+            <span class="version-badge">v0.4.7</span>
           </div>
           <p id="statusText">等待開始</p>
         </div>
-        <button id="resetButton" type="button" title="重置">Reset</button>
+        <div class="topbar-actions">
+          <button id="resetButton" type="button" title="重置目前流程">Reset</button>
+          <button id="clearLocalDataButton" type="button" title="清除本機辯論紀錄">清除紀錄</button>
+        </div>
       </header>
 
       <div class="main-content">
@@ -42,6 +45,7 @@
                 <label><input type="checkbox" class="provider-select" value="gemini" checked> Gemini</label>
                 <label><input type="checkbox" class="provider-select" value="grok" checked> Grok</label>
                 <label><input type="checkbox" class="provider-select" value="claude" checked> Claude</label>
+                <label><input type="checkbox" class="provider-select" value="meta"> Meta AI <span class="beta-pill">BETA</span></label>
               </div>
             </fieldset>
 
@@ -96,6 +100,7 @@
                 <option value="gemini">Gemini</option>
                 <option value="grok">Grok</option>
                 <option value="claude">Claude</option>
+                <option value="meta">Meta AI (Beta)</option>
                 <option value="random">隨機主席</option>
               </select>
             </div>
@@ -173,6 +178,12 @@
                     <option value="">[自動] 尋找或開新分頁</option>
                   </select>
                 </div>
+                <div>
+                  <label for="hookMeta" style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);">Meta AI (Beta)</label>
+                  <select id="hookMeta" style="width: 100%; margin-top: 2px;">
+                    <option value="">[自動] 尋找或開新分頁</option>
+                  </select>
+                </div>
               </div>
               <button type="button" id="refreshHooksBtn" style="margin-top: 8px; font-size: 0.75rem; padding: 4px 8px;">重新掃描分頁 🔄</button>
             </details>
@@ -215,6 +226,10 @@
           <span class="provider-badge claude">Claude</span>
           <strong id="claudeState">待命</strong>
         </article>
+        <article class="provider" data-provider="meta">
+          <span class="provider-badge meta">Meta β</span>
+          <strong id="metaState">未啟用</strong>
+        </article>
       </section>
 
       <section class="output">
@@ -230,6 +245,9 @@
         <summary>診斷資訊</summary>
         <pre id="diagnosticsOutput">尚未開始</pre>
       </details>
+      <p class="privacy-note">
+        最新一場辯論會保存在此瀏覽器，最長 24 小時。內容只會送往你選擇的 AI 網頁，不會傳給 LLMeeting 開發者伺服器。
+      </p>
       </div>
     </main>
     <script type="module" src="app.js"></script>

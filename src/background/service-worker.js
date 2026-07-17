@@ -2,7 +2,7 @@ import { DebateEngine, normalizeDebateRounds } from "./debateEngine.js";
 import { isProviderTabReady, setSidePanelOpenOnActionClick } from "./chromeCompat.js";
 import { createProviderDiagnostics, updateProviderDiagnostic } from "./diagnostics.js";
 import { RunController, isRunCancelledError } from "./runController.js";
-import { recoverSession } from "./sessionRecovery.js";
+import { isSessionExpired, recoverSession } from "./sessionRecovery.js";
 import {
   canUseFeature,
   ENTITLEMENT_STORAGE_KEY,
@@ -21,8 +21,10 @@ import {
 
 const STORAGE_KEY = "aiDebate.currentState";
 const PROVIDER_TIMEOUT_MS = 240000; // 4分鐘，防話癆
+const OVERLOAD_REFRESH_RETRIES = 3;
 
 let engine = new DebateEngine();
+let cachedEntitlements = entitlementsForPlan();
 let runtimeState = createIdleState();
 const runController = new RunController();
 let initializationPromise;
@@ -47,10 +49,30 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "aiDebate:reset") {
     ensureRuntimeInitialized()
       .then(async () => {
+        await ensureRuntimeStateRetention();
         runController.cancel();
         engine = new DebateEngine();
-        runtimeState = createIdleState();
+        runtimeState = createIdleState(undefined, runtimeState.entitlements);
         await publishState();
+        sendResponse({ ok: true, state: runtimeState });
+      })
+      .catch((error) => sendResponse({ ok: false, error: error.message, state: runtimeState }));
+    return true;
+  }
+
+  if (message.type === "aiDebate:clearLocalData") {
+    ensureRuntimeInitialized()
+      .then(async () => {
+        await ensureRuntimeStateRetention();
+        runController.cancel();
+        await clearProviderSubmittedRuns();
+        engine = new DebateEngine();
+        runtimeState = createIdleState(undefined, runtimeState.entitlements);
+        await chrome.storage.local.remove(STORAGE_KEY);
+        chrome.runtime.sendMessage({
+          type: "aiDebate:stateChanged",
+          state: runtimeState,
+        }).catch(() => {});
         sendResponse({ ok: true, state: runtimeState });
       })
       .catch((error) => sendResponse({ ok: false, error: error.message, state: runtimeState }));
@@ -74,7 +96,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
     let runToken;
     ensureRuntimeInitialized()
-      .then(() => {
+      .then(async () => {
+        await ensureRuntimeStateRetention();
         if (runtimeState.busy) {
           throw new Error("目前已有辯論正在進行");
         }
@@ -123,14 +146,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "aiDebate:nextRound") {
     let runToken;
     ensureRuntimeInitialized()
-      .then(() => {
+      .then(async () => {
+        await ensureRuntimeStateRetention();
+        validateNextRound(message.action);
         if (runtimeState.busy) {
           throw new Error("目前忙碌中");
         }
         runToken = runController.start();
         return handleNextRound(message.action, message.text, runToken);
       })
-      .then((state) => sendResponse({ ok: true, state }))
+      .then((state) => sendResponse({ ok: state.status !== "error", state }))
       .catch(async (error) => {
         if (!runToken) {
           sendResponse({ ok: false, code: error.code || "ERROR", error: error.message, state: runtimeState });
@@ -157,6 +182,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "aiDebate:stop") {
     ensureRuntimeInitialized()
       .then(async () => {
+        await ensureRuntimeStateRetention();
         runController.cancel();
         if (runtimeState.busy) {
           runtimeState = {
@@ -178,7 +204,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return false;
 });
 
-function createIdleState(providerIds = DEFAULT_ACTIVE_PROVIDER_IDS) {
+function createIdleState(providerIds = DEFAULT_ACTIVE_PROVIDER_IDS, entitlements = cachedEntitlements) {
   const activeProviders = normalizeProviderIds(providerIds);
   return {
     busy: false,
@@ -199,8 +225,10 @@ function createIdleState(providerIds = DEFAULT_ACTIVE_PROVIDER_IDS) {
     summaryStrategy: "standard",
     debateRounds: 1,
     currentCritiqueRound: 0,
-    entitlements: entitlementsForPlan(),
+    entitlements,
     skipSummary: false,
+    workflowCheckpoint: null,
+    savedAt: Date.now(),
   };
 }
 
@@ -229,118 +257,29 @@ async function startFastDebate(question, options = {}) {
 }
 
 async function startChatDebate(question, options = {}) {
-  const runToken = options.runToken;
   await requireProFeature("chatMode");
-  runController.assertCurrent(runToken);
-  const trimmedQuestion = String(question || "").trim();
-  if (!trimmedQuestion) throw new Error("請先輸入問題");
-  if (runtimeState.busy) throw new Error("目前已有辯論正在進行");
-
-  const requestedProviders = normalizeProviderIds(options.activeProviders);
-  const summarySetup = await prepareSummarySetup(requestedProviders, options);
-  const activeProviders = summarySetup.debateProviders;
-  const summaryProvider = summarySetup.resolvedSummaryProvider;
-  const debateRounds = normalizeDebateRounds(options.debateRounds);
-  const entitlements = await getEntitlements();
-  runController.assertCurrent(runToken);
-  engine = new DebateEngine(activeProviders, summaryProvider, debateRounds, {
-    interactionStyle: options.interactionStyle,
-    summaryStrategy: summarySetup.summaryStrategy,
-    resolvedSummaryProvider: summaryProvider,
-  });
-  runtimeState = {
-    ...createIdleState(activeProviders),
-    busy: true,
-    status: "running",
+  return startInteractiveDebate(question, {
+    ...options,
     mode: "chat",
-    phase: "first-round",
-    message: "自由群聊開始：各就各位，準備送出第一句話",
-    question: trimmedQuestion,
-    activeProviders,
-    summaryProvider,
-    summaryStrategy: summarySetup.summaryStrategy,
-    debateRounds: debateRounds,
-    currentCritiqueRound: 0,
-    entitlements,
-    skipSummary: options.skipSummary || false,
-    providerTabs: options.hookedTabs || {},
-  };
-  await publishState(runToken);
-
-  const firstRoundJobs = engine.start(trimmedQuestion);
-  runtimeState = { ...runtimeState, transcript: engine.snapshot() };
-  await publishState(runToken);
-  await runFastProviderJobs(firstRoundJobs, "answer", runToken);
-
-  for (let round = 1; round <= debateRounds; round += 1) {
-    const jobs = engine.buildCritiqueJobs(round);
-    runtimeState = {
-      ...runtimeState,
-      phase: round === 1 ? "critique" : `critique-${round}`,
-      currentCritiqueRound: round,
-      message: `第 ${round} 輪：等待 AI 交叉互評`,
-      transcript: engine.snapshot(),
-    };
-    await publishState(runToken);
-    await runFastProviderJobs(jobs, "critique", runToken);
-  }
-
-  if (options.interactiveMode) {
-    runtimeState = {
-      ...runtimeState,
-      busy: false,
-      status: "waiting_for_user",
-      phase: "waiting_for_user",
-      message: "等待主人發言或選擇下一步...",
-      transcript: engine.snapshot(),
-    };
-    await publishState(runToken);
-    return runtimeState;
-  }
-
-  if (options.skipSummary) {
-    runtimeState = {
-      ...runtimeState,
-      busy: false,
-      status: "done",
-      phase: "done",
-      message: "對話完成 (略過總結)",
-      transcript: engine.snapshot(),
-      summary: "",
-    };
-    await publishState(runToken);
-    return runtimeState;
-  }
-
-  runtimeState = {
-    ...runtimeState,
-    phase: "summary",
-    message: `最終回合：請 ${providerLabel(runtimeState.summaryProvider)} 總結`,
-    transcript: engine.snapshot(),
-  };
-  await publishState(runToken);
-
-  const finalResult = await sendJob(buildRuntimeFinalJob(), runToken);
-  if (!finalResult.ok) {
-    return finishWithError(finalResult, runToken);
-  }
-
-  runtimeState = {
-    ...runtimeState,
-    busy: false,
-    status: "done",
-    phase: "done",
-    message: "辯論完成",
-    transcript: engine.snapshot(),
-    summary: finalResult.content,
-  };
-  await publishState(runToken);
-  return runtimeState;
+    openingMessage: "自由群聊開始：各就各位，準備送出第一句話",
+  });
 }
 
 async function startTheaterDebate(question, options = {}) {
-  const runToken = options.runToken;
   await requireProFeature("chatMode");
+  return startInteractiveDebate(question, {
+    ...options,
+    mode: "theater",
+    openingMessage: "劇場大亂鬥：各就各位，準備送出第一句話",
+    engineOptions: {
+      isTheaterMode: true,
+      customPersonas: options.customPersonas,
+    },
+  });
+}
+
+async function startInteractiveDebate(question, options = {}) {
+  const runToken = options.runToken;
   runController.assertCurrent(runToken);
   const trimmedQuestion = String(question || "").trim();
   if (!trimmedQuestion) throw new Error("請先輸入問題");
@@ -354,8 +293,7 @@ async function startTheaterDebate(question, options = {}) {
   const entitlements = await getEntitlements();
   runController.assertCurrent(runToken);
   engine = new DebateEngine(activeProviders, summaryProvider, debateRounds, {
-    isTheaterMode: true,
-    customPersonas: options.customPersonas,
+    ...(options.engineOptions || {}),
     interactionStyle: options.interactionStyle,
     summaryStrategy: summarySetup.summaryStrategy,
     resolvedSummaryProvider: summaryProvider,
@@ -364,9 +302,9 @@ async function startTheaterDebate(question, options = {}) {
     ...createIdleState(activeProviders),
     busy: true,
     status: "running",
-    mode: "theater",
+    mode: options.mode,
     phase: "first-round",
-    message: "劇場大亂鬥：各就各位，準備送出第一句話",
+    message: options.openingMessage,
     question: trimmedQuestion,
     activeProviders,
     summaryProvider,
@@ -719,10 +657,7 @@ async function runDebateRounds(originalQuestion, options = {}) {
 async function handleNextRound(action, text, runToken) {
   runController.assertCurrent(runToken);
   if (runtimeState.busy) throw new Error("目前忙碌中");
-  if (runtimeState.mode !== "chat" && runtimeState.mode !== "theater" && runtimeState.mode !== "summary") throw new Error("只有自由群聊、劇場模式與總結辯論支援此操作");
-  if (!["user_message", "critique", "summarize"].includes(action)) {
-    throw new Error(`未知的操作: ${action}`);
-  }
+  validateNextRound(action);
 
   runtimeState = { ...runtimeState, busy: true, status: "running" };
   await publishState(runToken);
@@ -838,7 +773,12 @@ function recordProviderResult(result, target, runToken) {
   } else if (result.ok && target === "critique") {
     engine.recordCritique(result.provider, result.content, result.round);
   } else {
-    engine.markProviderError(result.provider, result.phase, result.error || "unknown error");
+    engine.markProviderError(
+      result.provider,
+      result.phase,
+      result.error || "unknown error",
+      result.errorContent || "",
+    );
     runtimeState.errors = [...runtimeState.errors, result];
   }
 }
@@ -866,6 +806,10 @@ async function submitProviderJob(job, runToken) {
       ...runtimeState,
       message: `${providerLabel(job.provider)}：${phaseLabel(job.phase, job.round)}送出中`,
       providerTabs: { ...runtimeState.providerTabs, [job.provider]: tab.id },
+      workflowCheckpoint: createWorkflowCheckpoint("submitting", job, {
+        tabId: tab.id,
+        runId,
+      }),
     };
     runtimeState.providerDiagnostics = updateProviderDiagnostic(runtimeState.providerDiagnostics, job.provider, {
       stage: "submitting-prompt",
@@ -878,7 +822,7 @@ async function submitProviderJob(job, runToken) {
     const response = await sendProviderMessage(tab.id, job, "aiDebate:submitPrompt", { runId });
     runController.assertCurrent(runToken);
     if (!response?.ok) {
-      throw new Error(response?.error || "provider submit failed");
+      throw providerResponseError(response, "provider submit failed");
     }
 
     await delay(500);
@@ -890,6 +834,14 @@ async function submitProviderJob(job, runToken) {
       tabId: tab.id,
       url: tab.url || tab.pendingUrl || "",
     }, runToken);
+    runtimeState = {
+      ...runtimeState,
+      workflowCheckpoint: createWorkflowCheckpoint("submitted", job, {
+        tabId: tab.id,
+        runId: response.runId || runId,
+      }),
+    };
+    await publishState(runToken);
     return {
       ok: true,
       provider: job.provider,
@@ -908,17 +860,21 @@ async function submitProviderJob(job, runToken) {
       phase: job.phase,
       error: error.message,
     }, runToken);
+    runtimeState = { ...runtimeState, workflowCheckpoint: null };
+    await publishState(runToken);
     return {
       ok: false,
       provider: job.provider,
       phase: job.phase,
       round: job.round,
+      code: error.code || "PROVIDER_AUTOMATION_FAILED",
       error: error.message,
+      errorContent: error.providerContent || "",
     };
   }
 }
 
-async function collectProviderJob(submitted, runToken) {
+async function collectProviderJob(submitted, runToken, overloadRetryCount = 0) {
   try {
     runController.assertCurrent(runToken);
     const tab = await chrome.tabs.get(submitted.tabId);
@@ -935,6 +891,10 @@ async function collectProviderJob(submitted, runToken) {
     runtimeState = {
       ...runtimeState,
       message: `${providerLabel(submitted.provider)}：等待${phaseLabel(submitted.phase, submitted.round)}`,
+      workflowCheckpoint: createWorkflowCheckpoint("collecting", submitted, {
+        tabId: submitted.tabId,
+        runId: submitted.runId,
+      }),
     };
     runtimeState.providerDiagnostics = updateProviderDiagnostic(runtimeState.providerDiagnostics, submitted.provider, {
       stage: "waiting-response",
@@ -950,7 +910,7 @@ async function collectProviderJob(submitted, runToken) {
     });
     runController.assertCurrent(runToken);
     if (!response?.ok) {
-      throw new Error(response?.error || "provider returned empty response");
+      throw providerResponseError(response, "provider returned empty response");
     }
 
     await setProviderDiagnostic(submitted.provider, {
@@ -959,6 +919,8 @@ async function collectProviderJob(submitted, runToken) {
       tabId: submitted.tabId,
       url: tab.url || tab.pendingUrl || "",
     }, runToken);
+    runtimeState = { ...runtimeState, workflowCheckpoint: null };
+    await publishState(runToken);
     return {
       ok: true,
       provider: submitted.provider,
@@ -970,23 +932,48 @@ async function collectProviderJob(submitted, runToken) {
     if (isRunCancelledError(error)) {
       throw error;
     }
+    if (error.code === "PROVIDER_OVERLOADED" && overloadRetryCount < OVERLOAD_REFRESH_RETRIES) {
+      try {
+        await refreshOverloadedProvider(
+          submitted.tabId,
+          submitted,
+          overloadRetryCount + 1,
+          runToken,
+        );
+        return await sendJob(
+          { ...submitted, forceNewTab: false },
+          runToken,
+          overloadRetryCount + 1,
+        );
+      } catch (retryError) {
+        if (isRunCancelledError(retryError)) {
+          throw retryError;
+        }
+        error = retryError;
+      }
+    }
     await setProviderDiagnostic(submitted.provider, {
       stage: "error",
       phase: submitted.phase,
       tabId: submitted.tabId,
-      error: error.message,
+      error: formatProviderFailure(error),
     }, runToken);
+    runtimeState = { ...runtimeState, workflowCheckpoint: null };
+    await publishState(runToken);
     return {
       ok: false,
       provider: submitted.provider,
       phase: submitted.phase,
       round: submitted.round,
+      code: error.code || "PROVIDER_AUTOMATION_FAILED",
       error: error.message,
+      errorContent: error.providerContent || "",
     };
   }
 }
 
-async function sendJob(job, runToken) {
+async function sendJob(job, runToken, overloadRetryCount = 0) {
+  let tab;
   try {
     runController.assertCurrent(runToken);
     await setProviderDiagnostic(job.provider, {
@@ -994,7 +981,7 @@ async function sendJob(job, runToken) {
       phase: job.phase,
       error: "",
     }, runToken);
-    const tab = await getOrCreateProviderTab(job.provider, { forceNewTab: Boolean(job.forceNewTab) });
+    tab = await getOrCreateProviderTab(job.provider, { forceNewTab: Boolean(job.forceNewTab) });
     await setProviderDiagnostic(job.provider, {
       stage: "activating-tab",
       phase: job.phase,
@@ -1007,6 +994,9 @@ async function sendJob(job, runToken) {
       ...runtimeState,
       message: `${providerLabel(job.provider)}：${phaseLabel(job.phase, job.round)}`,
       providerTabs: { ...runtimeState.providerTabs, [job.provider]: tab.id },
+      workflowCheckpoint: createWorkflowCheckpoint("send-and-read", job, {
+        tabId: tab.id,
+      }),
     };
     runtimeState.providerDiagnostics = updateProviderDiagnostic(runtimeState.providerDiagnostics, job.provider, {
       stage: "waiting-response",
@@ -1019,13 +1009,15 @@ async function sendJob(job, runToken) {
     const response = await sendProviderMessage(tab.id, job);
     runController.assertCurrent(runToken);
     if (!response?.ok) {
-      throw new Error(response?.error || "provider returned empty response");
+      throw providerResponseError(response, "provider returned empty response");
     }
 
     await setProviderDiagnostic(job.provider, {
       stage: "received",
       phase: job.phase,
     }, runToken);
+    runtimeState = { ...runtimeState, workflowCheckpoint: null };
+    await publishState(runToken);
     return {
       ok: true,
       provider: job.provider,
@@ -1037,17 +1029,40 @@ async function sendJob(job, runToken) {
     if (isRunCancelledError(error)) {
       throw error;
     }
+    if (
+      error.code === "PROVIDER_OVERLOADED" &&
+      overloadRetryCount < OVERLOAD_REFRESH_RETRIES &&
+      typeof tab?.id === "number"
+    ) {
+      try {
+        await refreshOverloadedProvider(tab.id, job, overloadRetryCount + 1, runToken);
+        return await sendJob(
+          { ...job, forceNewTab: false },
+          runToken,
+          overloadRetryCount + 1,
+        );
+      } catch (retryError) {
+        if (isRunCancelledError(retryError)) {
+          throw retryError;
+        }
+        error = retryError;
+      }
+    }
     await setProviderDiagnostic(job.provider, {
       stage: "error",
       phase: job.phase,
-      error: error.message,
+      error: formatProviderFailure(error),
     }, runToken);
+    runtimeState = { ...runtimeState, workflowCheckpoint: null };
+    await publishState(runToken);
     return {
       ok: false,
       provider: job.provider,
       phase: job.phase,
       round: job.round,
+      code: error.code || "PROVIDER_AUTOMATION_FAILED",
       error: error.message,
+      errorContent: error.providerContent || "",
     };
   }
 }
@@ -1056,7 +1071,7 @@ async function getActiveProviderTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const provider = PROVIDERS.find((item) => isProviderTabReady(tab, item));
   if (!provider) {
-    throw new Error("請先切到要當作來源的 ChatGPT、Gemini、Grok 或 Claude 對話分頁，再按總結辯論。");
+    throw new Error("請先切到要當作來源的 ChatGPT、Gemini、Grok、Claude 或 Meta AI 對話分頁，再按總結辯論。");
   }
 
   return { tab, provider };
@@ -1077,6 +1092,14 @@ async function getOrCreateProviderTab(providerId, options = {}) {
       }
     } catch (_error) {
       // The user closed the debate tab. Open a fresh conversation below.
+    }
+  }
+
+  if (!options.forceNewTab) {
+    const matchingTabs = await chrome.tabs.query({ url: provider.matchPatterns });
+    const existingTab = matchingTabs.find((tab) => isProviderTabReady(tab, provider));
+    if (existingTab) {
+      return existingTab;
     }
   }
 
@@ -1108,6 +1131,29 @@ async function waitForProviderTab(tabId, provider) {
   throw new Error(`${provider.label} 新對話頁面尚未就緒，目前網址：${lastUrl || "unknown"}。請確認已登入。`);
 }
 
+async function refreshOverloadedProvider(tabId, job, attempt, runToken) {
+  runController.assertCurrent(runToken);
+  runtimeState = {
+    ...runtimeState,
+    message: `${providerLabel(job.provider)} 服務超載，自動重新整理重試 ${attempt}/${OVERLOAD_REFRESH_RETRIES}`,
+    workflowCheckpoint: createWorkflowCheckpoint("overload-refresh", job, {
+      tabId,
+      retryAttempt: attempt,
+    }),
+  };
+  await setProviderDiagnostic(job.provider, {
+    stage: "overload-refresh",
+    phase: job.phase,
+    tabId,
+    error: `自動重新整理重試 ${attempt}/${OVERLOAD_REFRESH_RETRIES}`,
+  }, runToken);
+  await chrome.tabs.reload(tabId);
+  const provider = PROVIDERS.find((item) => item.id === job.provider);
+  await waitForProviderTab(tabId, provider);
+  await delay(1000);
+  runController.assertCurrent(runToken);
+}
+
 async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", extra = {}) {
   const payload = {
     type,
@@ -1126,13 +1172,40 @@ async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", ex
     try {
       await chrome.scripting.executeScript({
         target: { tabId },
-        files: ["src/content/automation-core.js", "src/content/provider-page.js"],
+        files: [
+          "src/content/automation-core.js",
+          "src/content/provider-adapters.js",
+          "src/content/provider-page.js",
+        ],
       });
       return await chrome.tabs.sendMessage(tabId, payload);
     } catch (error) {
       throw new Error(`${error.message}（目前網址：${tab.url || tab.pendingUrl || "unknown"}）`);
     }
   }
+}
+
+async function clearProviderSubmittedRuns() {
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(tabs.map(async (tab) => {
+    if (typeof tab.id !== "number") {
+      return;
+    }
+    const provider = PROVIDERS.find((item) => isProviderTabReady(tab, item));
+    if (!provider) {
+      return;
+    }
+    try {
+      await sendProviderMessage(tab.id, {
+        provider: provider.id,
+        phase: "clear",
+        round: 0,
+        prompt: "",
+      }, "aiDebate:clearSubmittedRuns");
+    } catch (_error) {
+      // A closed or changing provider tab must not block local data deletion.
+    }
+  }));
 }
 
 async function finishWithError(result, runToken) {
@@ -1155,6 +1228,12 @@ async function publishState(runToken) {
     runController.assertCurrent(runToken);
   }
 
+  if (!Number.isFinite(runtimeState.savedAt)) {
+    runtimeState = {
+      ...runtimeState,
+      savedAt: Date.now(),
+    };
+  }
   let stateToPublish = JSON.parse(JSON.stringify(runtimeState));
   await chrome.storage.local.set({ [STORAGE_KEY]: stateToPublish });
 
@@ -1179,6 +1258,7 @@ async function setProviderDiagnostic(providerId, patch, runToken) {
 }
 
 async function getRuntimeState() {
+  await ensureRuntimeStateRetention();
   runtimeState = {
     ...runtimeState,
     entitlements: await getEntitlements(),
@@ -1193,8 +1273,9 @@ async function ensureRuntimeInitialized() {
       const stored = await chrome.storage.local.get(STORAGE_KEY);
       const recovered = recoverSession(stored?.[STORAGE_KEY], createIdleState);
       runtimeState = recovered.state;
+      cachedEntitlements = runtimeState.entitlements || cachedEntitlements;
       engine = recovered.engine || new DebateEngine();
-      if (recovered.shouldPersist) {
+      if (recovered.shouldPersist || !Number.isFinite(runtimeState.savedAt)) {
         await publishState();
       }
     })().catch((error) => {
@@ -1207,8 +1288,26 @@ async function ensureRuntimeInitialized() {
 }
 
 async function getEntitlements() {
-  const stored = await chrome.storage.local.get(ENTITLEMENT_STORAGE_KEY);
-  return entitlementsForPlan(stored?.[ENTITLEMENT_STORAGE_KEY]);
+  try {
+    const stored = await chrome.storage.local.get(ENTITLEMENT_STORAGE_KEY);
+    const entitlements = entitlementsForPlan(stored?.[ENTITLEMENT_STORAGE_KEY]);
+    cachedEntitlements = entitlements;
+    return entitlements;
+  } catch (_error) {
+    return runtimeState.entitlements || cachedEntitlements || entitlementsForPlan();
+  }
+}
+
+async function ensureRuntimeStateRetention() {
+  if (!isSessionExpired(runtimeState)) {
+    return;
+  }
+
+  const recovered = recoverSession(runtimeState, createIdleState);
+  runtimeState = recovered.state;
+  cachedEntitlements = runtimeState.entitlements || cachedEntitlements;
+  engine = new DebateEngine();
+  await publishState();
 }
 
 async function requireProFeature(featureId) {
@@ -1222,6 +1321,18 @@ async function requireProFeature(featureId) {
   error.feature = featureId;
   error.name = `${featureLabel(featureId)}Locked`;
   throw error;
+}
+
+function validateNextRound(action) {
+  if (runtimeState.phase !== "waiting_for_user") {
+    throw new Error("目前沒有等待下一步的互動辯論");
+  }
+  if (runtimeState.mode !== "chat" && runtimeState.mode !== "theater" && runtimeState.mode !== "summary") {
+    throw new Error("只有自由群聊、劇場模式與總結辯論支援此操作");
+  }
+  if (!["user_message", "critique", "summarize"].includes(action)) {
+    throw new Error(`未知的操作: ${action}`);
+  }
 }
 
 function phaseLabel(phase, round) {
@@ -1253,6 +1364,28 @@ function critiqueRoundFromPhase(phase) {
 
 function createRunId(job) {
   return `${job.provider}:${job.phase}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+}
+
+function providerResponseError(response, fallbackMessage) {
+  const error = new Error(response?.error || fallbackMessage);
+  error.code = response?.code || "PROVIDER_AUTOMATION_FAILED";
+  error.providerContent = response?.providerContent || "";
+  return error;
+}
+
+function formatProviderFailure(error) {
+  return error?.code ? `[${error.code}] ${error.message}` : error.message;
+}
+
+function createWorkflowCheckpoint(stage, job, extra = {}) {
+  return {
+    stage,
+    provider: job.provider,
+    phase: job.phase,
+    round: job.round || null,
+    updatedAt: Date.now(),
+    ...extra,
+  };
 }
 
 function delay(ms) {

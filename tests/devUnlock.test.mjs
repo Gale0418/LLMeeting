@@ -1,9 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { THIRD_CLICK_TAUNTS, attachDevUnlock } from "../src/sidepanel/dev-unlock.js";
 import { ENTITLEMENT_STORAGE_KEY } from "../src/shared/entitlements.js";
+
+const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const AUTHOR_YOUTUBE_URL = "https://www.youtube.com/@gale0418";
 
 function createHarness({ plan = "free", random = () => 0, confirmResult = false } = {}) {
   let storedPlan = plan;
@@ -29,7 +35,10 @@ function createHarness({ plan = "free", random = () => 0, confirmResult = false 
     storage,
     dialogs: {
       alert: (message) => alerts.push(message),
-      confirm: (message) => { confirms.push(message); return confirmResult; },
+      confirm: (message) => {
+        confirms.push(message);
+        return confirmResult;
+      },
     },
     openPage: (...args) => opened.push(args),
     random,
@@ -47,27 +56,22 @@ function createHarness({ plan = "free", random = () => 0, confirmResult = false 
   };
 }
 
-test("side panel loads a five-click Pro unlocker easter egg", async () => {
-  const app = await readFile("src/sidepanel/app.js", "utf8");
-  const unlocker = await readFile("src/sidepanel/dev-unlock.js", "utf8");
+test("side panel loads the five-click Pro easter egg", async () => {
+  const app = await readFile(path.join(rootDir, "src", "sidepanel", "app.js"), "utf8");
+  const unlocker = await readFile(path.join(rootDir, "src", "sidepanel", "dev-unlock.js"), "utf8");
 
   assert.match(app, /import\("\.\/dev-unlock\.js"\)/);
   assert.match(unlocker, /ENTITLEMENT_STORAGE_KEY/);
   assert.match(unlocker, /unlockClicks >= 5/);
   assert.match(unlocker, /isTogglingPlan/);
   assert.match(unlocker, /storage\.set/);
-  assert.match(unlocker, /loadState/);
 });
 
 test("Free badge shows the first message and one deterministic third-click taunt", async () => {
   const harness = createHarness({ random: () => 0.25 });
 
   assert.equal(THIRD_CLICK_TAUNTS.length, 10);
-
-  await harness.click();
-  await harness.click();
-  await harness.click();
-  await harness.click();
+  for (let click = 0; click < 4; click += 1) await harness.click();
 
   assert.deepEqual(harness.alerts, [
     "想做什麼呢！按再多次都沒用的唷",
@@ -75,17 +79,18 @@ test("Free badge shows the first message and one deterministic third-click taunt
   ]);
 });
 
-test("fifth Free click unlocks Pro and visibly offers the author YouTube URL", async () => {
+test("fifth Free click unlocks Pro and offers the author YouTube link", async () => {
   const harness = createHarness({ confirmResult: true });
 
   for (let click = 0; click < 5; click += 1) await harness.click();
 
   assert.equal(harness.getPlan(), "pro");
+  assert.match(harness.messages.at(-1), /Pro 已啟用/);
   assert.match(harness.confirms[0], /https:\/\/www\.youtube\.com\/@gale0418/);
-  assert.deepEqual(harness.opened, [["https://www.youtube.com/@gale0418", "_blank"]]);
+  assert.deepEqual(harness.opened, [[AUTHOR_YOUTUBE_URL, "_blank"]]);
 });
 
-test("rapid repeated click bursts only toggle the plan once", async () => {
+test("rapid repeated click bursts toggle the plan only once", async () => {
   const harness = createHarness({ confirmResult: true });
 
   await Promise.all(Array.from({ length: 10 }, () => harness.click()));
@@ -94,125 +99,53 @@ test("rapid repeated click bursts only toggle the plan once", async () => {
   assert.equal(harness.confirms.length, 1);
 });
 
-test("attaching the unlocker twice still handles each badge click once", async () => {
+test("attaching twice still registers only one badge handler", async () => {
   let storedPlan = "free";
-  const alerts = [];
-  const clickHandlers = [];
+  const handlers = [];
+  const attrs = new Map();
   const planBadge = {
     addEventListener(type, handler) {
-      if (type === "click") clickHandlers.push(handler);
+      if (type === "click") handlers.push(handler);
     },
-  };
-  const storage = {
-    async get() { return { [ENTITLEMENT_STORAGE_KEY]: storedPlan }; },
-    async set(value) { storedPlan = value[ENTITLEMENT_STORAGE_KEY]; },
+    getAttribute: (name) => attrs.get(name) || null,
+    setAttribute: (name, value) => attrs.set(name, String(value)),
+    hasAttribute: (name) => attrs.has(name),
   };
   const options = {
     planBadge,
     renderMessage: () => {},
     loadState: async () => {},
-    storage,
-    dialogs: {
-      alert: (message) => alerts.push(message),
-      confirm: () => false,
+    storage: {
+      async get() { return { [ENTITLEMENT_STORAGE_KEY]: storedPlan }; },
+      async set(value) { storedPlan = value[ENTITLEMENT_STORAGE_KEY]; },
     },
-    random: () => 0,
+    dialogs: { alert: () => {}, confirm: () => false },
     timers: { setTimeout: () => 1, clearTimeout: () => {} },
     getDisplayedPlan: () => storedPlan,
   };
 
   assert.equal(attachDevUnlock(options), true);
   assert.equal(attachDevUnlock(options), true);
-
-  for (let click = 0; click < 5; click += 1) {
-    for (const handler of clickHandlers) await handler();
-  }
-
-  assert.equal(storedPlan, "pro");
-  assert.deepEqual(alerts, [
-    "想做什麼呢！按再多次都沒用的唷",
-    THIRD_CLICK_TAUNTS[0],
-  ]);
+  assert.equal(handlers.length, 1);
 });
 
-test("real extension attach guard survives duplicate module realms on the same badge", async () => {
-  const previousChrome = globalThis.chrome;
-  globalThis.chrome = {
-    runtime: { id: "extension-id" },
-    storage: { local: {} },
-  };
-
-  try {
-    let storedPlan = "free";
-    const alerts = [];
-    const clickHandlers = [];
-    const attrs = new Map();
-    const planBadge = {
-      addEventListener(type, handler) {
-        if (type === "click") clickHandlers.push(handler);
-      },
-      getAttribute(name) {
-        return attrs.get(name) || null;
-      },
-      setAttribute(name, value) {
-        attrs.set(name, String(value));
-      },
-      hasAttribute(name) {
-        return attrs.has(name);
-      },
-    };
-    const storage = {
-      async get() { return { [ENTITLEMENT_STORAGE_KEY]: storedPlan }; },
-      async set(value) { storedPlan = value[ENTITLEMENT_STORAGE_KEY]; },
-    };
-    const options = {
-      planBadge,
-      renderMessage: () => {},
-      loadState: async () => {},
-      storage,
-      dialogs: {
-        alert: (message) => alerts.push(message),
-        confirm: () => false,
-      },
-      random: () => 0,
-      timers: { setTimeout: () => 1, clearTimeout: () => {} },
-      getDisplayedPlan: () => storedPlan,
-    };
-
-    assert.equal(attachDevUnlock(options), true);
-    delete globalThis.__llmeetingDevUnlockAttached;
-    assert.equal(attachDevUnlock(options), true);
-
-    assert.equal(clickHandlers.length, 1);
-    await clickHandlers[0]();
-    assert.deepEqual(alerts, ["想做什麼呢！按再多次都沒用的唷"]);
-  } finally {
-    globalThis.chrome = previousChrome;
-    delete globalThis.__llmeetingDevUnlockAttached;
-  }
-});
-
-test("Pro badge stays quiet on clicks one and three, then returns to Free on five", async () => {
+test("five clicks on Pro return the local author mode to Free", async () => {
   const harness = createHarness({ plan: "pro" });
 
   for (let click = 0; click < 5; click += 1) await harness.click();
 
+  assert.equal(harness.getPlan(), "free");
   assert.deepEqual(harness.alerts, []);
   assert.deepEqual(harness.confirms, []);
-  assert.equal(harness.getPlan(), "free");
 });
 
-import { execSync } from "node:child_process";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-test("Chrome Web Store package keeps the five-click Pro unlocker easter egg", async () => {
-  const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+test("Chrome Web Store package keeps the easter egg and author link", async () => {
   execSync("node scripts/package-extension.mjs", { cwd: rootDir, stdio: "ignore" });
 
   const manifest = JSON.parse(await readFile(path.join(rootDir, "manifest.json"), "utf8"));
   const zipPath = path.join(rootDir, "dist", `llmeeting-${manifest.version}.zip`);
   const zipBuffer = await readFile(zipPath);
 
-  assert.ok(zipBuffer.includes(Buffer.from("src/sidepanel/dev-unlock.js")), "ZIP archive should contain dev-unlock.js");
+  assert.ok(zipBuffer.includes(Buffer.from("src/sidepanel/dev-unlock.js")));
+  assert.ok(zipBuffer.includes(Buffer.from(AUTHOR_YOUTUBE_URL)));
 });

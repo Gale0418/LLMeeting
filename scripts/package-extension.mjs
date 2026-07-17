@@ -15,6 +15,7 @@ const crcTable = Array.from({ length: 256 }, (_, index) => {
 
 async function main() {
   const manifest = JSON.parse(await readFile(path.join(rootDir, "manifest.json"), "utf8"));
+  await validateReleaseMetadata(manifest);
   const files = [];
 
   for (const entryPath of INCLUDED_PATHS) {
@@ -29,12 +30,25 @@ async function main() {
   console.log(`Wrote ${path.relative(rootDir, outPath)} (${zip.length} bytes)`);
 }
 
+async function validateReleaseMetadata(manifest) {
+  const packageJson = JSON.parse(await readFile(path.join(rootDir, "package.json"), "utf8"));
+  const sidePanelHtml = await readFile(path.join(rootDir, "src", "sidepanel", "index.html"), "utf8");
+
+  if (packageJson.version !== manifest.version) {
+    throw new Error(`Version mismatch: manifest ${manifest.version}, package ${packageJson.version}`);
+  }
+  if (!sidePanelHtml.includes(`class="version-badge">v${manifest.version}</span>`)) {
+    throw new Error(`Side panel version badge is not v${manifest.version}`);
+  }
+}
+
 async function collectFiles(targetPath) {
   const details = await stat(targetPath);
   if (details.isFile()) {
+    const archiveName = toArchiveName(path.relative(rootDir, targetPath));
     return [{
       absolutePath: targetPath,
-      archiveName: toArchiveName(path.relative(rootDir, targetPath)),
+      archiveName,
       modifiedAt: details.mtime,
     }];
   }
@@ -46,10 +60,11 @@ async function collectFiles(targetPath) {
     if (entry.isDirectory()) {
       files.push(...await collectFiles(childPath));
     } else if (entry.isFile()) {
+      const archiveName = toArchiveName(path.relative(rootDir, childPath));
       const childDetails = await stat(childPath);
       files.push({
         absolutePath: childPath,
-        archiveName: toArchiveName(path.relative(rootDir, childPath)),
+        archiveName,
         modifiedAt: childDetails.mtime,
       });
     }
