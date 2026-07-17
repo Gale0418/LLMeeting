@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
+import { entitlementsForPlan } from "../src/shared/entitlements.js";
 test("fast provider jobs submit prompts before collecting replies", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
@@ -115,7 +116,7 @@ test("nextRound validates phase, mode, and action before starting a run", async 
   assert.ok(nextRoundHandler.includes("if (!runToken) {"));
 });
 
-test("runtime retention, entitlement fallback, and reset preservation are explicit", async () => {
+test("runtime retention and entitlement fallback are explicit", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
   assert.ok(script.includes("await ensureRuntimeStateRetention();"));
@@ -125,6 +126,56 @@ test("runtime retention, entitlement fallback, and reset preservation are explic
   assert.ok(script.includes("createIdleState(undefined, runtimeState.entitlements)"));
 });
 
+test("Reset clears the local author entitlement and publishes Free immediately", async () => {
+  const storageData = {
+    "aiDebate.entitlementPlan": "pro",
+    "aiDebate.currentState": {
+      savedAt: Date.now(),
+      busy: false,
+      status: "idle",
+      entitlements: entitlementsForPlan("pro"),
+    },
+  };
+  const sentMessages = [];
+  let onMessage;
+  const chrome = {
+    runtime: {
+      onInstalled: { addListener() {} },
+      onMessage: { addListener(listener) { onMessage = listener; } },
+      sendMessage(message) {
+        sentMessages.push(message);
+        return Promise.resolve();
+      },
+    },
+    storage: {
+      local: {
+        async get(key) {
+          return { [key]: storageData[key] };
+        },
+        async set(values) {
+          Object.assign(storageData, values);
+        },
+        async remove(key) {
+          delete storageData[key];
+        },
+      },
+    },
+  };
+
+  globalThis.chrome = chrome;
+  await import("../src/background/service-worker.js?reset-regression");
+
+  const response = await new Promise((resolve) => {
+    assert.equal(onMessage({ type: "aiDebate:reset" }, {}, resolve), true);
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.state.entitlements.plan, "free");
+  assert.equal(response.state.entitlements.isPro, false);
+  assert.equal(storageData["aiDebate.entitlementPlan"], undefined);
+  assert.equal(storageData["aiDebate.currentState"].entitlements.plan, "free");
+  assert.equal(sentMessages.at(-1).state.entitlements.plan, "free");
+});
 test("unbound providers always open a fresh tab while explicit bindings are reused", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
   const helper = script.slice(

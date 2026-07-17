@@ -52,8 +52,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .then(async () => {
         await ensureRuntimeStateRetention();
         runController.cancel();
+        await chrome.storage.local.remove(ENTITLEMENT_STORAGE_KEY);
+        cachedEntitlements = entitlementsForPlan();
         engine = new DebateEngine();
-        runtimeState = createIdleState(undefined, runtimeState.entitlements);
+        runtimeState = createIdleState(undefined, cachedEntitlements);
         await publishState();
         sendResponse({ ok: true, state: runtimeState });
       })
