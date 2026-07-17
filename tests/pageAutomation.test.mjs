@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 
 await import("../src/content/automation-core.js");
 await import("../src/content/provider-adapters.js");
@@ -39,6 +40,54 @@ test("Meta AI adapter only matches the packaged meta.ai hosts", () => {
   assert.equal(matchesProviderLocation({ hostname: "facebook.com", pathname: "/metaai" }, meta), false);
   assert.ok(meta.inputSelectors.length >= 3);
   assert.ok(meta.responseSelectors.length >= 3);
+  assert.equal(meta.inputWriteStrategy, "single-editor-replace");
+});
+
+test("Meta AI contenteditable writing has one native replacement and no duplicate fallback", async () => {
+  const script = await readFile("src/content/provider-page.js", "utf8");
+  const metaWrite = script.match(/if \(writeStrategy === "single-editor-replace"\) \{[\s\S]*?\n    \}/)?.[0];
+
+  assert.ok(metaWrite);
+  assert.equal((metaWrite.match(/execCommand\("insertText"/g) || []).length, 1);
+  assert.doesNotMatch(metaWrite, /dispatchEvent/);
+  assert.doesNotMatch(metaWrite, /textContent\s*=/);
+  assert.match(script, /writeInput\(input, message\.prompt, config\.inputWriteStrategy\)/);
+  assert.match(script, /PROVIDER_INPUT_WRITE_FAILED/);
+});
+
+test("completion timing extends inactivity but never passes the hard cap", async () => {
+  const script = await readFile("src/content/provider-page.js", "utf8");
+  const context = {
+    aiDebateAutomationCore: {
+      assistantSnapshot: () => ({ count: 0, lastText: "" }),
+      classifyProviderResponseError: () => null,
+      ensurePromptSubmitted: () => {},
+      formatStageError: (_stage, error) => error.message,
+      hasFreshAssistantResponse: () => false,
+      hasFreshProviderError: () => false,
+      isPromptEcho: () => false,
+      matchesProviderLocation: () => false,
+      normalizeProviderResponse: (_providerId, text) => text,
+      providerErrorFingerprint: () => "",
+    },
+    aiDebateProviderAdapters: {},
+    chrome: { runtime: { onMessage: { addListener: () => {} } } },
+    location: {},
+    sessionStorage: { getItem: () => "[]", setItem: () => {}, removeItem: () => {} },
+    setTimeout,
+    clearTimeout,
+  };
+  context.globalThis = context;
+  vm.runInNewContext(script, context);
+
+  const timing = context.aiDebateProviderPageTiming;
+  const initial = timing.createCompletionWindow(240000, 1000);
+  assert.equal(initial.inactivityDeadline, 241000);
+  assert.equal(initial.hardDeadline, 721000);
+
+  const extended = timing.extendCompletionWindow(initial, 200000);
+  assert.equal(extended.inactivityDeadline, 440000);
+  assert.equal(timing.extendCompletionWindow(extended, 700000).inactivityDeadline, 721000);
 });
 
 test("assistantSnapshot records assistant message count and latest text", () => {

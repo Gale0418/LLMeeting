@@ -21,6 +21,7 @@ import {
 
 const STORAGE_KEY = "aiDebate.currentState";
 const PROVIDER_TIMEOUT_MS = 240000; // 4分鐘，防話癆
+const SUMMARY_PROVIDER_TIMEOUT_MS = 480000; // 8分鐘，給長篇總結更多時間
 const OVERLOAD_REFRESH_RETRIES = 3;
 
 let engine = new DebateEngine();
@@ -1153,7 +1154,7 @@ async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", ex
     phase: job.phase,
     round: job.round,
     prompt: job.prompt,
-    timeoutMs: PROVIDER_TIMEOUT_MS,
+    timeoutMs: getProviderTimeoutMs(job.phase),
     ...extra,
   };
 
@@ -1175,6 +1176,12 @@ async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", ex
       throw new Error(`${error.message}（目前網址：${tab.url || tab.pendingUrl || "unknown"}）`);
     }
   }
+}
+
+function getProviderTimeoutMs(phase) {
+  return phase === "summary" || phase === "source-summary"
+    ? SUMMARY_PROVIDER_TIMEOUT_MS
+    : PROVIDER_TIMEOUT_MS;
 }
 
 async function clearProviderSubmittedRuns() {

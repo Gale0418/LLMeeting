@@ -122,6 +122,7 @@
     },
     meta: {
       hosts: ["meta.ai"],
+      inputWriteStrategy: "single-editor-replace",
       generatingStableFallbackMs: 30000,
       inputSelectors: [
         "textarea[placeholder]",

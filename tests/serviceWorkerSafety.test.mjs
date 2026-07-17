@@ -158,3 +158,16 @@ test("service worker resolves chair strategies and routes anonymous summaries to
   assert.match(script, /forceNewTab: runtimeState\.summaryStrategy === "anonymousReview"/);
   assert.match(script, /getOrCreateProviderTab\(job\.provider, \{ forceNewTab: Boolean\(job\.forceNewTab\) \}\)/);
 });
+
+test("summary provider messages use a longer phase-aware timeout", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  const generalTimeout = Number(script.match(/const PROVIDER_TIMEOUT_MS = (\d+)/)?.[1]);
+  const summaryTimeout = Number(script.match(/const SUMMARY_PROVIDER_TIMEOUT_MS = (\d+)/)?.[1]);
+
+  assert.ok(Number.isFinite(generalTimeout));
+  assert.ok(Number.isFinite(summaryTimeout));
+  assert.ok(summaryTimeout > generalTimeout);
+  assert.match(script, /phase === "summary" \|\| phase === "source-summary"/);
+  assert.match(script, /timeoutMs: getProviderTimeoutMs\(job\.phase\)/);
+});

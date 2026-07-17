@@ -51,6 +51,16 @@ test("content script does not accept the submitted prompt bubble as an AI respon
   assert.match(script, /waitForCompletion\(config, providerId, message\.timeoutMs \|\| 120000, run\.baseline, run\.prompt, run\.errorBaseline\)/);
 });
 
+test("content script uses inactivity timeout with a bounded completion hard cap", async () => {
+  const script = await readFile("src/content/provider-page.js", "utf8");
+
+  assert.match(script, /const RESPONSE_HARD_CAP_MS = 12 \* 60 \* 1000/);
+  assert.match(script, /inactivityDeadline: Math\.min\(hardDeadline, startedAt \+ inactivityMs\)/);
+  assert.match(script, /inactivityDeadline: Math\.min\(window\.hardDeadline, now \+ window\.inactivityMs\)/);
+  assert.match(script, /completionWindow = extendCompletionWindow\(completionWindow\)/);
+  assert.match(script, /now >= Math\.min\(completionWindow\.inactivityDeadline, completionWindow\.hardDeadline\)/);
+});
+
 test("Gemini confirms submission before registering the run", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
   const adapters = await readFile("src/content/provider-adapters.js", "utf8");

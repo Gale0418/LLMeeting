@@ -16,8 +16,32 @@
     providerErrorFingerprint,
   } = globalThis.aiDebateAutomationCore;
   const SUBMITTED_RUNS_KEY = "aiDebate.submittedRuns.v1";
+  const RESPONSE_HARD_CAP_MS = 12 * 60 * 1000;
   const submittedRuns = loadSubmittedRuns();
   const PROVIDERS = globalThis.aiDebateProviderAdapters || {};
+
+  function createCompletionWindow(timeoutMs, startedAt = Date.now()) {
+    const inactivityMs = Math.max(0, Number(timeoutMs) || 120000);
+    const hardDeadline = startedAt + RESPONSE_HARD_CAP_MS;
+    return {
+      inactivityMs,
+      inactivityDeadline: Math.min(hardDeadline, startedAt + inactivityMs),
+      hardDeadline,
+    };
+  }
+
+  function extendCompletionWindow(window, now = Date.now()) {
+    return {
+      ...window,
+      inactivityDeadline: Math.min(window.hardDeadline, now + window.inactivityMs),
+    };
+  }
+
+  globalThis.aiDebateProviderPageTiming = Object.freeze({
+    RESPONSE_HARD_CAP_MS,
+    createCompletionWindow,
+    extendCompletionWindow,
+  });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const handlers = {
@@ -57,7 +81,7 @@
       stage = "尋找輸入框";
       const input = await waitFor(() => findInput(config), 30000, `找不到 ${message.provider} 的輸入框，請確認已登入並開啟聊天頁面。`);
       stage = "填入提示";
-      await writeInput(input, message.prompt);
+      await writeInput(input, message.prompt, config.inputWriteStrategy);
 
       stage = "送出提示";
       const sendButton = await waitForOptional(
@@ -257,7 +281,7 @@
       }) || null;
   }
 
-  async function writeInput(element, text) {
+  async function writeInput(element, text, writeStrategy) {
     element.focus();
     await delay(150);
 
@@ -265,6 +289,17 @@
       setNativeValue(element, text);
       element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
       element.dispatchEvent(new Event("change", { bubbles: true }));
+      return;
+    }
+
+    if (writeStrategy === "single-editor-replace") {
+      const selection = document.getSelection();
+      if (!selection || typeof document.execCommand !== "function") {
+        throw createInputWriteError();
+      }
+      selection.selectAllChildren(element);
+      document.execCommand("insertText", false, text);
+      assertInputWritten(element, text);
       return;
     }
 
@@ -276,6 +311,26 @@
       element.textContent = text;
       element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
     }
+  }
+
+  function assertInputWritten(element, expectedText) {
+    if (normalizeInputText(readInputText(element)) === normalizeInputText(expectedText)) {
+      return;
+    }
+    throw createInputWriteError();
+  }
+
+  function normalizeInputText(text) {
+    return String(text || "")
+      .replace(/\u00a0/g, " ")
+      .replace(/\r\n?/g, "\n")
+      .trim();
+  }
+
+  function createInputWriteError() {
+    const error = new Error("Meta AI 輸入框寫入驗證失敗");
+    error.code = "PROVIDER_INPUT_WRITE_FAILED";
+    return error;
   }
 
   function setNativeValue(element, text) {
@@ -300,11 +355,17 @@
   }
 
   async function waitForCompletion(config, providerId, timeoutMs, baseline, prompt, errorBaseline = []) {
-    const deadline = Date.now() + timeoutMs;
-    let lastText = "";
-    let stableSince = Date.now();
+    const startedAt = Date.now();
+    let completionWindow = createCompletionWindow(timeoutMs, startedAt);
+    let lastText = readAssistantSnapshot(config, providerId).lastText;
+    let stableSince = startedAt;
 
-    while (Date.now() < deadline) {
+    while (true) {
+      const now = Date.now();
+      if (now >= Math.min(completionWindow.inactivityDeadline, completionWindow.hardDeadline)) {
+        break;
+      }
+
       const pageError = readKnownProviderPageError(config, providerId, errorBaseline);
       if (pageError) {
         throw createProviderResponseError(pageError.classification, pageError.content);
@@ -315,6 +376,7 @@
       if (currentText !== lastText) {
         lastText = currentText;
         stableSince = Date.now();
+        completionWindow = extendCompletionWindow(completionWindow);
       }
 
       const timeStable = Date.now() - stableSince;
