@@ -1095,14 +1095,6 @@ async function getOrCreateProviderTab(providerId, options = {}) {
     }
   }
 
-  if (!options.forceNewTab) {
-    const matchingTabs = await chrome.tabs.query({ url: provider.matchPatterns });
-    const existingTab = matchingTabs.find((tab) => isProviderTabReady(tab, provider));
-    if (existingTab) {
-      return existingTab;
-    }
-  }
-
   const createdTab = await chrome.tabs.create({ url: provider.startUrl, active: true });
   return waitForProviderTab(createdTab.id, provider);
 }

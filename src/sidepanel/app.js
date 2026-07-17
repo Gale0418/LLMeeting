@@ -89,11 +89,10 @@ async function scanAndPopulateHookTabs() {
     if (!selectEl) continue;
 
     // 保留第一個選項
-    selectEl.innerHTML = '<option value="">[自動] 尋找或開新分頁</option>';
+    selectEl.innerHTML = '<option value="">[預設] 開新分頁</option>';
 
     try {
-      // 在 background 腳本中我們是用 tabs.query { url: provider.urlPattern } 或 matchPatterns
-      // 這裡簡單把 matchPatterns 轉成查詢條件
+      // 既有分頁只列在指定連線選單；未指定時 background 一律開新分頁。
       const tabs = [];
       for (const pattern of provider.matchPatterns) {
         const queryTabs = await chrome.tabs.query({ url: pattern });

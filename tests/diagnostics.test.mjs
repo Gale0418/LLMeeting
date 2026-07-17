@@ -68,6 +68,10 @@ test("side panel exposes one main debate button and advanced mutually exclusive 
   assert.match(html, /value="claude" checked> Claude/);
   assert.match(html, /value="meta"> Meta AI/);
   assert.doesNotMatch(html, /value="meta" checked/);
+  assert.match(html, /未指定時，每次會議都會開啟新分頁/);
+  assert.equal(html.match(/\[預設\] 開新分頁/g)?.length, 5);
+  assert.doesNotMatch(html, /尋找或開新分頁/);
+  assert.match(app, /\[預設\] 開新分頁/);
   assert.match(app, /startSelectedDebate/);
   assert.match(app, /selectedDebateMode/);
   assert.match(app, /selectedDebateRounds/);

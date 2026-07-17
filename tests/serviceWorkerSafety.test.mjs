@@ -125,12 +125,17 @@ test("runtime retention, entitlement fallback, and reset preservation are explic
   assert.ok(script.includes("createIdleState(undefined, runtimeState.entitlements)"));
 });
 
-test("automatic provider tabs query matching complete tabs before creating one", async () => {
+test("unbound providers always open a fresh tab while explicit bindings are reused", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
+  const helper = script.slice(
+    script.indexOf("async function getOrCreateProviderTab"),
+    script.indexOf("async function activateProviderTab"),
+  );
 
-  assert.ok(script.includes("chrome.tabs.query({ url: provider.matchPatterns })"));
-  assert.ok(script.includes("matchingTabs.find((tab) => isProviderTabReady(tab, provider))"));
-  assert.ok(script.indexOf("chrome.tabs.get(boundTabId)") < script.indexOf("chrome.tabs.query({ url: provider.matchPatterns })"));
+  assert.ok(helper.includes("chrome.tabs.get(boundTabId)"));
+  assert.ok(helper.includes("chrome.tabs.create({ url: provider.startUrl, active: true })"));
+  assert.equal(helper.includes("chrome.tabs.query"), false);
+  assert.ok(helper.indexOf("chrome.tabs.get(boundTabId)") < helper.indexOf("chrome.tabs.create"));
 });
 
 test("overload recovery failures are converted to provider results", async () => {
