@@ -285,6 +285,14 @@ test("provider response normalization removes only known standalone UI noise", (
     normalizeProviderResponse("meta", "顯示思考過程\nSystem check looks good."),
     "System check looks good.",
   );
+  assert.equal(
+    normalizeProviderResponse("chatgpt", "真正回答\n\n資料來源"),
+    "真正回答",
+  );
+  assert.equal(
+    normalizeProviderResponse("chatgpt", "資料來源\n這是正文，不是尾端按鈕"),
+    "資料來源\n這是正文，不是尾端按鈕",
+  );
 });
 
 test("Claude response removes status rows and duplicated wrapper text", () => {

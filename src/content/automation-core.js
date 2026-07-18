@@ -28,11 +28,15 @@
     const lines = value.split("\n");
 
     if (providerId === "chatgpt") {
-      return removeStandaloneUiLines(lines, [
+      const withoutSurvey = removeStandaloneUiLines(lines, [
         /^到目前為止，這段對話有幫助嗎？$/,
         /^你是否喜歡這種個性？$/,
         /^So far, has this conversation been helpful\?$/i,
         /^Do you like this personality\?$/i,
+      ]);
+      return removeTrailingStandaloneUiLines(withoutSurvey, [
+        /^資料來源$/,
+        /^Sources$/i,
       ]).join("\n").trim();
     }
 
@@ -89,6 +93,17 @@
 
   function removeStandaloneUiLines(lines, patterns) {
     return lines.filter((line) => !patterns.some((pattern) => pattern.test(line.trim())));
+  }
+
+  function removeTrailingStandaloneUiLines(lines, patterns) {
+    const result = [...lines];
+    while (result.length > 0 && !result[result.length - 1].trim()) {
+      result.pop();
+    }
+    if (result.length > 0 && patterns.some((pattern) => pattern.test(result[result.length - 1].trim()))) {
+      result.pop();
+    }
+    return result;
   }
 
   function providerErrorFingerprint(text) {
