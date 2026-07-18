@@ -35,22 +35,22 @@ test("provider adapters are packaged locally rather than fetched remotely", asyn
   assert.doesNotMatch(adapters, /https:\/\/raw\.githubusercontent\.com/);
 });
 
-test("Meta Lexical input writing has no execCommand or DOM fallback", async () => {
+test("Meta Lexical input writing uses serialized execCommand without events or DOM fallback", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
   const metaWrite = script.match(/if \(writeStrategy === "single-editor-replace"\) \{[\s\S]*?\n    \}/)?.[0];
   const inputWait = script.match(/async function waitForInputWritten\([\s\S]*?\n  \}/)?.[0];
 
   assert.ok(metaWrite);
   assert.ok(inputWait);
-  assert.doesNotMatch(metaWrite, /execCommand/);
-  assert.equal((metaWrite.match(/dispatchEvent\(new InputEvent\("beforeinput"/g) || []).length, 1);
-  assert.equal((metaWrite.match(/dispatchEvent\(new InputEvent\("input"/g) || []).length, 1);
-  assert.ok(
-    metaWrite.indexOf("dispatchEvent(new InputEvent(\"beforeinput\"")
-      < metaWrite.indexOf("dispatchEvent(new InputEvent(\"input\""),
-  );
+  assert.equal((metaWrite.match(/document\.execCommand\("insertText"/g) || []).length, 1);
+  assert.equal((metaWrite.match(/dispatchEvent/g) || []).length, 0);
+  assert.match(metaWrite, /const selection = document\.getSelection\(\)/);
+  assert.match(metaWrite, /!selection \|\| typeof document\.execCommand !== "function"/);
+  assert.match(metaWrite, /selection\.selectAllChildren\(element\)/);
+  assert.match(metaWrite, /replace\(\/\\r\\n\?\/g, "\\n"\)[\s\S]*?replace\(\/\\n\/g, "\\u2028"\)/);
+  assert.match(metaWrite, /document\.execCommand\("insertText", false, serializedText\) === false/);
   assert.doesNotMatch(metaWrite, /textContent\s*=/);
-  assert.match(metaWrite, /await waitForInputWritten\(element, text\)/);
+  assert.match(metaWrite, /await waitForInputWritten\(element, serializedText\)/);
   assert.doesNotMatch(inputWait, /dispatchEvent|execCommand|textContent\s*=/);
   assert.match(script, /const INPUT_WRITE_TIMEOUT_MS = 2000/);
   assert.match(inputWait, /while \(true\) \{[\s\S]*?normalizeInputText\(readInputText\(element\)\) === expected[\s\S]*?throw createInputWriteError\(\)/);

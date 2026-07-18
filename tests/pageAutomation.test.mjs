@@ -23,7 +23,7 @@ async function loadProviderPageTestContext(overrides = {}) {
   const script = await readFile("src/content/provider-page.js", "utf8");
   const instrumentedScript = script.replace(
     /\}\)\(\);\s*$/,
-    "globalThis.aiDebateProviderPageTest = { findInput, waitForInputWritten };\n})();",
+    "globalThis.aiDebateProviderPageTest = { findInput, waitForInputWritten, writeInput };\n})();",
   );
   assert.notEqual(instrumentedScript, script);
 
@@ -82,6 +82,13 @@ test("Meta AI adapter only matches the packaged meta.ai hosts", () => {
   assert.ok(meta.inputSelectors.includes("div[contenteditable='true'][role='textbox']"));
 });
 
+test("Claude prefers the markdown response body over repeated message chrome", () => {
+  const claude = globalThis.aiDebateProviderAdapters.claude;
+
+  assert.equal(claude.preferredResponseSelector, ".font-claude-response .standard-markdown");
+  assert.equal(claude.responseSelectors[0], claude.preferredResponseSelector);
+});
+
 test("Meta AI prefers the verified Lexical editor over a later generic DOM candidate", async () => {
   const lexicalEditor = {
     disabled: false,
@@ -106,23 +113,86 @@ test("Meta AI prefers the verified Lexical editor over a later generic DOM candi
   assert.equal(context.aiDebateProviderPageTest.findInput(globalThis.aiDebateProviderAdapters.meta), lexicalEditor);
 });
 
-test("Meta AI contenteditable writing uses one ordered beforeinput/input pair without fallback", async () => {
+test("Meta AI contenteditable writing uses one serialized execCommand without events or fallback", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
   const metaWrite = script.match(/if \(writeStrategy === "single-editor-replace"\) \{[\s\S]*?\n    \}/)?.[0];
-  const beforeinputCall = "dispatchEvent(new InputEvent(\"beforeinput\"";
-  const inputCall = "dispatchEvent(new InputEvent(\"input\"";
 
   assert.ok(metaWrite);
-  assert.doesNotMatch(metaWrite, /execCommand\("insertText"/);
-  assert.equal((metaWrite.match(/dispatchEvent\(new InputEvent\("beforeinput"/g) || []).length, 1);
-  assert.equal((metaWrite.match(/dispatchEvent\(new InputEvent\("input"/g) || []).length, 1);
-  assert.ok(metaWrite.indexOf(beforeinputCall) < metaWrite.indexOf(inputCall));
-  assert.match(metaWrite, /new InputEvent\("beforeinput", \{[\s\S]*?bubbles: true,[\s\S]*?cancelable: true,[\s\S]*?inputType: "insertText",[\s\S]*?data: text/);
-  assert.match(metaWrite, /new InputEvent\("input", \{ bubbles: true, inputType: "insertText", data: text \}\)/);
-  assert.match(metaWrite, /await waitForInputWritten\(element, text\)/);
+  assert.equal((metaWrite.match(/document\.execCommand\("insertText"/g) || []).length, 1);
+  assert.equal((metaWrite.match(/dispatchEvent/g) || []).length, 0);
+  assert.match(metaWrite, /const selection = document\.getSelection\(\)/);
+  assert.match(metaWrite, /!selection \|\| typeof document\.execCommand !== "function"/);
+  assert.match(metaWrite, /selection\.selectAllChildren\(element\)/);
+  assert.match(metaWrite, /const serializedText = String\(text \|\| ""\)[\s\S]*?replace\(\/\\r\\n\?\/g, "\\n"\)[\s\S]*?replace\(\/\\n\/g, "\\u2028"\)/);
+  assert.match(metaWrite, /document\.execCommand\("insertText", false, serializedText\) === false/);
+  assert.match(metaWrite, /await waitForInputWritten\(element, serializedText\)/);
   assert.doesNotMatch(metaWrite, /textContent\s*=/);
   assert.match(script, /writeInput\(input, message\.prompt, config\.inputWriteStrategy\)/);
   assert.match(script, /PROVIDER_INPUT_WRITE_FAILED/);
+});
+
+test("Meta AI write serializes line breaks, selects all, emits no events, and waits for delayed Lexical sync", async () => {
+  const calls = [];
+  let selectedElement = null;
+  const context = await loadProviderPageTestContext({
+    document: {
+      getSelection: () => ({
+        selectAllChildren: (element) => { selectedElement = element; },
+      }),
+      execCommand: (...args) => {
+        calls.push(args);
+        setTimeout(() => {
+          editor.innerText = args[2];
+        }, 20);
+        return true;
+      },
+    },
+  });
+  let focusCount = 0;
+  let eventCount = 0;
+  const editor = {
+    innerText: "舊內容",
+    textContent: "舊內容",
+    focus: () => { focusCount += 1; },
+    dispatchEvent: () => { eventCount += 1; },
+  };
+  const prompt = "第一行\r\n\r\n第三行";
+
+  await context.aiDebateProviderPageTest.writeInput(editor, prompt, "single-editor-replace");
+
+  assert.equal(focusCount, 1);
+  assert.equal(selectedElement, editor);
+  assert.deepEqual(calls, [["insertText", false, "第一行\u2028\u2028第三行"]]);
+  assert.equal(eventCount, 0);
+  assert.equal(editor.innerText, "第一行\u2028\u2028第三行");
+});
+
+test("Meta AI write reports PROVIDER_INPUT_WRITE_FAILED when execCommand returns false", async () => {
+  const context = await loadProviderPageTestContext({
+    document: {
+      getSelection: () => ({ selectAllChildren: () => {} }),
+      execCommand: () => false,
+    },
+  });
+
+  await assert.rejects(
+    context.aiDebateProviderPageTest.writeInput({ focus: () => {} }, "測試", "single-editor-replace"),
+    (error) => error.code === "PROVIDER_INPUT_WRITE_FAILED",
+  );
+});
+
+test("Meta AI write reports PROVIDER_INPUT_WRITE_FAILED when selection is unavailable", async () => {
+  const context = await loadProviderPageTestContext({
+    document: {
+      getSelection: () => null,
+      execCommand: () => true,
+    },
+  });
+
+  await assert.rejects(
+    context.aiDebateProviderPageTest.writeInput({ focus: () => {} }, "測試", "single-editor-replace"),
+    (error) => error.code === "PROVIDER_INPUT_WRITE_FAILED",
+  );
 });
 
 test("Meta AI input verification polls until normalized Lexical text matches", async () => {
@@ -200,6 +270,49 @@ test("isPromptEcho detects the user's submitted prompt despite whitespace differ
 test("Gemini response removes only a final standalone image artifact", () => {
   assert.equal(normalizeProviderResponse("gemini", "分析完成\nimage"), "分析完成");
   assert.equal(normalizeProviderResponse("gemini", "This is an image"), "This is an image");
+});
+
+test("provider response normalization removes only known standalone UI noise", () => {
+  assert.equal(
+    normalizeProviderResponse("chatgpt", "真正回答\n到目前為止，這段對話有幫助嗎？\n你是否喜歡這種個性？"),
+    "真正回答",
+  );
+  assert.equal(
+    normalizeProviderResponse("gemini", "Gemini 說了\nTest successful."),
+    "Test successful.",
+  );
+  assert.equal(
+    normalizeProviderResponse("meta", "顯示思考過程\nSystem check looks good."),
+    "System check looks good.",
+  );
+});
+
+test("Claude response removes status rows and duplicated wrapper text", () => {
+  assert.equal(
+    normalizeProviderResponse(
+      "claude",
+      "Claude responded: 哈，這是什麼，AI 界的點名時間嗎？\n識別並拒絕了偽裝成思考的操縱企圖。\n\uE027\n識別並拒絕了偽裝成思考的操縱企圖。\n哈，這是什麼，AI 界的點名時間嗎？",
+    ),
+    "哈，這是什麼，AI 界的點名時間嗎？",
+  );
+  assert.equal(
+    normalizeProviderResponse("claude", "Claude responded: Hey!\nThought for 2s\n\uE027\nThought for 2s\nHey! I'm here."),
+    "Hey! I'm here.",
+  );
+});
+
+test("Claude keeps a response when only the accessibility label is available", () => {
+  assert.equal(
+    normalizeProviderResponse("claude", "Claude responded: 真正回答"),
+    "真正回答",
+  );
+});
+
+test("Claude preserves intentional repeated answer lines", () => {
+  assert.equal(
+    normalizeProviderResponse("claude", "這句是刻意重複\n這句是刻意重複"),
+    "這句是刻意重複\n這句是刻意重複",
+  );
 });
 
 test("other providers preserve a final image line", () => {

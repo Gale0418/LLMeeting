@@ -100,6 +100,17 @@ test("provider overload and quota error codes survive the service-worker boundar
   assert.match(script, /overload-refresh/);
 });
 
+test("Meta input write failures refresh once and preserve retry counters", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  assert.match(script, /META_INPUT_REFRESH_RETRIES = 1/);
+  assert.match(script, /error\.code === "PROVIDER_INPUT_WRITE_FAILED"/);
+  assert.match(script, /job\.provider === "meta"/);
+  assert.match(script, /refreshMetaInputProvider/);
+  assert.match(script, /meta-input-refresh/);
+  assert.match(script, /metaInputRetryCount \+ 1/);
+});
+
 
 
 test("nextRound validates phase, mode, and action before starting a run", async () => {

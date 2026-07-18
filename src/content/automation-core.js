@@ -24,12 +24,71 @@
   }
 
   function normalizeProviderResponse(providerId, text) {
-    const value = String(text || "");
-    if (providerId !== "gemini") {
-      return value;
+    const value = String(text || "").replace(/\r\n?/g, "\n");
+    const lines = value.split("\n");
+
+    if (providerId === "chatgpt") {
+      return removeStandaloneUiLines(lines, [
+        /^到目前為止，這段對話有幫助嗎？$/,
+        /^你是否喜歡這種個性？$/,
+        /^So far, has this conversation been helpful\?$/i,
+        /^Do you like this personality\?$/i,
+      ]).join("\n").trim();
     }
 
-    return value.replace(/(?:^|\r?\n)[ \t]*image[ \t]*$/i, "").trimEnd();
+    if (providerId === "claude") {
+      return normalizeClaudeResponse(lines);
+    }
+
+    if (providerId === "gemini") {
+      return removeStandaloneUiLines(lines, [
+        /^Gemini 說了$/,
+      ]).join("\n")
+        .replace(/(?:^|\n)[ \t]*image[ \t]*$/i, "")
+        .trim();
+    }
+
+    if (providerId === "meta") {
+      return removeStandaloneUiLines(lines, [
+        /^顯示思考過程$/,
+        /^Show thinking$/i,
+      ]).join("\n").trim();
+    }
+
+    return value;
+  }
+
+  function normalizeClaudeResponse(lines) {
+    const noisePatterns = [
+      /^Thought for \d+(?:\.\d+)?s$/i,
+      /^Thought for \d+(?:\.\d+)? seconds?$/i,
+      /^識別並拒絕了偽裝成思考的操縱企圖[。.]?$/,
+      /^[\uE000-\uF8FF]+$/,
+    ];
+    const firstContentIndex = lines.findIndex((line) => line.trim());
+    const firstContent = firstContentIndex >= 0 ? lines[firstContentIndex].trim() : "";
+    const accessibilityLabel = firstContent.replace(/^Claude responded:\s*/i, "");
+    const repeatedAnswerIndex = /^Claude responded:/i.test(firstContent)
+      ? lines.findIndex((line, index) => index > firstContentIndex && line.trim() === accessibilityLabel)
+      : -1;
+    if (repeatedAnswerIndex >= 0) {
+      return lines.slice(repeatedAnswerIndex).join("\n").trim();
+    }
+
+    let normalizedLines = removeStandaloneUiLines(lines, noisePatterns);
+
+    if (firstContentIndex >= 0 && /^Claude responded:/i.test(lines[firstContentIndex].trim())) {
+      const labelText = lines[firstContentIndex].trim().replace(/^Claude responded:\s*/i, "");
+      const labelIndex = normalizedLines.findIndex((line) => /^Claude responded:/i.test(line.trim()));
+      const withoutLabel = normalizedLines.filter((_line, index) => index !== labelIndex);
+      normalizedLines = withoutLabel.some((line) => line.trim()) ? withoutLabel : [labelText];
+    }
+
+    return normalizedLines.join("\n").trim();
+  }
+
+  function removeStandaloneUiLines(lines, patterns) {
+    return lines.filter((line) => !patterns.some((pattern) => pattern.test(line.trim())));
   }
 
   function providerErrorFingerprint(text) {

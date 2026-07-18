@@ -23,6 +23,7 @@ const STORAGE_KEY = "aiDebate.currentState";
 const PROVIDER_TIMEOUT_MS = 240000; // 4分鐘，防話癆
 const SUMMARY_PROVIDER_TIMEOUT_MS = 480000; // 8分鐘，給長篇總結更多時間
 const OVERLOAD_REFRESH_RETRIES = 3;
+const META_INPUT_REFRESH_RETRIES = 1;
 
 let engine = new DebateEngine();
 let cachedEntitlements = entitlementsForPlan();
@@ -786,7 +787,8 @@ function recordProviderResult(result, target, runToken) {
   }
 }
 
-async function submitProviderJob(job, runToken) {
+async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
+  let tab;
   try {
     runController.assertCurrent(runToken);
     await setProviderDiagnostic(job.provider, {
@@ -794,7 +796,7 @@ async function submitProviderJob(job, runToken) {
       phase: job.phase,
       error: "",
     }, runToken);
-    const tab = await getOrCreateProviderTab(job.provider, { forceNewTab: Boolean(job.forceNewTab) });
+    tab = await getOrCreateProviderTab(job.provider, { forceNewTab: Boolean(job.forceNewTab) });
     await setProviderDiagnostic(job.provider, {
       stage: "activating-tab",
       phase: job.phase,
@@ -857,6 +859,21 @@ async function submitProviderJob(job, runToken) {
   } catch (error) {
     if (isRunCancelledError(error)) {
       throw error;
+    }
+    if (shouldRefreshMetaInput(error, job, tab, metaInputRetryCount)) {
+      try {
+        await refreshMetaInputProvider(tab.id, job, runToken);
+        return await submitProviderJob(
+          { ...job, forceNewTab: false },
+          runToken,
+          metaInputRetryCount + 1,
+        );
+      } catch (retryError) {
+        if (isRunCancelledError(retryError)) {
+          throw retryError;
+        }
+        error = retryError;
+      }
     }
     await setProviderDiagnostic(job.provider, {
       stage: "error",
@@ -975,7 +992,7 @@ async function collectProviderJob(submitted, runToken, overloadRetryCount = 0) {
   }
 }
 
-async function sendJob(job, runToken, overloadRetryCount = 0) {
+async function sendJob(job, runToken, overloadRetryCount = 0, metaInputRetryCount = 0) {
   let tab;
   try {
     runController.assertCurrent(runToken);
@@ -1043,6 +1060,23 @@ async function sendJob(job, runToken, overloadRetryCount = 0) {
           { ...job, forceNewTab: false },
           runToken,
           overloadRetryCount + 1,
+          metaInputRetryCount,
+        );
+      } catch (retryError) {
+        if (isRunCancelledError(retryError)) {
+          throw retryError;
+        }
+        error = retryError;
+      }
+    }
+    if (shouldRefreshMetaInput(error, job, tab, metaInputRetryCount)) {
+      try {
+        await refreshMetaInputProvider(tab.id, job, runToken);
+        return await sendJob(
+          { ...job, forceNewTab: false },
+          runToken,
+          overloadRetryCount,
+          metaInputRetryCount + 1,
         );
       } catch (retryError) {
         if (isRunCancelledError(retryError)) {
@@ -1141,6 +1175,33 @@ async function refreshOverloadedProvider(tabId, job, attempt, runToken) {
     phase: job.phase,
     tabId,
     error: `自動重新整理重試 ${attempt}/${OVERLOAD_REFRESH_RETRIES}`,
+  }, runToken);
+  await chrome.tabs.reload(tabId);
+  const provider = PROVIDERS.find((item) => item.id === job.provider);
+  await waitForProviderTab(tabId, provider);
+  await delay(1000);
+  runController.assertCurrent(runToken);
+}
+
+function shouldRefreshMetaInput(error, job, tab, retryCount) {
+  return job.provider === "meta" &&
+    error.code === "PROVIDER_INPUT_WRITE_FAILED" &&
+    retryCount < META_INPUT_REFRESH_RETRIES &&
+    typeof tab?.id === "number";
+}
+
+async function refreshMetaInputProvider(tabId, job, runToken) {
+  runController.assertCurrent(runToken);
+  runtimeState = {
+    ...runtimeState,
+    message: `${providerLabel(job.provider)} 輸入框狀態異常，自動重新整理後重試`,
+    workflowCheckpoint: createWorkflowCheckpoint("meta-input-refresh", job, { tabId }),
+  };
+  await setProviderDiagnostic(job.provider, {
+    stage: "meta-input-refresh",
+    phase: job.phase,
+    tabId,
+    error: "輸入框狀態異常，自動重新整理後重試",
   }, runToken);
   await chrome.tabs.reload(tabId);
   const provider = PROVIDERS.find((item) => item.id === job.provider);

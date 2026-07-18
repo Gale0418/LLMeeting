@@ -99,6 +99,9 @@
     },
     claude: {
       hosts: ["claude.ai"],
+      // The outer message also repeats the answer in an accessibility heading
+      // and contains dynamic thought/status rows. Prefer the markdown body only.
+      preferredResponseSelector: ".font-claude-response .standard-markdown",
       generatingStableFallbackMs: 30000,
       inputSelectors: ["div[contenteditable='true']", "div.ProseMirror", "textarea", "[role='textbox']"],
       sendSelectors: [
@@ -111,6 +114,7 @@
       stopSelectors: ["button[aria-label*='Stop']", "button[aria-label*='停止']"],
       errorSelectors: commonErrorSelectors,
       responseSelectors: [
+        ".font-claude-response .standard-markdown",
         ".font-claude-message",
         "[data-message-author='assistant']",
         "[data-is-streaming]",

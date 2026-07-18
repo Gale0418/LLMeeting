@@ -301,14 +301,18 @@
     }
 
     if (writeStrategy === "single-editor-replace") {
-      element.dispatchEvent(new InputEvent("beforeinput", {
-        bubbles: true,
-        cancelable: true,
-        inputType: "insertText",
-        data: text,
-      }));
-      element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
-      await waitForInputWritten(element, text);
+      const serializedText = String(text || "")
+        .replace(/\r\n?/g, "\n")
+        .replace(/\n/g, "\u2028");
+      const selection = document.getSelection();
+      if (!selection || typeof document.execCommand !== "function") {
+        throw createInputWriteError();
+      }
+      selection.selectAllChildren(element);
+      if (document.execCommand("insertText", false, serializedText) === false) {
+        throw createInputWriteError();
+      }
+      await waitForInputWritten(element, serializedText);
       return;
     }
 
@@ -500,7 +504,12 @@
   }
 
   function readAssistantSnapshot(config, providerId) {
-    let elements = collectElements(config.responseSelectors);
+    const preferredElements = config.preferredResponseSelector
+      ? collectElements([config.preferredResponseSelector]).filter(isVisible)
+      : [];
+    let elements = preferredElements.length > 0
+      ? preferredElements
+      : collectElements(config.responseSelectors);
 
     // Filter out elements that are descendants of any other element in the list
     // This ensures we capture the outermost message container and don't overwrite
