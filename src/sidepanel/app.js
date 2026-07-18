@@ -166,6 +166,7 @@ async function startDebate(mode) {
     customPersonas.claude = document.querySelector("#personaClaude")?.value || "";
     customPersonas.grok = document.querySelector("#personaGrok")?.value || "";
     customPersonas.gemini = document.querySelector("#personaGemini")?.value || "";
+    customPersonas.meta = document.querySelector("#personaMeta")?.value || "";
   }
 
   const tabHookingSettings = document.getElementById("tabHookingSettings");

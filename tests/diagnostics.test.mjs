@@ -129,6 +129,24 @@ test("side panel previews checked providers while idle", async () => {
   assert.match(app, /activeProviders: selectedProviderIds\(\)/);
 });
 
+test("theater mode exposes and submits a default persona for every provider", async () => {
+  const html = await readFile("src/sidepanel/index.html", "utf8");
+  const app = await readFile("src/sidepanel/app.js", "utf8");
+
+  for (const [providerId, elementSuffix] of [
+    ["chatgpt", "Chatgpt"],
+    ["gemini", "Gemini"],
+    ["grok", "Grok"],
+    ["claude", "Claude"],
+    ["meta", "Meta"],
+  ]) {
+    assert.match(html, new RegExp(`id="persona${elementSuffix}"`));
+    assert.match(app, new RegExp(`customPersonas\\.${providerId} = document\\.querySelector\\("#persona${elementSuffix}"\\)`));
+  }
+  assert.match(html, /Meta AI Beta \(預設: 社群視角\)/);
+  assert.match(html, /區分流行意見與可靠事實/);
+});
+
 test("side panel renders user interjections from their critique round", async () => {
   const app = await readFile("src/sidepanel/app.js", "utf8");
 
