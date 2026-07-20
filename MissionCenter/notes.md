@@ -49,3 +49,16 @@
 
 
 - 2026-07-20：羊模式補強完成：五連點徽章顯示 free🐑、fre🐑、fr🐑、f🐑、🐑；🐑 為單向解鎖，Reset 恢復 Free，並保留作者頻道跳轉。
+
+- 2026-07-21 LLM-E3 核准方案：
+  1. Gemini 腦洞鬧場保留原文並鎖定版本，避免改寫後失去可追溯性。
+  2. Grok 聚焦短週期輿情，Meta 聚焦長週期群體採用；兩者不混用時間尺度。
+  3. 揭曉板固定呈現最後猜測、內鬼第一輪原文與真相，讓玩家可回看證據鏈。
+  4. 內鬼只使用一條荒謬但自洽的怪規則，維持可辯護性與戲劇張力。
+  5. CodeRabbit 僅在本地驗證後小範圍上傳審查；任何修補先交使用者確認。
+- 2026-07-21 同步檢查：檢視技能目錄 sync_mission_center.py 與 visual_state.py；目前可辨識主要繁中欄位，但 sync 會改寫 progress/project 並在 MissionCenter 外產生 HUD state，不符合本輪只修改 MissionCenter/既有檔案的範圍，因此不執行，保留 HUD。
+- 2026-07-21 T30 follow-up：
+  1. 修正 CodeRabbit minor：src/sidepanel/app.js transcript 支援 reveal-only，並新增 diagnostics regression。
+  2. npm test 165/165；修後 CodeRabbit uncommitted review 0 issues。
+  3. npm run package 產出 dist/llmeeting-0.4.7.zip，2186164 bytes，SHA256 51897478EF8B5D671799541F6DAC4261B0E13D22C97C9A4100246EBFB154DB9C。
+  4. T30 維持 Review，T31 維持 Backlog；不得標 Done。

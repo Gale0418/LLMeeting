@@ -32,3 +32,10 @@
 
 
 | LLM-T26 | 羊模式與中性文案一致性 | Task | LLM-E2 | P1 | Done | Codex | LLM-T25 | 無 | npm test、靜態字詞檢查、商店封裝檢查 | 2 | ui, easter-egg, docs | 五連點羊模式、Reset、頻道跳轉、使用者稱呼與公開文件已同步 |
+
+| LLM-E3 | 社交推理與劇場差異化 | Epic |  | P1 | In Progress | Codex |  | 完成揭曉證據板並通過本地驗證後推進劇場與實機收尾 | 自動測試、語法檢查、登入態 Chrome 實機試玩、CodeRabbit 小範圍 review | 13 | execution, social-inference, theater | 2026-07-21 已核准；新增切片尚未驗證，不得標 Done |
+| LLM-T27 | 揭曉證據板 | Task | LLM-E3 | P1 | Review | Codex |  | 固定呈現最後猜測、內鬼第一輪原文與真相，並保留可追溯證據順序 | 單元測試、UI 靜態檢查、揭曉流程手動試跑 | 3 | execution, verification, social-inference | Gemini 腦洞鬧場原文鎖定後才能完成 |
+| LLM-T28 | 荒謬但可辯護內鬼任務 | Task | LLM-E3 | P1 | Review | Codex |  | 落地單一荒謬但自洽怪規則並驗證第一輪可辯護、最後一輪可揭曉 | prompt regression tests、至少 2 輪內鬼模式手動試跑 | 3 | execution, verification, ai-debate | 不得使用多重怪規則或預設必有內鬼 |
+| LLM-T29 | 五角劇場人設差異化 | Task | LLM-E3 | P1 | Review | Codex |  | 為五個 provider 固定可辨識且不互相覆蓋的人設與短週期／長週期職責 | prompt/persona tests、劇場模式 UI 與五 provider 手動試跑 | 3 | execution, verification, theater | Grok 短週期輿情；Meta 長週期群體採用 |
+| LLM-T30 | 自動驗證與 CodeRabbit Review | Task | LLM-E3 | P2 | Review | Codex | LLM-T27, LLM-T28, LLM-T29 | 修正後 CodeRabbit uncommitted review 已通過 0 issues，等待使用者實機試玩與收尾 | npm test、node --check、git diff --check、CodeRabbit 小範圍 review | 2 | verification, review, execution | 2026-07-21 已修正 CodeRabbit minor；app.js 支援 reveal-only transcript 並新增 diagnostics regression；不得標 Done，待 T31 |
+| LLM-T31 | 登入態 Chrome 實機試玩與收尾 | Task | LLM-E3 | P2 | Backlog | 使用者 | LLM-T30 | 使用登入態 Chrome 完成社交推理與劇場流程試玩，依結果整理收尾紀錄 | 登入態 Chrome 手動 smoke、MissionCenter 收尾紀錄 | 2 | verification, closeout, chrome-extension | 依賴 T30；尚未驗證，不得標 Done |

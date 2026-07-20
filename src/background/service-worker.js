@@ -221,6 +221,7 @@ function createIdleState(providerIds = DEFAULT_ACTIVE_PROVIDER_IDS, entitlements
     providerDiagnostics: createProviderDiagnostics(activeProviders),
     transcript: null,
     summary: "",
+    reveal: null,
     sourceProvider: "",
     sourceSummary: "",
     errors: [],
@@ -326,6 +327,21 @@ async function startInteractiveDebate(question, options = {}) {
   await publishState(runToken);
   await runFastProviderJobs(firstRoundJobs, "answer", runToken);
 
+  // Free chat pauses after the initial answers so the user can join round 1.
+  // Other interactive modes retain their existing answer -> critique flow.
+  if (options.mode === "chat" && options.interactiveMode) {
+    runtimeState = {
+      ...runtimeState,
+      busy: false,
+      status: "waiting_for_user",
+      phase: "waiting_for_user",
+      message: "等待使用者發言或選擇下一步...",
+      transcript: engine.snapshot(),
+    };
+    await publishState(runToken);
+    return runtimeState;
+  }
+
   for (let round = 1; round <= debateRounds; round += 1) {
     const jobs = engine.buildCritiqueJobs(round);
     runtimeState = {
@@ -350,6 +366,10 @@ async function startInteractiveDebate(question, options = {}) {
     };
     await publishState(runToken);
     return runtimeState;
+  }
+
+  if (engine.interactionStyle === "imposter") {
+    return finishImposterReveal(runToken);
   }
 
   if (options.skipSummary) {
@@ -455,6 +475,39 @@ function buildRuntimeFinalJob() {
   };
 }
 
+async function finishImposterReveal(runToken) {
+  runController.assertCurrent(runToken);
+  const reveal = engine.buildReveal();
+  runtimeState = {
+    ...runtimeState,
+    busy: true,
+    status: "running",
+    phase: "reveal",
+    message: "揭曉輪：公開本局真正的內鬼狀態，等待各 AI 回應",
+    transcript: engine.snapshot(),
+    reveal,
+    summary: reveal.content,
+  };
+  await publishState(runToken);
+
+  // 揭曉真相後，讓每一位 active participant 都收到同一個揭曉輪 prompt。
+  // 沿用 fast scheduler 的逐一收回與既有錯誤容錯，單一 AI 失敗不會中斷其餘參與者。
+  const revealJobs = engine.buildRevealJobs();
+  await runFastProviderJobs(revealJobs, "reveal", runToken);
+
+  runtimeState = {
+    ...runtimeState,
+    busy: false,
+    status: "done",
+    phase: "reveal",
+    message: "揭曉完成：已收集各 AI 的揭曉反應",
+    transcript: engine.snapshot(),
+    reveal: engine.snapshot().reveal,
+    summary: reveal.content,
+  };
+  await publishState(runToken);
+  return runtimeState;
+}
 async function startQuestionDebate(question, options = {}) {
   const runToken = options.runToken;
   runController.assertCurrent(runToken);
@@ -617,6 +670,10 @@ async function runDebateRounds(originalQuestion, options = {}) {
     return runtimeState;
   }
 
+  if (engine.interactionStyle === "imposter") {
+    return finishImposterReveal(runToken);
+  }
+
   if (runtimeState.skipSummary) {
     runtimeState = {
       ...runtimeState,
@@ -693,6 +750,9 @@ async function handleNextRound(action, text, runToken) {
     await publishState(runToken);
     await runFastProviderJobs(jobs, "critique", runToken);
   } else if (action === "summarize") {
+    if (engine.interactionStyle === "imposter") {
+      return finishImposterReveal(runToken);
+    }
     runtimeState = {
       ...runtimeState,
       phase: "summary",
@@ -776,6 +836,8 @@ function recordProviderResult(result, target, runToken) {
     engine.recordAnswer(result.provider, result.content);
   } else if (result.ok && target === "critique") {
     engine.recordCritique(result.provider, result.content, result.round);
+  } else if (result.ok && target === "reveal") {
+    engine.recordReveal(result.provider, result.content);
   } else {
     engine.markProviderError(
       result.provider,
@@ -783,6 +845,12 @@ function recordProviderResult(result, target, runToken) {
       result.error || "unknown error",
       result.errorContent || "",
     );
+    if (target === "reveal") {
+      engine.recordReveal(
+        result.provider,
+        `[服務狀態：${result.error || "unknown error"}] 揭曉反應無法取得。`,
+      );
+    }
     runtimeState.errors = [...runtimeState.errors, result];
   }
 }

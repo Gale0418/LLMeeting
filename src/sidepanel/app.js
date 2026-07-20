@@ -633,8 +633,32 @@ function renderChatBubbles(state) {
     }
   });
 
-  // 4. 總結
-  if (state.phase === "summary" && !state.summary) {
+  // 4. 揭曉或總結
+  if (state.reveal) {
+    html += `
+      <div class="round-divider">揭曉輪 🕵️</div>
+      <div class="bubble-group summary reveal">
+        <div class="bubble-meta">遊戲揭曉</div>
+        <div class="bubble-content">${formatContent(state.reveal.content || state.summary)}</div>
+      </div>
+    `;
+    const revealReactions = state.reveal.reactions || {};
+    const revealProviders = state.activeProviders || Object.keys(revealReactions);
+    revealProviders.forEach((providerId, index) => {
+      const reaction = revealReactions[providerId];
+      if (!reaction) return;
+      const anonymousLabel = state.transcript?.anonymousNames?.[providerId];
+      const label = state.reveal.anonymous
+        ? escapeHTML(anonymousLabel || `參與者 ${index + 1}`)
+        : escapeHTML(providerLabel(providerId));
+      html += `
+        <div class="bubble-group assistant ${providerId} reveal-reaction">
+          <div class="bubble-meta">${label} 的揭曉反應</div>
+          <div class="bubble-content">${formatContent(reaction)}</div>
+        </div>
+      `;
+    });
+  } else if (state.phase === "summary" && !state.summary) {
     const sumProvider = state.summaryProvider || "chatgpt";
     html += `
       <div class="round-divider">最終總結 👑</div>
@@ -643,7 +667,7 @@ function renderChatBubbles(state) {
         <div class="bubble-content"><span class="loading-dots">彙整精華中<span>.</span><span>.</span><span>.</span></span></div>
       </div>
     `;
-  } else if (state.summary) {
+  } else if (!state.reveal && state.summary) {
     const sumProvider = state.summaryProvider || "chatgpt";
     html += `
       <div class="round-divider">最終裁決 👑</div>
@@ -889,10 +913,20 @@ function buildTranscriptText(state) {
     );
   });
 
-  if (state.summary) {
-    lines.push("", `${providerLabel(state.summaryProvider)} 最終總結:`, state.summary);
+  if (state.summary || state.reveal) {
+    lines.push("", state.reveal ? "遊戲揭曉:" : `${providerLabel(state.summaryProvider)} 最終總結:`, state.reveal?.content || state.summary || "");
   }
 
+  if (state.reveal?.reactions) {
+    const revealProviders = state.activeProviders || Object.keys(state.reveal.reactions);
+    revealProviders.forEach((providerId, index) => {
+      const reaction = state.reveal.reactions[providerId];
+      if (!reaction) return;
+      const anonymousLabel = state.transcript?.anonymousNames?.[providerId];
+      const label = state.reveal.anonymous ? (anonymousLabel || `參與者 ${index + 1}`) : providerLabel(providerId);
+      lines.push(`${label} 揭曉反應:`, reaction);
+    });
+  }
   if (state.errors?.length) {
     lines.push("", "錯誤:", ...state.errors.map((error) => `- ${error.provider || "system"} ${error.phase || ""}: ${error.error || error.message}`));
   }

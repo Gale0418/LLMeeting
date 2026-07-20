@@ -1,7 +1,7 @@
 # 專案
 
-- 目標：完成 LLMeeting 0.4.7 信任與穩定性版本，讓多 AI 辯論具備一致文件、透明資料治理、可維護 provider adapter、長文本保護與 Meta AI Beta。
-- 週期：2026-07-17 信任、穩定性與 Meta AI
+- 目標：完成 LLMeeting 社交推理與劇場差異化切片，讓揭曉證據、荒謬但可辯護的內鬼任務、五角劇場人設與驗證流程可維護且可實機收尾。
+- 週期：2026-07-21 社交推理與劇場差異化
 - 標籤：chrome-extension, llmeeting, ai-debate, privacy, reliability, meta-ai
 - 活動紀錄：
   - [2026-07-17] 從誤用 `git restore` 事故重建未提交的 service worker 功能，並修復 content script 重複區塊；完整測試恢復為 116/116。
@@ -23,3 +23,7 @@
   - 0.4.1 上傳包已產生；商店截圖仍待乾淨實機畫面。
   - MissionCenter `sync_mission_center.py` 無法解析既有繁中欄位，本輪保留手動同步。
 
+
+  - [2026-07-21] 使用者核准 LLM-E3「社交推理與劇場差異化」：鎖定 Gemini 腦洞鬧場原文、Grok 短週期輿情、Meta 長週期群體採用，揭曉保留最後猜測與內鬼第一輪原文並附真相，內鬼採單一荒謬但自洽怪規則。
+  - CodeRabbit 已取得明確上傳同意；僅在本地驗證後做小範圍審查，任何維修先交由使用者查看。
+  - [2026-07-21] T30 CodeRabbit minor 修正完成：app.js transcript 支援 reveal-only、新增 diagnostics regression；165/165 pass、uncommitted review 0 issues，並產出 0.4.7 封裝。

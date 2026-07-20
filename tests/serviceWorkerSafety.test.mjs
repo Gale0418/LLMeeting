@@ -26,6 +26,58 @@ test("free basic debate uses sequential provider jobs while pro workflows are ga
   assert.match(script, /requireProFeature\("anonymousReview"\)/);
 });
 
+test("free chat interactive mode waits after answers before the first critique", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const interactiveDebate = script.slice(
+    script.indexOf("async function startInteractiveDebate"),
+    script.indexOf("function normalizeSummaryStrategy"),
+  );
+  const pauseBranch = interactiveDebate.indexOf('if (options.mode === "chat" && options.interactiveMode)');
+  const critiqueLoop = interactiveDebate.indexOf("for (let round = 1; round <= debateRounds; round += 1)");
+
+  assert.ok(pauseBranch >= 0);
+  assert.ok(critiqueLoop > pauseBranch);
+  assert.match(interactiveDebate.slice(pauseBranch, critiqueLoop), /status: "waiting_for_user"/);
+  assert.match(interactiveDebate.slice(pauseBranch, critiqueLoop), /return runtimeState;/);
+  assert.doesNotMatch(interactiveDebate.slice(pauseBranch, critiqueLoop), /buildCritiqueJobs/);
+  assert.match(interactiveDebate.slice(critiqueLoop), /buildCritiqueJobs/);
+});
+
+test("imposter debates finish with deterministic reveal instead of the summary job", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const revealStart = script.indexOf("async function finishImposterReveal");
+  const revealEnd = script.indexOf("async function startQuestionDebate", revealStart);
+  const revealHelper = script.slice(revealStart, revealEnd);
+  const interactive = script.slice(
+    script.indexOf("async function startInteractiveDebate"),
+    script.indexOf("function normalizeSummaryStrategy"),
+  );
+
+  assert.match(revealHelper, /engine\.buildRevealJobs\(\)/);
+  assert.match(revealHelper, /runFastProviderJobs\(revealJobs, "reveal", runToken\)/);
+  const imposterBranch = interactive.indexOf('if (engine.interactionStyle === "imposter")');
+  const skipSummaryBranch = interactive.indexOf("if (options.skipSummary)");
+  assert.ok(imposterBranch >= 0 && imposterBranch < skipSummaryBranch);
+  assert.match(interactive.slice(imposterBranch, skipSummaryBranch), /finishImposterReveal\(runToken\)/);
+  assert.doesNotMatch(interactive.slice(imposterBranch, skipSummaryBranch), /buildRuntimeFinalJob/);
+});
+test("all imposter completion paths broadcast reveal jobs before summary handling", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const interactive = script.slice(script.indexOf("async function startInteractiveDebate"), script.indexOf("function normalizeSummaryStrategy"));
+  const rounds = script.slice(script.indexOf("async function runDebateRounds"), script.indexOf("async function handleNextRound"));
+  const nextRound = script.slice(script.indexOf("async function handleNextRound"), script.indexOf("async function runSequentialProviderJobs"));
+
+  assert.match(interactive, /finishImposterReveal\(runToken\)/);
+  assert.match(rounds, /finishImposterReveal\(runToken\)/);
+  assert.match(nextRound, /engine\.interactionStyle === "imposter"/);
+  assert.match(nextRound, /finishImposterReveal\(runToken\)/);
+  const revealBranchStart = rounds.indexOf('if (engine.interactionStyle === "imposter")');
+  const summaryBranchStart = rounds.indexOf('if (runtimeState.skipSummary)');
+  assert.ok(revealBranchStart >= 0 && summaryBranchStart > revealBranchStart);
+  const revealBranch = rounds.slice(revealBranchStart, summaryBranchStart);
+  assert.match(revealBranch, /return finishImposterReveal\(runToken\)/);
+  assert.doesNotMatch(revealBranch, /buildRuntimeFinalJob/);
+});
 test("service worker forwards selected debate round count into the engine", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 

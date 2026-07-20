@@ -26,3 +26,7 @@
 
 
 - 2026-07-20：公開彩蛋改以 🐑 作為解鎖後顯示名稱；內部仍保留 pro entitlement，避免影響既有功能 gate。
+
+- 2026-07-21：核准 LLM-E3「社交推理與劇場差異化」方案：Gemini 腦洞鬧場原文鎖定；Grok 採短週期輿情、Meta 採長週期群體採用；揭曉必須包含最後猜測、內鬼第一輪原文與真相；內鬼任務採單一荒謬但自洽的怪規則。
+- 2026-07-21：CodeRabbit 已取得明確上傳同意；僅於本地驗證後以小範圍審查，任何維修先給使用者看。
+- 2026-07-21：依 CodeRabbit minor 建議修正 src/sidepanel/app.js transcript reveal-only 支援並新增 diagnostics regression；修後 uncommitted review 為 0 issues，T30 維持 Review，待使用者實機驗證。

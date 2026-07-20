@@ -39,3 +39,7 @@
 | 2026-06-20 | LLM-E1 | 0.4.1 候選包驗證 | npm test、npm run package、tar -tf dist/llmeeting-0.4.1.zip | 測試通過，並產生 0.4.1 zip 且只含 extension 檔案 | 81/81 pass；dist/llmeeting-0.4.1.zip 1,809,886 bytes；tar 內容只含 manifest、assets、src 與公開彩蛋 | 通過 | automated |
 
 | 2026-07-20 | LLM-T26 | 羊模式與中性文案回歸 | npm test、靜態字詞掃描、npm run package | 五連點羊模式、Reset 回 Free、YouTube 連結、文件無使用者稱呼殘留 | 149/149 pass；封裝測試通過；src、tests、README、store、docs、MissionCenter 無禁用稱呼殘留 | 通過 | automated |
+
+| 2026-07-21 | LLM-T27, LLM-T28, LLM-T29, LLM-T30 | 社交推理與劇場差異化本地自動驗證 | `node --test --test-isolation=none tests/*.test.mjs`；`node --check src/shared/prompts.js`、`node --check src/background/debateEngine.js`、`node --check src/background/service-worker.js`、`node --check src/sidepanel/app.js`；`git diff --check` | 全套測試與指定檔案語法檢查通過，無 whitespace error | 164/164 pass；四個 node --check 皆 exit 0；git diff --check 無 whitespace error（僅 CRLF warning） | 通過 | automated |
+
+| 2026-07-21 | LLM-T30 | CodeRabbit minor 修正與 0.4.7 封裝驗證 | `npm test`；`coderabbit review --agent -t uncommitted`；`npm run package`；SHA256 檢查 | 回歸測試通過、修後 CodeRabbit 無 issues、產出可驗證的 0.4.7 zip | app.js transcript 支援 reveal-only 並新增 diagnostics regression；165/165 pass；CodeRabbit uncommitted review 0 issues；`dist/llmeeting-0.4.7.zip` 2186164 bytes；SHA256 `51897478EF8B5D671799541F6DAC4261B0E13D22C97C9A4100246EBFB154DB9C` | 通過 | automated |

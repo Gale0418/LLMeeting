@@ -8,11 +8,11 @@ import {
 
 export function getPersonaPrompt(providerId) {
   const personas = {
-    chatgpt: "【強制人設】你現在負責「正經分析」，請專注於邏輯、可行性與全方位視角，提供正規嚴謹的建議。",
-    claude: "【強制人設】你現在負責「盲點揭露」，專門找漏洞、提出反常識思考與潛在風險，挑戰現有方案的合理性。",
+    chatgpt: "【強制人設】你現在負責「決策架構師」：先定義問題與成功判準，再攤開方案取捨，最後給出可執行的行動結論。",
+    claude: "【強制人設】你現在負責「鋼人風險編輯」：先用最強解讀重述對方方案，再檢查邊界、反例與可行緩解，讓批評能真正幫上忙。",
     gemini: "【強制人設】你現在負責「腦洞鬧場」，專門提出荒謬創新但確有可行性觀點的創意怪咖，不受傳統思維限制。說話必須大量使用顏文字(如 ヾ(•ω•`)o 等等)，這才是你的靈魂！",
-    grok: "【強制人設】你現在負責「效率吐槽」，講求極致效率，專門吐槽拖泥帶水的廢話和糟糕的架構，說話酸辣。",
-    meta: "【強制人設】你現在負責「社群視角」，請特別留意大眾文化、日常使用情境、不同族群觀點與想法傳播方式，同時清楚區分流行意見與可靠事實。"
+    grok: "【強制人設】你現在負責「短週期即時輿情壓力測試」：觀察近期輿情、迷因、炎上與反主流壓力，指出可能的快速擴散與反彈；沒有即時資料時，所有判斷必須標示為推測。",
+    meta: "【強制人設】你現在負責「長週期跨群體採用視角（社群視角）」：評估不同族群的採用路徑、關係鏈、可及性、分享動機與誤讀風險，並清楚區分流行意見與可靠事實，也標示哪些只是推測。"
   };
   return personas[providerId] || "【強制人設】你現在是一個參與討論的跨領域專家。";
 }
@@ -108,12 +108,12 @@ function redactProviderNames(content, speakerLabels = {}) {
 }
 
 const REFERENCE_DELIMITER_PATTERN = /【[^\r\n】]{0,160}引用區[^\r\n】]{0,160}】/g;
+const RESERVED_REFERENCE_TAG_PATTERN = /【(?:引用區|辯論資料引用區|不可信資料引用|揭曉引用|全員最後猜測引用|內鬼第一輪原文引用|主持人真相)[^\r\n】]{0,80}】/g;
 
-function neutralizeReferenceDelimiters(value) {
-  return String(value).replace(
-    REFERENCE_DELIMITER_PATTERN,
-    (match) => match.replaceAll("【", "［").replaceAll("】", "］"),
-  );
+export function neutralizeReferenceDelimiters(value) {
+  return String(value)
+    .replace(REFERENCE_DELIMITER_PATTERN, (match) => match.replaceAll("【", "［").replaceAll("】", "］"))
+    .replace(RESERVED_REFERENCE_TAG_PATTERN, (match) => match.replaceAll("【", "［").replaceAll("】", "］"));
 }
 
 function buildPromptWithinBudget(buildPrompt, {
@@ -164,6 +164,14 @@ function prepareSpeakerContent(content, { anonymizeSpeakers = false, speakerLabe
   return neutralizeReferenceDelimiters(text);
 }
 
+export function prepareReferenceText(content, {
+  anonymizeSpeakers = false,
+  speakerLabels = {},
+  maxChars,
+} = {}) {
+  const prepared = prepareSpeakerContent(content, { anonymizeSpeakers, speakerLabels });
+  return maxChars == null ? prepared : clipText(prepared, maxChars);
+}
 export function buildConversationSummaryPrompt(userNote = "") {
   const note = neutralizeReferenceDelimiters(normalizeText(userNote));
   return [

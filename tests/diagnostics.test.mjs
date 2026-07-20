@@ -6,6 +6,7 @@ import {
   createProviderDiagnostics,
   updateProviderDiagnostic,
 } from "../src/background/diagnostics.js";
+import { getPersonaPrompt } from "../src/shared/prompts.js";
 
 test("provider diagnostics starts idle and can record tab details without mutating prior state", () => {
   const original = createProviderDiagnostics(["chatgpt"]);
@@ -159,4 +160,52 @@ test("side panel renders user interjections from their critique round", async ()
 
   assert.match(app, /const userMessage = critiques\.USER/);
   assert.doesNotMatch(app, /transcript\.userMessages/);
+});
+
+test("side panel renders imposter reveal as a dedicated round without summary provider labels", async () => {
+  const app = await readFile("src/sidepanel/app.js", "utf8");
+
+  assert.match(app, /if \(state\.reveal\)/);
+  assert.match(app, /揭曉輪/);
+  assert.match(app, /遊戲揭曉/);
+  assert.match(app, /state\.reveal\.content \|\| state\.summary/);
+  assert.match(app, /state\.reveal \? "遊戲揭曉:"/);
+  assert.match(app, /state\.reveal\.reactions/);
+  assert.match(app, /揭曉反應/);
+});
+
+test("side panel persona defaults stay synchronized with shared personas", async () => {
+  const html = await readFile("src/sidepanel/index.html", "utf8");
+  const ids = ["chatgpt", "claude", "grok", "gemini", "meta"];
+  const suffixes = { chatgpt: "Chatgpt", claude: "Claude", grok: "Grok", gemini: "Gemini", meta: "Meta" };
+  for (const providerId of ids) {
+    const persona = getPersonaPrompt(providerId);
+    assert.ok(html.includes(`${persona}</textarea>`), `${providerId} persona is not synchronized`);
+  }
+});
+
+test("side panel export keeps reveal content when summary is empty", async () => {
+  const app = await readFile("src/sidepanel/app.js", "utf8");
+  const start = app.indexOf("function buildTranscriptText(state) {");
+  const end = app.indexOf("function renderMessage", start);
+  assert.ok(start >= 0 && end > start, "buildTranscriptText source is present");
+
+  const createTranscriptBuilder = new Function(
+    "PROVIDERS",
+    "critiqueRoundMaps",
+    "providerLabel",
+    `${app.slice(start, end)} return buildTranscriptText;`,
+  );
+  const buildTranscriptText = createTranscriptBuilder(
+    [{ id: "chatgpt", label: "ChatGPT" }],
+    () => [],
+    (providerId) => providerId,
+  );
+  const output = buildTranscriptText({
+    transcript: { originalQuestion: "測試問題", answers: {} },
+    summary: "",
+    reveal: { content: "揭曉內容" },
+  });
+
+  assert.match(output, /遊戲揭曉:\n揭曉內容/);
 });

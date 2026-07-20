@@ -438,3 +438,14 @@ test("untrusted provider and user delimiters are neutralized inside quoted data"
   assert.match(finalPrompt, /［引用區結束］/);
   assert.match(finalPrompt, /［辯論資料引用區結束］/);
 });
+
+test("persona contracts are explicit and Gemini remains byte-for-byte stable", () => {
+  assert.equal(
+    getPersonaPrompt("gemini"),
+    "【強制人設】你現在負責「腦洞鬧場」，專門提出荒謬創新但確有可行性觀點的創意怪咖，不受傳統思維限制。說話必須大量使用顏文字(如 ヾ(•ω•`)o 等等)，這才是你的靈魂！",
+  );
+  assert.match(getPersonaPrompt("chatgpt"), /決策架構師.*定義.*判準.*取捨.*行動結論/);
+  assert.match(getPersonaPrompt("claude"), /鋼人風險編輯.*最強解讀.*邊界.*反例.*緩解/);
+  assert.match(getPersonaPrompt("grok"), /短週期.*即時輿情.*迷因.*炎上.*反主流.*推測/);
+  assert.match(getPersonaPrompt("meta"), /長週期.*跨群體.*採用.*關係鏈.*可及性.*分享.*誤讀/);
+});
