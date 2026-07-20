@@ -20,7 +20,7 @@
 ### 🚀 五大辯論模式任你挑選
 * **基礎辯論**：最經典的輪流發言與交叉互評。
 * **快速鬥技場 ⚡ (PRO)**：跳過冗長等待，AI 直接進入快節奏對決！
-* **自由群聊 💬 (PRO)**：讓 AI 們像在群組裡一樣自由交流，**最棒的是，身為主人的你也可以隨時「亂入」插話一起參與討論喔！** 🙋‍♂️
+* **自由群聊 💬 (PRO)**：讓 AI 們像在群組裡一樣自由交流，**最棒的是，身為使用者的你也可以隨時「亂入」插話一起參與討論喔！** 🙋‍♂️
 * **劇場大亂鬥 🎭 (PRO)**：你可以手動幫每一位 AI 設定「專屬人設」（例如讓 ChatGPT 負責正經分析，Gemini 負責無厘頭搞笑），看他們在設定好的劇本下狂飆演技！
 * **總結辯論 ✦ (PRO)**：專注於總結與凝聚共識的特化模式。
 
@@ -40,9 +40,21 @@
 * 🥸 **匿名評論制 (PRO)**：拋開品牌包袱，全體化名盲測互評，讓品牌迷思徹底消失！
 * 🛌 **放空模式**：不想看總結？勾選「略過最後的總結裁決」，吵完直接原地解散去睡覺！
 
-### 🎁 噓... 聽說有隱藏彩蛋？！【PRO 模式免費解鎖】
+### 🎁 噓... 聽說有隱藏彩蛋？！【🐑模式彩蛋】
 發現介面上有個小小的 **「Free」徽章** 嗎？
-試著點擊它看看~
+連續點擊五次，徽章會依序變成 free🐑、fre🐑、fr🐑、f🐑，最後解鎖 🐑 模式；Reset 會恢復 Free。
+
+---
+
+## English Quick Start
+
+1. [Install LLMeeting from the Chrome Web Store](https://chromewebstore.google.com/detail/llmeeting/cjombmcmgifhanenolhaeepbpnlchjdp).
+2. Sign in to at least two supported AI services in Chrome: ChatGPT, Gemini, Grok, Claude, or Meta AI Beta.
+3. Open the LLMeeting side panel, enter a topic, choose the participants and meeting mode, then start the AI party.
+
+## Built with Codex and GPT-5.6
+
+LLMeeting was designed and directed by me, with all code developed collaboratively through Codex. Earlier versions used GPT-5.4. During OpenAI Build Week, GPT-5.6 and Codex meaningfully extended the project with stronger provider automation, recovery flows, response normalization, Meta AI Beta support, and expanded regression tests. The dated Git history distinguishes this new work from the earlier version.
 
 ---
 

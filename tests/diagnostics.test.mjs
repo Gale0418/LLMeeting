@@ -58,6 +58,7 @@ test("side panel exposes one main debate button and advanced mutually exclusive 
   assert.doesNotMatch(html, /id="quickDebateButton"/);
   assert.doesNotMatch(html, /id="summaryDebateButton"/);
   assert.match(html, /name="debateMode"[^>]+value="basic"[^>]+checked/);
+  assert.match(html, /id="basicModeOption"/);
   assert.match(html, /name="debateMode"[^>]+value="fast"/);
   assert.match(html, /name="debateMode"[^>]+value="summary"/);
   assert.match(html, /id="debateRoundsInput"/);
@@ -81,6 +82,12 @@ test("side panel exposes one main debate button and advanced mutually exclusive 
   assert.match(app, /theater: "chatMode"/);
   assert.match(app, /renderDebateModeState/);
   assert.match(app, /renderEntitlementState/);
+  assert.match(app, /const debateRounds = selectedDebateRounds\(\);/);
+  assert.match(app, /mode === "chat"[\s\S]*?啟動自由群聊中/);
+  assert.match(app, /mode === "theater"[\s\S]*?啟動劇場大亂鬥中/);
+  assert.match(app, /basicDebateModeOption\.style\.display/);
+  assert.match(app, /proPillEls\.forEach/);
+  assert.match(app, /pill\.textContent = currentEntitlements\.isPro \? "🐑" : "PRO"/);
 });
 
 test("debate mode entitlement keeps Pro on Fast and Free on Basic", async () => {

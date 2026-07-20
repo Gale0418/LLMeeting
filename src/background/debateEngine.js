@@ -342,7 +342,7 @@ ${rawProviderContent}`
         allowImposterAccusation: this.interactionStyle === "imposter" && round > 1 && round >= this.debateRounds,
       });
 
-      prompt += `\n\n【來自主人的插話 / 補充】\n${normalizeText(text)}\n\n請綜合上述其他 AI 的發言與主人的補充進行回應。`;
+      prompt += `\n\n【來自使用者的插話 / 補充】\n${normalizeText(text)}\n\n請綜合上述其他 AI 的發言與使用者的補充進行回應。`;
 
       if (this.interactionStyle === "imposter" && provider.id === this.state.imposterProvider) {
         prompt = addImposterSecretPrompt(prompt);

@@ -13,6 +13,7 @@ const resetButton = document.querySelector("#resetButton");
 const clearLocalDataButton = document.querySelector("#clearLocalDataButton");
 const statusText = document.querySelector("#statusText");
 const planBadge = document.querySelector("#planBadge");
+const proPillEls = Array.from(document.querySelectorAll(".pro-pill"));
 const transcriptOutput = document.querySelector("#transcriptOutput");
 const diagnosticsOutput = document.querySelector("#diagnosticsOutput");
 const chatTranscript = document.querySelector("#chatTranscript");
@@ -24,6 +25,7 @@ const interactionStyleSelect = document.querySelector("#interactionStyleSelect")
 const providerSelectEls = Array.from(document.querySelectorAll(".provider-select"));
 const debateModeEls = Array.from(document.querySelectorAll(".debate-mode-select"));
 const debateModeOptionEls = Array.from(document.querySelectorAll(".mode-option[data-pro-feature]"));
+const basicDebateModeOption = document.querySelector("#basicModeOption");
 const summaryStrategyEls = Array.from(document.querySelectorAll(".summary-strategy-select"));
 const summaryStrategyOptionEls = Array.from(document.querySelectorAll(".summary-strategy-option[data-pro-feature]"));
 const skipSummaryCheckbox = document.querySelector("#skipSummaryCheckbox");
@@ -157,7 +159,7 @@ async function startDebate(mode) {
 
   const summaryProvider = document.querySelector("#summaryProviderSelect").value;
   const skipSummary = document.querySelector("#skipSummaryCheckbox").checked;
-  const debateRounds = parseInt(debateRoundsInput?.value, 10) || 1;
+  const debateRounds = selectedDebateRounds();
   const interactionStyle = interactionStyleSelect?.value || "critique";
 
   const customPersonas = {};
@@ -552,7 +554,7 @@ function renderChatBubbles(state) {
   // 1. 使用者提問
   html += `
     <div class="bubble-group user">
-      <div class="bubble-meta">${state.mode === "summary" ? "目前對話總結" : "主人提問 🙋‍♂️"}</div>
+      <div class="bubble-meta">${state.mode === "summary" ? "目前對話總結" : "使用者提問 🙋"}</div>
       <div class="bubble-content">${escapeHTML(transcript.originalQuestion)}</div>
     </div>
   `;
@@ -585,7 +587,7 @@ function renderChatBubbles(state) {
     }
   }
 
-  // 3. 多輪互評與主人發言
+  // 3. 多輪互評與使用者發言
   const critiqueRounds = critiqueRoundMaps(transcript);
   const activeCritiqueRound = state.phase === "critique"
     ? normalizeDebateRounds(state.currentCritiqueRound || transcript.currentCritiqueRound || 1)
@@ -602,7 +604,7 @@ function renderChatBubbles(state) {
     if (userMessage) {
       html += `
         <div class="bubble-group user">
-          <div class="bubble-meta">主人插話 🙋‍♂️</div>
+          <div class="bubble-meta">使用者插話 🙋</div>
           <div class="bubble-content">${formatContent(userMessage)}</div>
         </div>
       `;
@@ -723,8 +725,12 @@ function setActionButtonsDisabled(disabled) {
 
 function renderEntitlementState() {
   if (planBadge) {
-    planBadge.textContent = currentEntitlements.isPro ? "Pro" : "Free";
+    planBadge.textContent = currentEntitlements.isPro ? "🐑" : "Free";
     planBadge.className = `plan-badge ${currentEntitlements.isPro ? "is-pro" : "is-free"}`;
+    planBadge.setAttribute("aria-label", currentEntitlements.isPro ? "🐑模式，已解鎖" : "方案徽章：Free");
+    proPillEls.forEach((pill) => {
+      pill.textContent = currentEntitlements.isPro ? "🐑" : "PRO";
+    });
   }
 
   renderDebateModeState();
@@ -767,6 +773,14 @@ function renderDebateModeState() {
 }
 
 function renderDebateModeOptionStates() {
+  if (basicDebateModeOption) {
+    const keepVisibleForWaitingSession =
+      currentEntitlements.isPro &&
+      latestState?.phase === "waiting_for_user" &&
+      selectedDebateMode() === "basic";
+    basicDebateModeOption.style.display =
+      currentEntitlements.isPro && !keepVisibleForWaitingSession ? "none" : "";
+  }
   for (const optionEl of debateModeOptionEls) {
     const featureId = optionEl.dataset.proFeature;
     const locked = !canUseFeature(currentEntitlements, featureId);
@@ -841,6 +855,12 @@ function startingMessage(mode) {
   }
   if (mode === "fast") {
     return "啟動快速鬥技場中...";
+  }
+  if (mode === "chat") {
+    return "啟動自由群聊中...";
+  }
+  if (mode === "theater") {
+    return "啟動劇場大亂鬥中...";
   }
   return "啟動基礎辯論中...";
 }

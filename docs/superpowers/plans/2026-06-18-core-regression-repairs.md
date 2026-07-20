@@ -98,12 +98,12 @@ test("engine restores a waiting conversation from its snapshot", () => {
   original.recordCritique("gemini", "Gemini 互動", 1);
 
   const restored = DebateEngine.restore(original.snapshot());
-  const nextRound = restored.addChatRound("主人插話");
-  const jobs = restored.buildUserMessageJobs("主人插話", nextRound);
+  const nextRound = restored.addChatRound("使用者插話");
+  const jobs = restored.buildUserMessageJobs("使用者插話", nextRound);
 
   assert.equal(nextRound, 2);
   assert.equal(jobs[0].round, 2);
-  assert.match(jobs[0].prompt, /主人插話/);
+  assert.match(jobs[0].prompt, /使用者插話/);
   assert.equal(restored.snapshot().interactionStyle, "casual");
 });
 

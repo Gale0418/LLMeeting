@@ -28,7 +28,7 @@ function waitingSession() {
     status: "waiting_for_user",
     phase: "waiting_for_user",
     mode: "chat",
-    message: "等待主人發言或選擇下一步...",
+    message: "等待使用者發言或選擇下一步...",
     errors: [],
     transcript: engine.snapshot(),
   };

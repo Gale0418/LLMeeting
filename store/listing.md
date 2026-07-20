@@ -39,7 +39,7 @@ LLMeeting does not send chat content to an LLMeeting developer server. Prompts a
 ## Permissions rationale
 
 - `sidePanel`: show the LLMeeting control panel.
-- `storage`: keep the latest local debate state for up to 24 hours and remember the local author-mode easter egg preference.
+- `storage`: keep the latest local debate state for up to 24 hours and remember the local 🐑 mode easter egg preference.
 - `tabs`: list provider tabs for an explicit connection choice, or open fresh provider tabs when none is selected.
 - `scripting`: reinject the content script when a provider page is already open.
 - Host permissions for ChatGPT, Gemini, Grok, X Grok, Claude, and Meta AI: automate prompt entry and read replies only on explicitly supported AI web apps. Meta AI remains opt-in in the side panel.

@@ -18,7 +18,7 @@ This access is used to submit your prompt, collect AI replies, paste cross-criti
 
 ## Data storage
 
-LLMeeting stores only the latest debate state in Chrome local storage so the side panel can show progress, diagnostics, and transcript state. Stored debate content expires after 24 hours. If the plan-badge easter egg is used, LLMeeting also remembers the selected local author mode. Users can select `清除紀錄` in the side panel to remove the saved debate state and pending provider-page run records immediately.
+LLMeeting stores only the latest debate state in Chrome local storage so the side panel can show progress, diagnostics, and transcript state. Stored debate content expires after 24 hours. If the plan-badge easter egg is used, LLMeeting also remembers the selected local 🐑 mode. Users can select `清除紀錄` in the side panel to remove the saved debate state and pending provider-page run records immediately.
 
 LLMeeting 不會將資料送到 LLMeeting 開發者伺服器。LLMeeting also does not sell, share, or broker your chat content.
 

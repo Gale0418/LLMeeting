@@ -103,8 +103,8 @@ git commit -m "test: align regression suite with interaction prompts"
 ```js
 test("interactive rounds continue beyond the configured five-round limit", () => {
   const engine = completedEngine({ debateRounds: 5 });
-  const round = engine.addChatRound("主人補充");
-  const jobs = engine.buildUserMessageJobs("主人補充", round);
+  const round = engine.addChatRound("使用者補充");
+  const jobs = engine.buildUserMessageJobs("使用者補充", round);
 
   assert.equal(round, 6);
   assert.deepEqual([...new Set(jobs.map((job) => job.round))], [6]);

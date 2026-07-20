@@ -12,7 +12,7 @@
         <div>
           <div class="brand-row">
             <h1>LLMeeting</h1>
-            <span id="planBadge" class="plan-badge">Free</span>
+            <span id="planBadge" class="plan-badge" role="button" tabindex="0" aria-label="方案徽章：Free">Free</span>
             <span class="version-badge">v0.4.7</span>
           </div>
           <p id="statusText">等待開始</p>
@@ -52,7 +52,7 @@
             <fieldset class="mode-fieldset">
               <legend>辯論模式</legend>
               <div class="mode-options">
-                <label class="mode-option">
+                <label id="basicModeOption" class="mode-option">
                   <input type="radio" class="debate-mode-select" name="debateMode" value="basic" checked>
                   <span>基礎辯論</span>
                 </label>

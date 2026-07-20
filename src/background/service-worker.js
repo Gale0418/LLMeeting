@@ -345,7 +345,7 @@ async function startInteractiveDebate(question, options = {}) {
       busy: false,
       status: "waiting_for_user",
       phase: "waiting_for_user",
-      message: "等待主人發言或選擇下一步...",
+      message: "等待使用者發言或選擇下一步...",
       transcript: engine.snapshot(),
     };
     await publishState(runToken);
@@ -610,7 +610,7 @@ async function runDebateRounds(originalQuestion, options = {}) {
       busy: false,
       status: "waiting_for_user",
       phase: "waiting_for_user",
-      message: "等待主人發言或選擇下一步...",
+      message: "等待使用者發言或選擇下一步...",
       transcript: engine.snapshot(),
     };
     await publishState(runToken);
@@ -674,7 +674,7 @@ async function handleNextRound(action, text, runToken) {
       phase: "critique",
       currentCritiqueRound: newRound,
       debateRounds: newRound,
-      message: `送出主人的補充發言`,
+      message: `送出使用者的補充發言`,
       transcript: engine.snapshot(),
     };
     await publishState(runToken);
@@ -721,7 +721,7 @@ async function handleNextRound(action, text, runToken) {
     busy: false,
     status: "waiting_for_user",
     phase: "waiting_for_user",
-    message: "等待主人發言或選擇下一步...",
+    message: "等待使用者發言或選擇下一步...",
     transcript: engine.snapshot(),
   };
   await publishState(runToken);

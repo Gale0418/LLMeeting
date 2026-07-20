@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 實作 Free badge 第 1、3、5 次點擊的彩蛋，第 3 次從固定 10 句中隨機吐槽，第 5 次解鎖 Pro 並顯示 YouTube 連結。
+**Goal:** 實作 Free badge 第 1、3、5 次點擊的彩蛋，第 3 次從固定 10 句中隨機吐槽，第 5 次解鎖羊模式並顯示 YouTube 連結。
 
 **Architecture:** 保留 `attachDevUnlock()` 入口與 1800 ms 點擊視窗，但將 dialog、confirm、open URL、random 與 timer 以可選 dependency 注入，讓 Node 測試可真實驅動點擊流程。
 
@@ -179,7 +179,7 @@ At click five, toggle the plan. For Free to Pro:
 
 ```js
 const goToYT = showConfirm?.(
-  `恭喜解鎖 PRO 模式！\n\n作者 YouTube：\n${YOUTUBE_URL}\n\n要前往頻道嗎？`,
+  `恭喜解鎖🐑模式~\n\n作者 YouTube：\n${YOUTUBE_URL}\n\n要前往頻道嗎？`,
 );
 if (goToYT) openUrl?.(YOUTUBE_URL);
 ```

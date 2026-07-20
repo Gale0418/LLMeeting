@@ -123,13 +123,13 @@ test("engine restores an interactive session and builds the next round", () => {
   original.recordCritique("gemini", "Gemini 互動", 1);
 
   const restored = DebateEngine.restore(original.snapshot());
-  const round = restored.addChatRound("主人補充");
-  const jobs = restored.buildUserMessageJobs("主人補充", round);
+  const round = restored.addChatRound("使用者補充");
+  const jobs = restored.buildUserMessageJobs("使用者補充", round);
 
   assert.equal(restored.summaryProvider, "gemini");
   assert.equal(jobs[0].round, 2);
-  assert.match(jobs[0].prompt, /主人補充/);
-  assert.equal(restored.snapshot().critiqueRounds[1].USER, "主人補充");
+  assert.match(jobs[0].prompt, /使用者補充/);
+  assert.equal(restored.snapshot().critiqueRounds[1].USER, "使用者補充");
 });
 
 test("interactive rounds can continue beyond the configured five-round limit", () => {

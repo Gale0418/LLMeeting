@@ -642,7 +642,7 @@ input[type="number"]:focus {
   white-space: pre-wrap;
 }
 
-/* 使用者（主人）氣泡靠右 */
+/* 使用者氣泡靠右 */
 .bubble-group.user {
   align-self: flex-end;
 }
@@ -657,6 +657,14 @@ input[type="number"]:focus {
   border-bottom-right-radius: 4px;
 }
 
+.plan-badge[role="button"] {
+  cursor: pointer;
+}
+
+.plan-badge[role="button"]:focus-visible {
+  outline: 2px solid var(--accent-color, #8b7cff);
+  outline-offset: 2px;
+}
 .version-badge {
   font-size: 11px;
   color: var(--text-secondary);

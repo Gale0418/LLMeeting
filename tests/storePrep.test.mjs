@@ -38,7 +38,7 @@ test("store listing prep documents privacy, permissions, and screenshots", async
   assert.doesNotMatch(listing, /Free chat and theater modes/);
   assert.match(listing, /initial prompt and two critique prompts/);
   assert.match(listing, /only the chair provider receives the final summary prompt/);
-  assert.match(listing, /author-mode easter egg/);
+  assert.match(listing, /🐑 mode easter egg/);
   assert.match(listing, /清除紀錄/);
   assert.match(privacy, /Last updated: 2026-07-17/);
   assert.match(screenshots, /Chrome Web Store/);
