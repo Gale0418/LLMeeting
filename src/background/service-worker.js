@@ -1053,7 +1053,7 @@ async function startQuestionDebate(question, options = {}) {
     throw new Error("請先輸入問題");
   }
 
-  if (runtimeState.busy) {
+  if (runtimeState.busy && runtimeState.phase !== "preflight-complete") {
     throw new Error("目前已有辯論正在進行");
   }
 
@@ -1109,7 +1109,7 @@ async function startSummaryDebate(userNote, options = {}) {
   await requireSummaryStrategyFeature(summaryStrategy);
   runController.assertCurrent(runToken);
 
-  if (runtimeState.busy) {
+  if (runtimeState.busy && runtimeState.phase !== "preflight-complete") {
     throw new Error("目前已有辯論正在進行");
   }
 

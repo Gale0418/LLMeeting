@@ -70,6 +70,10 @@ test("debate warms and checks provider tabs sequentially before creating a forma
   assert.match(startHandler, /busy: true,[\s\S]*status: "running",[\s\S]*phase: "preflight-complete",[\s\S]*runController\.claim\(reservationToken\)/);
   assert.match(startHandler, /runController\.claim\(reservationToken\)/);
   assert.match(startHandler, /if \(!runToken\) \{[\s\S]*busy: false[\s\S]*preflightResults:/);
+  assert.equal(
+    (script.match(/if \(runtimeState\.busy && runtimeState\.phase !== "preflight-complete"\)/g) || []).length,
+    2,
+  );
 });
 
 test("manual readiness uses the same foreground warm-up sequence", async () => {
