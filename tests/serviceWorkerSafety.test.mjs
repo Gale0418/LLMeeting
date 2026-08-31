@@ -13,6 +13,75 @@ test("fast provider jobs submit prompts before collecting replies", async () => 
   assert.match(script, /await activateProviderTab\(tab\)/);
 });
 
+test("provider readiness has a stable service-worker boundary and status mapping", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  assert.match(script, /message\.type === "aiDebate:checkReadiness"/);
+  assert.match(script, /async function checkReadinessRequest\(message = \{\}, readinessToken\)/);
+  assert.match(script, /Array\.isArray\(message\.activeProviders\)/);
+  assert.match(script, /preflightResults: results/);
+  assert.match(script, /sendProviderMessage\(effectiveTabId, \{[\s\S]*phase: "readiness"[\s\S]*\}, "aiDebate:checkReadiness"\)/);
+  for (const code of [
+    "READY",
+    "TAB_NOT_FOUND",
+    "WRONG_URL",
+    "LOGIN_REQUIRED",
+    "INPUT_NOT_FOUND",
+    "SEND_UNAVAILABLE",
+    "GENERATING",
+    "PROVIDER_ERROR",
+    "CONTENT_SCRIPT_UNAVAILABLE",
+    "TIMEOUT",
+  ]) {
+    assert.match(script, new RegExp(`"${code}"`));
+  }
+});
+
+test("provider messaging repairs stale content scripts through a version handshake", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.0-readiness\.4"/);
+  assert.match(script, /type: "aiDebate:getCapabilities"/);
+  assert.match(script, /capabilities\?\.contentScriptVersion !== PROVIDER_CONTENT_SCRIPT_VERSION/);
+  assert.match(script, /await ensureProviderContentScript\(tabId\)/);
+  assert.match(script, /CONTENT_SCRIPT_VERSION_MISMATCH/);
+});
+
+test("debate warms and checks provider tabs sequentially before creating a formal engine run", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const preflight = script.slice(script.indexOf("async function preflightProviderTabs"), script.indexOf("async function checkProviderTabReadiness"));
+  const sequential = script.slice(script.indexOf("async function checkProviderTabsSequentially"), script.indexOf("async function checkProviderTabReadiness"));
+  const questionStart = script.slice(script.indexOf("async function startQuestionDebate"), script.indexOf("async function startSummaryDebate"));
+
+  assert.match(preflight, /checkProviderTabsSequentially\(uniqueProviderIds, hookedTabs, runToken\)/);
+  assert.match(sequential, /for \(const providerId of providerIds\)/);
+  assert.match(sequential, /await activateProviderTabForReadiness\(tab\)/);
+  assert.match(sequential, /results\.push\(await checkProviderTabReadiness\(tab\.id, providerId\)\)/);
+  assert.match(sequential, /finally \{[\s\S]*await restoreActiveTab\(originalTab\)/);
+  assert.doesNotMatch(sequential, /Promise\.all/);
+  assert.ok(questionStart.indexOf("await preflightProviderTabs") < questionStart.indexOf("new DebateEngine"));
+  assert.match(script, /const providerTabs = \{ \.\.\.\(options\.hookedTabs \|\| \{\}\), \.\.\.preflight\.providerTabs \};/);
+  assert.match(script, /openEnded: true,[\s\S]*interactiveMode: true,[\s\S]*debateRounds: 1/);
+  const startHandler = script.slice(script.indexOf('if (message.type === "aiDebate:start")'), script.indexOf('if (message.type === "aiDebate:checkReadiness")'));
+  assert.ok(startHandler.indexOf("await validateStartRequestBeforePreflight(message)") < startHandler.indexOf("await preflightStartRequest(message, reservationToken)"));
+  assert.match(script, /error\.code = "SUMMARY_PROVIDER_DISABLED"/);
+  assert.ok(startHandler.indexOf("await preflightStartRequest(message, reservationToken)") < startHandler.indexOf("runController.claim(reservationToken)"));
+  assert.match(startHandler, /reservationToken = runController\.reserve\(\)/);
+  assert.match(startHandler, /busy: true,[\s\S]*status: "running",[\s\S]*phase: "preflight-complete",[\s\S]*runController\.claim\(reservationToken\)/);
+  assert.match(startHandler, /runController\.claim\(reservationToken\)/);
+  assert.match(startHandler, /if \(!runToken\) \{[\s\S]*busy: false[\s\S]*preflightResults:/);
+});
+
+test("manual readiness uses the same foreground warm-up sequence", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const handler = script.slice(script.indexOf("async function checkReadinessRequest"), script.indexOf("async function checkReadinessForProvider"));
+
+  assert.match(handler, /checkProviderTabsSequentially\(\[\.\.\.new Set\(providerIds\)\], requestedTabs, readinessToken\)/);
+  assert.match(script, /chrome\.tabs\.update\(tab\.id, \{ active: true \}\)/);
+  assert.match(script, /activeTab\.active && activeTab\.status === "complete"/);
+  assert.match(script, /await delay\(200\)/);
+});
+
 test("free basic debate uses sequential provider jobs while pro workflows are gated", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
@@ -24,6 +93,17 @@ test("free basic debate uses sequential provider jobs while pro workflows are ga
   assert.match(script, /async function startTheaterDebate\([^)]*\) \{[\s\S]*?requireProFeature\("chatMode"\)/);
   assert.match(script, /requireProFeature\("observerChair"\)/);
   assert.match(script, /requireProFeature\("anonymousReview"\)/);
+});
+
+test("theater mode forces the interactive waiting path at the background boundary", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const theaterStart = script.slice(
+    script.indexOf("async function startTheaterDebate"),
+    script.indexOf("async function startInteractiveDebate"),
+  );
+
+  assert.match(theaterStart, /\.\.\.options,[\s\S]*mode: "theater",[\s\S]*interactiveMode: true/);
+  assert.match(script, /if \(options\.interactiveMode\) \{[\s\S]*status: "waiting_for_user"/);
 });
 
 test("free chat interactive mode waits after answers before the first critique", async () => {
@@ -177,6 +257,26 @@ test("nextRound validates phase, mode, and action before starting a run", async 
       nextRoundHandler.indexOf("runToken = runController.start()"),
   );
   assert.ok(nextRoundHandler.includes("if (!runToken) {"));
+  assert.ok(nextRoundHandler.includes("runRevision = lifecycleRevision"));
+  assert.ok(nextRoundHandler.includes("lifecycleRevision !== runRevision"));
+  assert.ok(
+    nextRoundHandler.indexOf("await publishState(runToken)") <
+      nextRoundHandler.lastIndexOf("runController.cancel()"),
+  );
+});
+
+test("stop remembers a preflight reservation before the control operation cancels it", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const stopHandler = script.slice(
+    script.indexOf('if (message.type === "aiDebate:stop")'),
+    script.indexOf("return false;", script.indexOf('if (message.type === "aiDebate:stop")')),
+  );
+
+  assert.ok(
+    stopHandler.indexOf("const hadActiveOperation = runtimeState.busy || runController.isReserved()") <
+      stopHandler.indexOf('beginControlOperation("stop")'),
+  );
+  assert.match(stopHandler, /runtimeState\.busy \|\| hadActiveOperation/);
 });
 
 test("runtime retention and entitlement fallback are explicit", async () => {
@@ -239,17 +339,213 @@ test("Reset clears the local author entitlement and publishes Free immediately",
   assert.equal(storageData["aiDebate.currentState"].entitlements.plan, "free");
   assert.equal(sentMessages.at(-1).state.entitlements.plan, "free");
 });
+
+test("parallel starts are serialized before validation and preflight", async () => {
+  const storageData = { "aiDebate.currentState": undefined };
+  let onMessage;
+  const chrome = {
+    runtime: {
+      onInstalled: { addListener() {} },
+      onMessage: { addListener(listener) { onMessage = listener; } },
+      sendMessage() { return Promise.resolve(); },
+    },
+    storage: {
+      local: {
+        async get(key) { return { [key]: storageData[key] }; },
+        async set(values) { Object.assign(storageData, values); },
+        async remove(key) { delete storageData[key]; },
+      },
+    },
+  };
+  globalThis.chrome = chrome;
+  await import("../src/background/service-worker.js?parallel-start-regression");
+
+  const responses = [];
+  const first = new Promise((resolve) => {
+    responses.push(resolve);
+    assert.equal(onMessage({ type: "aiDebate:start", mode: "basic", question: "" }, {}, resolve), true);
+  });
+  const second = new Promise((resolve) => {
+    responses.push(resolve);
+    assert.equal(onMessage({ type: "aiDebate:start", mode: "basic", question: "第二個" }, {}, resolve), true);
+  });
+
+  const secondResponse = await second;
+  const firstResponse = await first;
+  assert.equal(secondResponse.code, "BUSY");
+  assert.equal(firstResponse.ok, false);
+  assert.equal(storageData["aiDebate.currentState"].busy, false);
+});
+
+test("manual readiness never clears an active run state", async () => {
+  const stored = {
+    "aiDebate.currentState": {
+      busy: false,
+      status: "idle",
+      phase: "idle",
+      mode: "idle",
+      errors: [],
+      providerTabs: {},
+      preflightResults: [],
+      transcript: null,
+      savedAt: Date.now(),
+    },
+  };
+  let onMessage;
+  const chrome = {
+    runtime: {
+      onInstalled: { addListener() {} },
+      onMessage: { addListener(listener) { onMessage = listener; } },
+      sendMessage() { return Promise.resolve(); },
+    },
+    storage: {
+      local: {
+        async get(key) { return { [key]: stored[key] }; },
+        async set(values) { Object.assign(stored, values); },
+        async remove(key) { delete stored[key]; },
+      },
+    },
+  };
+  globalThis.chrome = chrome;
+  await import("../src/background/service-worker.js?readiness-busy-regression");
+
+  const readiness = new Promise((resolve) => {
+    assert.equal(onMessage({ type: "aiDebate:checkReadiness", provider: "grok" }, {}, resolve), true);
+  });
+  const start = new Promise((resolve) => {
+    assert.equal(onMessage({ type: "aiDebate:start", mode: "basic", question: "" }, {}, resolve), true);
+  });
+
+  const response = await readiness;
+  const startResponse = await start;
+  assert.equal(response.ok, false);
+  assert.equal(startResponse.ok, false);
+  assert.equal(startResponse.code, "BUSY");
+  assert.equal(stored["aiDebate.currentState"].busy, false);
+});
+
+test("reset survives storage quota failure and notifies only provider tabs", async () => {
+  const stored = {
+    "aiDebate.currentState": {
+      busy: false,
+      status: "idle",
+      phase: "idle",
+      mode: "idle",
+      errors: [],
+      providerTabs: { grok: 1 },
+      savedAt: Date.now(),
+    },
+    "aiDebate.entitlementPlan": "pro",
+  };
+  const sent = [];
+  let onMessage;
+  const chrome = {
+    runtime: {
+      onInstalled: { addListener() {} },
+      onMessage: { addListener(listener) { onMessage = listener; } },
+      sendMessage() { return Promise.resolve(); },
+    },
+    storage: {
+      local: {
+        async get(key) { return { [key]: stored[key] }; },
+        async set() { const error = new Error("QUOTA_BYTES"); error.code = "QUOTA_BYTES"; throw error; },
+        async remove(key) { delete stored[key]; },
+      },
+    },
+    tabs: {
+      async get(tabId) { return { id: tabId, status: "loading", url: "https://grok.com/" }; },
+      async query() {
+        return [
+          { id: 1, status: "loading", url: "https://grok.com/" },
+          { id: 2, status: "complete", url: "https://example.com/" },
+        ];
+      },
+      async sendMessage(tabId, message) {
+        sent.push({ tabId, message });
+        return { ok: true };
+      },
+    },
+  };
+  globalThis.chrome = chrome;
+  await import("../src/background/service-worker.js?quota-abort-regression");
+
+  const response = await new Promise((resolve) => {
+    assert.equal(onMessage({ type: "aiDebate:reset" }, {}, resolve), true);
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.state.entitlements.plan, "free");
+  assert.deepEqual(sent, [{ tabId: 1, message: { type: "aiDebate:abortAutomation" } }]);
+});
+
+test("readiness falls back to a fresh provider tab when the requested tab is stale", async () => {
+  const stored = { "aiDebate.currentState": undefined };
+  let onMessage;
+  let created = 0;
+  const chrome = {
+    runtime: {
+      onInstalled: { addListener() {} },
+      onMessage: { addListener(listener) { onMessage = listener; } },
+      sendMessage() { return Promise.resolve(); },
+    },
+    storage: {
+      local: {
+        async get(key) { return { [key]: stored[key] }; },
+        async set(values) { Object.assign(stored, values); },
+        async remove(key) { delete stored[key]; },
+      },
+    },
+    tabs: {
+      async get(tabId) {
+        if (tabId === 404) throw new Error("No such tab");
+        return { id: tabId, status: "complete", url: "https://grok.com/" };
+      },
+      async create() { created += 1; return { id: 405 }; },
+      async update() {},
+      async sendMessage(_tabId, message) {
+        if (message.type === "aiDebate:getCapabilities") {
+          return { contentScriptVersion: "0.5.0-readiness.4" };
+        }
+        return { ready: true, status: "ready", checks: {} };
+      },
+    },
+    scripting: { async executeScript() {} },
+  };
+  globalThis.chrome = chrome;
+  await import("../src/background/service-worker.js?stale-readiness-regression");
+
+  const response = await new Promise((resolve) => {
+    assert.equal(onMessage({ type: "aiDebate:checkReadiness", provider: "grok", tabId: 404 }, {}, resolve), true);
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.code, "READY");
+  assert.equal(response.tabId, 405);
+  assert.equal(created, 1);
+});
 test("unbound providers always open a fresh tab while explicit bindings are reused", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
+  const helperStart = script.indexOf("async function getOrCreateProviderTab");
   const helper = script.slice(
-    script.indexOf("async function getOrCreateProviderTab"),
-    script.indexOf("async function activateProviderTab"),
+    helperStart,
+    script.indexOf("async function activateProviderTab(", helperStart),
   );
 
-  assert.ok(helper.includes("chrome.tabs.get(boundTabId)"));
+  assert.match(helper, /candidateTabIds\.push\(options\.preferredTabId\)[\s\S]*candidateTabIds\.push\(boundTabId\)[\s\S]*for \(const candidateTabId of candidateTabIds\)/);
   assert.ok(helper.includes("chrome.tabs.create({ url: provider.startUrl, active: true })"));
   assert.equal(helper.includes("chrome.tabs.query"), false);
-  assert.ok(helper.indexOf("chrome.tabs.get(boundTabId)") < helper.indexOf("chrome.tabs.create"));
+  assert.ok(helper.indexOf("for (const candidateTabId of candidateTabIds)") < helper.indexOf("chrome.tabs.create"));
+});
+
+test("provider abort and cleanup messages cannot block control operations forever", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const notifyStart = script.indexOf("async function notifyProviderAbortOperations");
+  const notify = script.slice(notifyStart, script.indexOf("async function finishWithError", notifyStart));
+
+  assert.match(script, /const PROVIDER_CONTROL_TIMEOUT_MS = 3000/);
+  assert.equal((notify.match(/withProviderControlTimeout\(/g) || []).length, 3);
+  assert.match(notify, /Promise\.race\(\[promise, timeout\]\)/);
+  assert.match(notify, /clearTimeout\(timeoutId\)/);
 });
 
 test("overload recovery failures are converted to provider results", async () => {

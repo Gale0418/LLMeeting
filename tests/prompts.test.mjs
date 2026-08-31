@@ -187,6 +187,32 @@ test("final summary prompt includes original question, first answers, and critiq
   assert.match(prompt, /辯論資料引用區結束/);
 });
 
+test("final summary prompt can include only the selected last round and its user message", () => {
+  const prompt = buildFinalSummaryPrompt({
+    originalQuestion: "原問題",
+    answers: { chatgpt: "首輪答案", gemini: "另一個首輪答案" },
+    critiqueRounds: [{
+      chatgpt: "舊互評",
+      gemini: "舊互評 2",
+    }, {
+      chatgpt: "最後互評",
+      gemini: "最後互評 2",
+      USER: "最後使用者補充",
+    }],
+    activeProviders: ["chatgpt", "gemini"],
+    lastRoundOnly: true,
+    critiqueRoundNumber: 2,
+  });
+
+  assert.match(prompt, /原問題:\n原問題/);
+  assert.match(prompt, /第三輪互評:/);
+  assert.match(prompt, /最後互評/);
+  assert.match(prompt, /最後使用者補充/);
+  assert.doesNotMatch(prompt, /第一輪回答:/);
+  assert.doesNotMatch(prompt, /首輪答案/);
+  assert.doesNotMatch(prompt, /舊互評/);
+});
+
 test("conversation summary prompt asks the current AI to preserve context for other providers", () => {
   const prompt = buildConversationSummaryPrompt();
 

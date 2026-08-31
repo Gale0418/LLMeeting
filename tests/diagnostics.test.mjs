@@ -7,6 +7,7 @@ import {
   updateProviderDiagnostic,
 } from "../src/background/diagnostics.js";
 import { getPersonaPrompt } from "../src/shared/prompts.js";
+import { isCritiquePhase, isInteractiveDebateMode, shouldShowChatControls } from "../src/sidepanel/modeRules.js";
 
 test("provider diagnostics starts idle and can record tab details without mutating prior state", () => {
   const original = createProviderDiagnostics(["chatgpt"]);
@@ -67,9 +68,9 @@ test("side panel exposes one main debate button and advanced mutually exclusive 
   assert.match(html, /max="5"/);
   assert.match(html, /data-pro-feature="fastDebate"/);
   assert.match(html, /data-pro-feature="summaryDebate"/);
-  assert.match(html, /value="claude" checked> Claude/);
-  assert.match(html, /value="meta"> Meta AI/);
-  assert.doesNotMatch(html, /value="meta" checked/);
+  assert.match(html, /data-provider-toggle="claude" aria-pressed="true"/);
+  assert.match(html, /data-provider-toggle="meta" aria-pressed="false"/);
+  assert.equal(html.match(/data-provider-toggle=/g)?.length, 5);
   assert.match(html, /未指定時，每次會議都會開啟新分頁/);
   assert.equal(html.match(/\[預設\] 開新分頁/g)?.length, 5);
   assert.doesNotMatch(html, /尋找或開新分頁/);
@@ -83,7 +84,7 @@ test("side panel exposes one main debate button and advanced mutually exclusive 
   assert.match(app, /theater: "chatMode"/);
   assert.match(app, /renderDebateModeState/);
   assert.match(app, /renderEntitlementState/);
-  assert.match(app, /const debateRounds = selectedDebateRounds\(\);/);
+  assert.match(app, /const debateRounds = mode === "chat" \? undefined : selectedDebateRounds\(\);/);
   assert.match(app, /mode === "chat"[\s\S]*?啟動自由群聊中/);
   assert.match(app, /mode === "theater"[\s\S]*?啟動劇場大亂鬥中/);
   assert.match(app, /basicDebateModeOption\.style\.display/);
@@ -111,7 +112,7 @@ test("side panel exposes Pro summary strategy modes and random chair choice", as
   assert.match(html, /data-pro-feature="observerChair"/);
   assert.match(html, /data-pro-feature="anonymousReview"/);
   assert.match(html, /<option value="random">隨機主席<\/option>/);
-  assert.match(html, /class="version-badge">v0\.4\.7<\/span>/);
+  assert.match(html, /class="version-badge">v0\.5\.0<\/span>/);
   assert.match(app, /const summaryStrategyEls = Array\.from\(document\.querySelectorAll\("\.summary-strategy-select"\)\)/);
   assert.match(app, /selectedSummaryStrategy/);
   assert.match(app, /featureForSummaryStrategy/);
@@ -128,13 +129,77 @@ test("side panel exposes local retention notice and clear-data control", async (
   assert.match(app, /aiDebate:clearLocalData/);
 });
 
-test("side panel previews checked providers while idle", async () => {
+test("side panel persists physical provider activation buttons while idle", async () => {
   const app = await readFile("src/sidepanel/app.js", "utf8");
+  const html = await readFile("src/sidepanel/index.html", "utf8");
 
-  assert.match(app, /const providerSelectEls = Array\.from\(document\.querySelectorAll\("\.provider-select"\)\)/);
-  assert.match(app, /providerSelectEls\.forEach\(\(el\) => \{\s+el\.addEventListener\("change", renderProviderSelectionPreview\);/);
+  assert.match(app, /const PROVIDER_SELECTION_STORAGE_KEY = "aiDebate\.providerSelection\.v1"/);
+  assert.match(app, /providerToggleEls\.forEach\(\(el\) => el\.addEventListener\("click", \(\) => toggleProvider\(el\)\)\)/);
   assert.match(app, /function renderProviderSelectionPreview\(\)/);
   assert.match(app, /activeProviders: selectedProviderIds\(\)/);
+  assert.doesNotMatch(html, /class="provider-select"/);
+});
+
+test("side panel keeps the interactive console visible for interactive modes", async () => {
+  const app = await readFile("src/sidepanel/app.js", "utf8");
+
+  assert.equal(isInteractiveDebateMode("basic"), false);
+  assert.equal(isInteractiveDebateMode("fast"), false);
+  assert.equal(isInteractiveDebateMode("chat"), true);
+  assert.equal(isInteractiveDebateMode("theater"), true);
+  assert.equal(isInteractiveDebateMode("summary"), true);
+  assert.equal(shouldShowChatControls("theater", null), true);
+  assert.equal(shouldShowChatControls("basic", { mode: "theater", phase: "waiting_for_user" }), true);
+  assert.equal(shouldShowChatControls("basic", { mode: "theater", phase: "done" }), false);
+  assert.match(app, /chatControls\.style\.display = shouldShowChatControls\(mode, latestState\)/);
+  assert.match(app, /chatControls\.open = true/);
+});
+
+test("side panel exposes accessible live status and progress semantics", async () => {
+  const html = await readFile("src/sidepanel/index.html", "utf8");
+  const app = await readFile("src/sidepanel/app.js", "utf8");
+
+  assert.match(html, /id="statusText" role="status" aria-live="polite"/);
+  assert.match(html, /id="chatTranscript" class="chat-transcript" role="log" aria-live="polite"/);
+  assert.match(html, /id="progressContainer" class="reactor-route" role="progressbar"/);
+  assert.equal(html.match(/aria-describedby="(?:chatgpt|gemini|grok|claude|meta)State"/g)?.length, 5);
+  assert.match(html, /id="checkReadinessButton"[^>]+aria-describedby="readinessHint"/);
+  assert.match(app, /progressContainer\?\.setAttribute\("aria-valuenow"/);
+  assert.match(app, /replaceChatTranscriptHTML\(html\)/);
+});
+
+test("critique phase rendering includes numbered critique phases", () => {
+  assert.equal(isCritiquePhase("critique"), true);
+  assert.equal(isCritiquePhase("critique-2"), true);
+  assert.equal(isCritiquePhase("critique-5"), true);
+  assert.equal(isCritiquePhase("summary"), false);
+});
+
+test("side panel locks advanced controls while a run is busy and sanitizes provider metadata", async () => {
+  const app = await readFile("src/sidepanel/app.js", "utf8");
+
+  assert.match(app, /advancedControlEls\.forEach\(\(control\) => \{[\s\S]*control\.disabled = disabled/);
+  assert.match(app, /safeProviderClass\(providerId\)/);
+  assert.match(app, /function safeProviderClass\(id\)/);
+  assert.doesNotMatch(app, /summaryProviderSelect\.querySelector\(`option\[value=\"\$\{state\.summaryProvider\}/);
+  assert.doesNotMatch(app, /document\.querySelector\(`input\.summary-strategy-select\[value=\"\$\{state\.summaryStrategy\}/);
+});
+
+test("provider controls stay visible in one horizontal row without a disclosure", async () => {
+  const html = await readFile("src/sidepanel/index.html", "utf8");
+  const css = await readFile("src/sidepanel/styles.css", "utf8");
+  const providerDeck = html.slice(
+    html.indexOf('<section id="providerDeck"'),
+    html.indexOf("<!-- 進階自訂面板 -->"),
+  );
+
+  assert.match(html, /<section id="providerDeck" class="provider-deck"/);
+  assert.doesNotMatch(html, /<details id="providerDeck"/);
+  assert.match(css, /\.provider-console \{[\s\S]*grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/);
+  assert.match(css, /\.provider-row \{[\s\S]*aspect-ratio: 1;/);
+  assert.match(css, /\.provider-toggle \{[\s\S]*min-height: 100%;/);
+  assert.doesNotMatch(providerDeck, /決策架構|靈感整合|壓力測試|風險編輯|社群視角/);
+  assert.doesNotMatch(providerDeck, /BETA/);
 });
 
 test("theater mode exposes and submits a default persona for every provider", async () => {

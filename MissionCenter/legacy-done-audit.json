@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0",
+  "recordedAt": "2026-08-21",
+  "reason": "Imported before smoke evidence enforcement; no pass was fabricated.",
+  "taskIds": [
+    "LLM-T1",
+    "LLM-T2",
+    "LLM-T3",
+    "LLM-T4",
+    "LLM-T7",
+    "LLM-T9",
+    "LLM-T10",
+    "LLM-E2"
+  ]
+}

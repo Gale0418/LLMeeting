@@ -102,7 +102,7 @@ export function attachDevUnlock({
         if (dialogs.confirm?.(message)) {
           try {
             if (tabs?.create) {
-              tabs.create({ url: AUTHOR_YOUTUBE_URL });
+              await tabs.create({ url: AUTHOR_YOUTUBE_URL });
             } else {
               openPage?.(AUTHOR_YOUTUBE_URL, "_blank");
             }

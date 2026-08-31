@@ -1,26 +1,16 @@
-# 快照
+# 執行檢查點
 
-- 建立時間：2026-06-19
-- 專案：LLMeeting Chrome 插件 MVP
-- 週期：2026-06-18 大型功能回歸修復
-- 目標：完成 0.4.1 候選包、Gemini 可靠送出與 Free badge 彩蛋的最終驗證。
-- 進度：[#########-] 97%
-- 進行中任務：
-  - LLM-T19：Gemini Chrome 實機確認。
-- 阻塞任務：
-  - 上架前仍需擷取 Chrome Web Store 實際截圖與準備公開隱私政策網址。
-- 最近決策：
-  - 2026-06-20 起商店候選版號升為 0.4.1。
-  - MV3 恢復只重建等待互動狀態，執行中狀態改為明確中斷。
-  - 非同步 provider 工作使用 generation token 阻止 stale write。
-  - Gemini 未確認按鈕送出時只補一次 Enter。
-  - 快速模式採 carousel scheduler。
-  - 總結辯論以目前 active provider 作為來源與最終裁判。
-  - 2026-06-11 起四家 AI 預設全部啟用。
-  - 2026-06-14 起快速鬥技場與總結辯論改收進進階設定的互斥模式選項。
-  - 2026-06-14 起進階設定支援 1 到 5 輪交叉評析。
-- 開放問題：
-  - Gemini 最新 DOM 在使用者登入態能否由三種證據之一穩定確認送出。
-  - 總結辯論對超長對話是否需要截斷或壓縮。
-  - 3 到 5 輪互評在四家 AI 實機環境的等待時間是否可接受。
-
+- State: active
+- 建立時間: 2026-08-25T14:10:35
+- 進行中任務: LLM-T36 v0.5.0 驗證、實機與封裝
+- 狀態: Review
+- 版本: bfeedd8d847046b48ee6b403288bb360bbde3169
+- 指紋: e1afded433567c4f3c3ecd634384dc5e1d9483faabcfdb0617530d6f4d208b45
+- 依賴: LLM-T35（Done）
+- 驗證: 228/228、自動語法與 diff、320／480px／reduced-motion 視覺 QA、登入態 DOM matrix、CodeRabbit 終局 0 findings 與 0.5.0 封裝已通過；實際送出 smoke 待使用者於動作當下確認
+- Retry gate: retry
+- Recent attempts JSON: [{"at":"2026-09-01","result":"automated-pass","evidence":"228/228; node --check; git diff --check; dist/llmeeting-0.5.0.zip 2277921 bytes; SHA256 4D7AE817E144EFFD24A7BD198AB4D2931373451CC1DC2A13B0D1B29C50C58F1F"},{"at":"2026-09-01","result":"external-review-pass","evidence":"CodeRabbit 3 reviews / 42 files; 4 verified findings fixed; final 0 findings"}]
+- Diagnosis evidence JSON: [{"code":"LOGIN_SEND_SMOKE_PENDING","message":"五家登入態 DOM composer matrix 已通過；實際送出內容仍需使用者於動作當下確認"}]
+- 近期嘗試:
+  - 完成 v0.5.0 自動回歸、視覺 QA、reduced-motion 與候選封裝。
+  - CodeRabbit 依每小時三次限額完成三輪：前兩輪共修正 4 項真實問題，第三輪 0 findings。

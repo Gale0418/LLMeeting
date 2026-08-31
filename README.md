@@ -2,6 +2,8 @@
 
 (ﾉ>ω<)ﾉ 想看看不同立場的 AI 怎麼爭論嗎？LLMeeting 讓你在瀏覽網頁時，隨時發起一場 AI 神仙打架！
 
+目前版本：**0.5.0**（發布準備中；新功能以驗證結果為準）
+
 🌟 **[👉 快點我！前往 Chrome 線上應用程式商店安裝 LLMeeting 吧！ヾ(•ω•`)o](https://chromewebstore.google.com/detail/llmeeting/cjombmcmgifhanenolhaeepbpnlchjdp)**
 
 ---

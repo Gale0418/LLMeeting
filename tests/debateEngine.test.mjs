@@ -1,7 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-
 import { DebateEngine, normalizeDebateRounds } from "../src/background/debateEngine.js";
+
+test("DebateEngine.restore throws on invalid corrupted snapshot", () => {
+  assert.throws(
+    () => DebateEngine.restore(null),
+    (err) => err instanceof Error && err.message.includes("Invalid snapshot")
+  );
+  assert.throws(
+    () => DebateEngine.restore("corrupted_string"),
+    (err) => err instanceof Error && err.message.includes("Invalid snapshot")
+  );
+});
 
 function withMockedRandom(valueOrValues, callback) {
   const originalRandom = Math.random;
@@ -133,6 +143,23 @@ test("engine restores an interactive session and builds the next round", () => {
   assert.equal(restored.snapshot().critiqueRounds[1].USER, "使用者補充");
 });
 
+test("engine restore rejects malformed provider and critique schemas", () => {
+  const valid = new DebateEngine(["chatgpt", "gemini"]).snapshot();
+
+  assert.throws(
+    () => DebateEngine.restore({ ...valid, activeProviders: ["unknown-provider", "gemini"] }),
+    /Invalid debate snapshot/,
+  );
+  assert.throws(
+    () => DebateEngine.restore({ ...valid, critiqueRounds: [] }),
+    /Invalid debate snapshot/,
+  );
+  assert.throws(
+    () => DebateEngine.restore({ ...valid, answers: [] }),
+    /Invalid debate snapshot/,
+  );
+});
+
 test("engine accepts the first user interjection in the initial critique round", () => {
   const engine = new DebateEngine(["chatgpt", "gemini"]);
   const firstRoundJobs = engine.start("第一輪即可插話");
@@ -144,6 +171,41 @@ test("engine accepts the first user interjection in the initial critique round",
   assert.equal(round, 1);
   assert.equal(engine.snapshot().critiqueRounds[0].USER, "第一輪使用者補充");
   assert.deepEqual(jobs.map((job) => job.round), [1, 1]);
+});
+
+test("open-ended chat can summarize directly after the first answers", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 5, { openEnded: true });
+  engine.start("首輪後總結");
+  engine.recordAnswer("chatgpt", "答案 A");
+  engine.recordAnswer("gemini", "答案 B");
+
+  const job = engine.buildFinalJob();
+
+  assert.equal(engine.snapshot().openEnded, true);
+  assert.match(job.prompt, /第一輪回答:/);
+  assert.match(job.prompt, /答案 A/);
+  assert.match(job.prompt, /答案 B/);
+});
+
+test("open-ended chat summarizes only the last complete critique round", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 1, { openEnded: true });
+  engine.start("只取最後有效輪");
+  engine.recordAnswer("chatgpt", "首輪 A");
+  engine.recordAnswer("gemini", "首輪 B");
+
+  const firstRound = engine.addChatRound("使用者第一句");
+  engine.recordCritique("chatgpt", "第一輪互評 A", firstRound);
+  engine.recordCritique("gemini", "第一輪互評 B", firstRound);
+  const secondRound = engine.addChatRound("使用者未完成");
+  engine.recordCritique("chatgpt", "不完整互評 A", secondRound);
+
+  const job = engine.buildFinalJob();
+
+  assert.match(job.prompt, /使用者第一句/);
+  assert.match(job.prompt, /第一輪互評 A/);
+  assert.doesNotMatch(job.prompt, /首輪 A/);
+  assert.doesNotMatch(job.prompt, /不完整互評 A/);
+  assert.doesNotMatch(job.prompt, /使用者未完成/);
 });
 
 test("interactive rounds can continue beyond the configured five-round limit", () => {

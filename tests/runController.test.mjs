@@ -24,3 +24,22 @@ test("cancelling invalidates the active token", () => {
     (error) => isRunCancelledError(error) && error.code === "RUN_CANCELLED",
   );
 });
+
+test("a reservation serializes starts before preflight completes", () => {
+  const controller = new RunController();
+  const first = controller.reserve();
+
+  assert.equal(typeof first, "number");
+  assert.equal(controller.reserve(), null);
+  assert.equal(controller.isReserved(), true);
+
+  controller.cancel();
+  assert.equal(controller.isReserved(), false);
+  assert.equal(controller.isCurrent(first), false);
+  assert.throws(() => controller.claim(first), (error) => error.code === "RUN_CANCELLED");
+
+  const second = controller.reserve();
+  assert.equal(controller.claim(second), second);
+  assert.equal(controller.isReserved(), false);
+  assert.equal(controller.isCurrent(second), true);
+});

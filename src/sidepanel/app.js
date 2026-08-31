@@ -4,7 +4,10 @@ import {
   featureLabel,
   proRequiredMessage,
 } from "../shared/entitlements.js";
-import { PROVIDERS } from "../shared/providers.js";
+import { DEFAULT_ACTIVE_PROVIDER_IDS, PROVIDERS } from "../shared/providers.js";
+import { isCritiquePhase, shouldShowChatControls } from "./modeRules.js";
+
+const PROVIDER_SELECTION_STORAGE_KEY = "aiDebate.providerSelection.v1";
 
 const form = document.querySelector("#debateForm");
 const questionInput = document.querySelector("#questionInput");
@@ -18,11 +21,17 @@ const transcriptOutput = document.querySelector("#transcriptOutput");
 const diagnosticsOutput = document.querySelector("#diagnosticsOutput");
 const chatTranscript = document.querySelector("#chatTranscript");
 const progressBar = document.querySelector("#progressBar");
+const progressContainer = document.querySelector("#progressContainer");
+const progressNodes = Array.from(document.querySelectorAll("#progressContainer .route-node"));
+const providerSummaryText = document.querySelector("#providerSummaryText");
+const readinessHint = document.querySelector("#readinessHint");
+const checkReadinessButton = document.querySelector("#checkReadinessButton");
 
 const summaryProviderSelect = document.querySelector("#summaryProviderSelect");
 const debateRoundsInput = document.querySelector("#debateRoundsInput");
+const debateRoundsSetting = document.querySelector("#debateRoundsSetting");
 const interactionStyleSelect = document.querySelector("#interactionStyleSelect");
-const providerSelectEls = Array.from(document.querySelectorAll(".provider-select"));
+const providerToggleEls = Array.from(document.querySelectorAll("[data-provider-toggle]"));
 const debateModeEls = Array.from(document.querySelectorAll(".debate-mode-select"));
 const debateModeOptionEls = Array.from(document.querySelectorAll(".mode-option[data-pro-feature]"));
 const basicDebateModeOption = document.querySelector("#basicModeOption");
@@ -57,15 +66,21 @@ const providerStateEls = {
 let latestState = null;
 let currentEntitlements = entitlementsForPlan();
 const fallbackProviderIds = PROVIDERS.map((provider) => provider.id);
+let selectedProviderSet = new Set(DEFAULT_ACTIVE_PROVIDER_IDS);
+let latestReadiness = {};
+let providerSelectionWrite = Promise.resolve();
+let lastRenderedChatHtml = null;
+
+const advancedControlEls = Array.from(document.querySelectorAll(
+  ".settings-content input, .settings-content select, .settings-content textarea, #refreshHooksBtn",
+));
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   await startSelectedDebate();
 });
 
-providerSelectEls.forEach((el) => {
-  el.addEventListener("change", renderProviderSelectionPreview);
-});
+providerToggleEls.forEach((el) => el.addEventListener("click", () => toggleProvider(el)));
 
 debateModeEls.forEach((el) => {
   el.addEventListener("change", renderDebateModeState);
@@ -79,11 +94,99 @@ debateRoundsInput?.addEventListener("change", normalizeDebateRoundsInput);
 debateRoundsInput?.addEventListener("blur", normalizeDebateRoundsInput);
 
 refreshHooksBtn?.addEventListener("click", scanAndPopulateHookTabs);
+checkReadinessButton?.addEventListener("click", checkSelectedProviders);
 
-loadDevUnlock();
-renderDebateModeState();
-renderSummaryStrategyState();
-scanAndPopulateHookTabs();
+bootstrap();
+
+async function bootstrap() {
+  await loadProviderSelection();
+  renderProviderControls();
+  loadDevUnlock();
+  renderDebateModeState();
+  renderSummaryStrategyState();
+  await Promise.all([scanAndPopulateHookTabs(), loadState()]);
+}
+
+async function loadProviderSelection() {
+  try {
+    const stored = await chrome.storage.local.get(PROVIDER_SELECTION_STORAGE_KEY);
+    const raw = stored?.[PROVIDER_SELECTION_STORAGE_KEY];
+    if (Array.isArray(raw)) {
+      const validIds = raw.filter((id, index) => fallbackProviderIds.includes(id) && raw.indexOf(id) === index);
+      selectedProviderSet = new Set(raw.length > 0 && validIds.length === 0 ? DEFAULT_ACTIVE_PROVIDER_IDS : validIds);
+    }
+  } catch (_error) {
+    selectedProviderSet = new Set(DEFAULT_ACTIVE_PROVIDER_IDS);
+  }
+}
+
+async function persistProviderSelection() {
+  providerSelectionWrite = providerSelectionWrite
+    .catch(() => {})
+    .then(() => chrome.storage.local.set({ [PROVIDER_SELECTION_STORAGE_KEY]: selectedProviderIds() }))
+    .catch(() => {});
+  await providerSelectionWrite;
+}
+
+async function toggleProvider(button) {
+  if (latestState?.busy || button.disabled) return;
+  const providerId = button.dataset.providerToggle;
+  const row = button.closest(".provider-row");
+  if (selectedProviderSet.has(providerId)) {
+    selectedProviderSet.delete(providerId);
+  } else {
+    selectedProviderSet.add(providerId);
+    row?.classList.remove("just-activated");
+    requestAnimationFrame(() => row?.classList.add("just-activated"));
+    globalThis.setTimeout(() => row?.classList.remove("just-activated"), 760);
+  }
+  latestReadiness = {};
+  renderProviderControls();
+  renderProviderSelectionPreview();
+  await persistProviderSelection();
+}
+
+function renderProviderControls() {
+  for (const button of providerToggleEls) {
+    const providerId = button.dataset.providerToggle;
+    const enabled = selectedProviderSet.has(providerId);
+    button.setAttribute("aria-pressed", String(enabled));
+    const statusEl = providerStateEls[providerId];
+    if (statusEl?.id) button.setAttribute("aria-describedby", statusEl.id);
+    button.setAttribute("aria-label", `${PROVIDERS.find((item) => item.id === providerId)?.label || providerId}：${enabled ? "已啟用" : "未啟用"}`);
+    button.disabled = Boolean(latestState?.busy);
+    button.closest(".provider-row")?.classList.toggle("is-off", !enabled);
+  }
+  renderProviderSummary();
+}
+
+async function checkSelectedProviders() {
+  if (latestState?.busy) return;
+  const activeProviders = selectedProviderIds();
+  if (!activeProviders.length) {
+    renderMessage("請先啟用至少一家 AI 再檢查連線");
+    return;
+  }
+  checkReadinessButton.disabled = true;
+  readinessHint.textContent = "正在檢查必要分頁…";
+  const response = await chrome.runtime.sendMessage({
+    type: "aiDebate:checkReadiness",
+    mode: selectedDebateMode(),
+    activeProviders,
+    summaryProvider: summaryProviderSelect?.value,
+    summaryStrategy: selectedSummaryStrategy(),
+    hookedTabs: selectedHookedTabs(),
+  }).catch((error) => ({ ok: false, error: error.message }));
+  latestReadiness = indexReadinessResults(response?.results || response?.state?.preflightResults || []);
+  if (response?.state) latestState = response.state;
+  renderProviderStatuses(latestState || { activeProviders });
+  readinessHint.textContent = response?.ok ? "掃描完成" : (response?.error || "部分模型尚未就緒");
+  checkReadinessButton.disabled = false;
+}
+
+function indexReadinessResults(results) {
+  return Object.fromEntries((Array.isArray(results) ? results : []).filter((item) => item?.provider).map((item) => [item.provider, item]));
+}
 
 async function scanAndPopulateHookTabs() {
   for (const provider of PROVIDERS) {
@@ -159,7 +262,11 @@ async function startDebate(mode) {
 
   const summaryProvider = document.querySelector("#summaryProviderSelect").value;
   const skipSummary = document.querySelector("#skipSummaryCheckbox").checked;
-  const debateRounds = selectedDebateRounds();
+  if (mode !== "summary" && !skipSummary && summaryProvider !== "random" && !activeProviders.includes(summaryProvider)) {
+    renderMessage(`❌ 請先啟用要擔任總結的 ${providerLabel(summaryProvider)}。`);
+    return;
+  }
+  const debateRounds = mode === "chat" ? undefined : selectedDebateRounds();
   const interactionStyle = interactionStyleSelect?.value || "critique";
 
   const customPersonas = {};
@@ -171,19 +278,10 @@ async function startDebate(mode) {
     customPersonas.meta = document.querySelector("#personaMeta")?.value || "";
   }
 
-  const tabHookingSettings = document.getElementById("tabHookingSettings");
-  const hookedTabs = {};
-  if (tabHookingSettings && tabHookingSettings.open) {
-    for (const providerId of Object.keys(hookSelects)) {
-      const selectEl = hookSelects[providerId];
-      if (selectEl && selectEl.value) {
-        hookedTabs[providerId] = parseInt(selectEl.value, 10);
-      }
-    }
-  }
+  const hookedTabs = selectedHookedTabs();
 
   const chatControls = document.getElementById("chatControls");
-  const interactiveMode = chatControls && chatControls.style.display !== "none" ? chatControls.open : false;
+  const interactiveMode = mode === "chat" || Boolean(chatControls && chatControls.style.display !== "none" && chatControls.open);
 
   setActionButtonsDisabled(true);
   renderMessage(startingMessage(mode));
@@ -196,7 +294,7 @@ async function startDebate(mode) {
     summaryProvider,
     summaryStrategy: selectedSummaryStrategy(),
     skipSummary,
-    debateRounds,
+    ...(debateRounds === undefined ? {} : { debateRounds }),
     customPersonas,
     hookedTabs,
     interactionStyle,
@@ -211,7 +309,19 @@ async function startDebate(mode) {
     }
     setActionButtonsDisabled(false);
   }
+  latestReadiness = indexReadinessResults(response?.results || response?.state?.preflightResults || []);
   renderState(response?.state);
+}
+
+function selectedHookedTabs() {
+  const tabHookingSettings = document.getElementById("tabHookingSettings");
+  const hookedTabs = {};
+  if (!tabHookingSettings?.open) return hookedTabs;
+  for (const providerId of Object.keys(hookSelects)) {
+    const tabId = Number.parseInt(hookSelects[providerId]?.value || "", 10);
+    if (Number.isInteger(tabId)) hookedTabs[providerId] = tabId;
+  }
+  return hookedTabs;
 }
 
 resetButton.addEventListener("click", async () => {
@@ -286,8 +396,6 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 });
 
-loadState();
-
 async function loadState() {
   const response = await chrome.runtime.sendMessage({ type: "aiDebate:getState" });
   renderState(response?.state);
@@ -311,30 +419,19 @@ function renderState(state) {
   currentEntitlements = state.entitlements || entitlementsForPlan();
 
   if (stopDebateBtn) {
+    stopDebateBtn.hidden = !state.busy;
     if (state.busy) {
-      stopDebateBtn.style.display = "block";
       stopDebateBtn.disabled = false;
       stopDebateBtn.textContent = "緊急暫停 🛑";
-    } else {
-      stopDebateBtn.style.display = "none";
     }
   }
 
-  setActionButtonsDisabled(Boolean(state.busy));
-  renderEntitlementState();
-  statusText.textContent = state.message || state.status || "等待開始";
-
   if (!state.busy) {
-    if (state.activeProviders) {
-      providerSelectEls.forEach((el) => {
-        el.checked = state.activeProviders.includes(el.value) || state.sourceProvider === el.value;
-      });
-    }
-    if (state.summaryProvider && summaryProviderSelect.querySelector(`option[value="${state.summaryProvider}"]`)) {
+    if (state.summaryProvider && Array.from(summaryProviderSelect?.options || []).some((option) => option.value === state.summaryProvider)) {
       summaryProviderSelect.value = state.summaryProvider;
     }
     if (state.summaryStrategy) {
-      const summaryStrategyInput = document.querySelector(`input.summary-strategy-select[value="${state.summaryStrategy}"]`);
+      const summaryStrategyInput = summaryStrategyEls.find((input) => input.value === state.summaryStrategy);
       if (summaryStrategyInput) {
         summaryStrategyInput.checked = true;
       }
@@ -346,12 +443,15 @@ function renderState(state) {
       skipSummaryCheckbox.checked = state.skipSummary;
     }
     if (state.mode) {
-      const modeInput = document.querySelector(`input.debate-mode-select[value="${state.mode}"]`);
+      const modeInput = debateModeEls.find((input) => input.value === state.mode);
       if (modeInput) modeInput.checked = true;
     }
   }
 
-  const transcript = state.transcript;
+  setActionButtonsDisabled(Boolean(state.busy));
+  renderEntitlementState();
+  statusText.textContent = state.message || state.status || "等待開始";
+
   renderProviderStatuses(state);
 
   // 更新進度條
@@ -394,9 +494,9 @@ function renderProviderSelectionPreview() {
 }
 
 function selectedProviderIds() {
-  return providerSelectEls
-    .filter((el) => el.checked)
-    .map((el) => el.value);
+  return PROVIDERS
+    .map((provider) => provider.id)
+    .filter((providerId) => selectedProviderSet.has(providerId));
 }
 
 function selectedDebateMode() {
@@ -448,30 +548,79 @@ function renderProviderStatuses(state) {
   const transcript = state.transcript;
   const answers = transcript?.answers || {};
   const critiques = currentCritiqueMap(state);
+  if (Array.isArray(state.preflightResults)) {
+    latestReadiness = indexReadinessResults(state.preflightResults);
+  }
+  const readinessProviders = Object.keys(latestReadiness).filter((providerId) =>
+    selectedProviderSet.has(providerId) || providerId === state.sourceProvider || providerId === state.summaryProvider,
+  );
   const activeSet = new Set([
-    ...(state.activeProviders || fallbackProviderIds),
+    ...(state.busy ? (state.activeProviders || selectedProviderIds()) : selectedProviderIds()),
     state.sourceProvider,
-    state.summaryProvider,
+    ...readinessProviders,
   ].filter(Boolean));
 
   for (const provider of Object.keys(providerStateEls)) {
+    const row = providerStateEls[provider].closest(".provider-row");
+    const readiness = latestReadiness[provider];
+    row?.classList.toggle("is-off", !activeSet.has(provider));
+    row?.classList.toggle("has-error", Boolean(activeSet.has(provider) && readiness && !readiness.ready));
+
     if (!activeSet.has(provider)) {
       providerStateEls[provider].textContent = "未啟用";
-      providerStateEls[provider].className = "state-inactive";
+      providerStateEls[provider].className = "provider-state state-inactive";
       continue;
     }
 
     const label = providerLabelForPhase(provider, state, answers, critiques);
-    providerStateEls[provider].textContent = label;
+    const idleLabel = !state.busy && readiness
+      ? readiness.ready ? "可送出" : readinessFailureLabel(readiness)
+      : !state.busy ? "待檢查" : label;
+    providerStateEls[provider].textContent = idleLabel;
 
-    if (label === "回答中" || label === "互評中" || label === "總結中") {
-      providerStateEls[provider].className = "state-active pulsing";
+    if (!state.busy && readiness?.ready) {
+      providerStateEls[provider].className = "provider-state state-done";
+    } else if (!state.busy && readiness && !readiness.ready) {
+      providerStateEls[provider].className = "provider-state state-error";
+    } else if (label === "回答中" || label === "互評中" || label === "總結中") {
+      providerStateEls[provider].className = "provider-state state-active pulsing";
     } else if (label === "已回答" || label === "已互評" || label === "已總結") {
-      providerStateEls[provider].className = "state-done";
+      providerStateEls[provider].className = "provider-state state-done";
     } else {
-      providerStateEls[provider].className = "state-waiting";
+      providerStateEls[provider].className = "provider-state state-waiting";
     }
   }
+
+  renderProviderSummary();
+}
+
+function readinessFailureLabel(result) {
+  return {
+    LOGIN_REQUIRED: "需要登入",
+    GENERATING: "仍在回答",
+    INPUT_NOT_FOUND: "找不到輸入區",
+    SEND_UNAVAILABLE: "無法送出",
+    WRONG_URL: "網址不符",
+    TAB_NOT_FOUND: "找不到分頁",
+    CONTENT_SCRIPT_UNAVAILABLE: "無法連線",
+    TIMEOUT: "檢查逾時",
+    PROVIDER_ERROR: "服務異常",
+  }[result?.code] || result?.message || result?.status || "需要處理";
+}
+
+function renderProviderSummary() {
+  if (!providerSummaryText) return;
+  const selected = selectedProviderIds();
+  if (selected.length === 0) {
+    providerSummaryText.textContent = "尚未啟用模型";
+    return;
+  }
+  const checked = selected.map((id) => latestReadiness[id]).filter(Boolean);
+  const readyCount = checked.filter((result) => result.ready).length;
+  const failureCount = checked.filter((result) => !result.ready).length;
+  providerSummaryText.textContent = checked.length === 0
+    ? `${selected.length} 家已啟用・等待檢查`
+    : `${selected.length} 家已啟用・${readyCount} 家就緒${failureCount ? `・${failureCount} 家需要處理` : ""}`;
 }
 
 function renderDiagnostics(state) {
@@ -481,7 +630,7 @@ function renderDiagnostics(state) {
 
   const diagnostics = state.providerDiagnostics || {};
   const activeProviders = [
-    ...(state.activeProviders || fallbackProviderIds),
+    ...(state.activeProviders || selectedProviderIds()),
     state.sourceProvider,
     state.summaryProvider,
   ].filter((providerId, index, list) => providerId && list.indexOf(providerId) === index);
@@ -505,7 +654,7 @@ function updateProgressBar(state) {
   if (state.status === "running") {
     if (state.phase === "source-summary") percent = 15;
     else if (state.phase === "first-round") percent = state.skipSummary ? 50 : 30;
-    else if (state.phase === "critique") {
+    else if (isCritiquePhase(state.phase)) {
       const totalRounds = normalizeDebateRounds(state.debateRounds || state.transcript?.debateRounds || 1);
       const currentRound = normalizeDebateRounds(state.currentCritiqueRound || state.transcript?.currentCritiqueRound || 1);
       const base = state.skipSummary ? 50 : 30;
@@ -519,13 +668,37 @@ function updateProgressBar(state) {
     percent = 100;
   }
   
-  progressBar.style.width = `${percent}%`;
+  progressBar.style.transform = `scaleX(${percent / 100})`;
+  const currentStage = progressStageForState(state);
+  progressNodes.forEach((node, index) => {
+    node.classList.toggle("is-complete", index < currentStage);
+    node.classList.toggle("is-current", index === currentStage);
+  });
+  progressContainer?.setAttribute("aria-valuenow", String(percent));
+  progressContainer?.setAttribute("aria-valuetext", `${progressStageLabel(currentStage)}：${state.message || state.status || "等待開始"}`);
   
   if (state.status === "error") {
     progressBar.classList.add("error");
   } else {
     progressBar.classList.remove("error");
   }
+}
+
+function progressStageForState(state) {
+  if (state.status === "done" || state.status === "error" || state.phase === "summary" || state.phase === "reveal") {
+    return 3;
+  }
+  if (isCritiquePhase(state.phase)) {
+    return 2;
+  }
+  if (state.phase === "first-round") {
+    return 1;
+  }
+  return 0;
+}
+
+function progressStageLabel(stage) {
+  return ["連線", "整合", "協調", "完成"][stage] || "連線";
 }
 
 function renderChatBubbles(state) {
@@ -535,17 +708,17 @@ function renderChatBubbles(state) {
   if (!transcript || !transcript.originalQuestion) {
     if (state.phase === "source-summary") {
       const sourceProvider = state.sourceProvider || state.summaryProvider || "chatgpt";
-      chatTranscript.innerHTML = `
+      replaceChatTranscriptHTML(`
         <div class="round-divider">整理目前對話</div>
-        <div class="bubble-group summary ${sourceProvider} loading">
-          <div class="bubble-meta">${providerLabel(sourceProvider)} 正在總結</div>
+          <div class="bubble-group summary ${safeProviderClass(sourceProvider)} loading">
+          <div class="bubble-meta">${escapeHTML(providerLabel(sourceProvider))} 正在總結</div>
           <div class="bubble-content"><span class="loading-dots">整理上下文中<span>.</span><span>.</span><span>.</span></span></div>
-        </div>
-      `;
+         </div>
+      `);
       return;
     }
 
-    chatTranscript.innerHTML = `<div class="empty-state">輸入問題跑基礎辯論。</div>`;
+    replaceChatTranscriptHTML(`<div class="empty-state">輸入問題跑基礎辯論。</div>`);
     return;
   }
 
@@ -571,15 +744,15 @@ function renderChatBubbles(state) {
       const content = answers[providerId];
       if (!content && state.phase === "first-round") {
         html += `
-          <div class="bubble-group assistant ${providerId} loading">
-            <div class="bubble-meta">${providerLabel(providerId)}</div>
+            <div class="bubble-group assistant ${safeProviderClass(providerId)} loading">
+            <div class="bubble-meta">${escapeHTML(providerLabel(providerId))}</div>
             <div class="bubble-content"><span class="loading-dots">思考生成中<span>.</span><span>.</span><span>.</span></span></div>
           </div>
         `;
       } else if (content) {
         html += `
-          <div class="bubble-group assistant ${providerId}">
-            <div class="bubble-meta">${providerLabel(providerId)}</div>
+          <div class="bubble-group assistant ${safeProviderClass(providerId)}">
+            <div class="bubble-meta">${escapeHTML(providerLabel(providerId))}</div>
             <div class="bubble-content">${formatContent(content)}</div>
           </div>
         `;
@@ -589,7 +762,7 @@ function renderChatBubbles(state) {
 
   // 3. 多輪互評與使用者發言
   const critiqueRounds = critiqueRoundMaps(transcript);
-  const activeCritiqueRound = state.phase === "critique"
+  const activeCritiqueRound = isCritiquePhase(state.phase)
     ? normalizeDebateRounds(state.currentCritiqueRound || transcript.currentCritiqueRound || 1)
     : 0;
   critiqueRounds.forEach((critiques, index) => {
@@ -616,16 +789,16 @@ function renderChatBubbles(state) {
       if (!content && isActiveRound) {
         if (answers[providerId] && !answers[providerId].startsWith("[錯誤：")) {
           html += `
-            <div class="bubble-group assistant ${providerId} loading">
-              <div class="bubble-meta">${providerLabel(providerId)} ${userMessage ? '回應中' : '評析中'}</div>
+            <div class="bubble-group assistant ${safeProviderClass(providerId)} loading">
+              <div class="bubble-meta">${escapeHTML(providerLabel(providerId))} ${userMessage ? '回應中' : '評析中'}</div>
               <div class="bubble-content"><span class="loading-dots">${userMessage ? '思考生成中' : '撰寫互評中'}<span>.</span><span>.</span><span>.</span></span></div>
             </div>
           `;
         }
       } else if (content) {
         html += `
-          <div class="bubble-group assistant ${providerId} critique">
-            <div class="bubble-meta">${providerLabel(providerId)} ${userMessage ? '回應' : '評析'}</div>
+            <div class="bubble-group assistant ${safeProviderClass(providerId)} critique">
+            <div class="bubble-meta">${escapeHTML(providerLabel(providerId))} ${userMessage ? '回應' : '評析'}</div>
             <div class="bubble-content">${formatContent(content)}</div>
           </div>
         `;
@@ -652,9 +825,9 @@ function renderChatBubbles(state) {
         ? escapeHTML(anonymousLabel || `參與者 ${index + 1}`)
         : escapeHTML(providerLabel(providerId));
       html += `
-        <div class="bubble-group assistant ${providerId} reveal-reaction">
+        <div class="bubble-group assistant ${safeProviderClass(providerId)} reveal-reaction">
           <div class="bubble-meta">${label} 的揭曉反應</div>
-          <div class="bubble-content">${formatContent(reaction)}</div>
+           <div class="bubble-content">${formatContent(reaction)}</div>
         </div>
       `;
     });
@@ -662,8 +835,8 @@ function renderChatBubbles(state) {
     const sumProvider = state.summaryProvider || "chatgpt";
     html += `
       <div class="round-divider">最終總結 👑</div>
-      <div class="bubble-group summary ${sumProvider} loading">
-        <div class="bubble-meta">${providerLabel(sumProvider)} 總結裁決中</div>
+        <div class="bubble-group summary ${safeProviderClass(sumProvider)} loading">
+        <div class="bubble-meta">${escapeHTML(providerLabel(sumProvider))} 總結裁決中</div>
         <div class="bubble-content"><span class="loading-dots">彙整精華中<span>.</span><span>.</span><span>.</span></span></div>
       </div>
     `;
@@ -671,14 +844,22 @@ function renderChatBubbles(state) {
     const sumProvider = state.summaryProvider || "chatgpt";
     html += `
       <div class="round-divider">最終裁決 👑</div>
-      <div class="bubble-group summary ${sumProvider}">
-        <div class="bubble-meta">${providerLabel(sumProvider)} 總結裁決</div>
+      <div class="bubble-group summary ${safeProviderClass(sumProvider)}">
+        <div class="bubble-meta">${escapeHTML(providerLabel(sumProvider))} 總結裁決</div>
         <div class="bubble-content">${formatContent(state.summary)}</div>
       </div>
     `;
   }
 
+  replaceChatTranscriptHTML(html);
+}
+
+function replaceChatTranscriptHTML(html) {
+  if (!chatTranscript || html === lastRenderedChatHtml) {
+    return;
+  }
   chatTranscript.innerHTML = html;
+  lastRenderedChatHtml = html;
   // 自動滑動到最新消息
   chatTranscript.scrollTop = chatTranscript.scrollHeight;
 }
@@ -731,7 +912,7 @@ function providerLabelForPhase(provider, state, answers, critiques) {
   if (state.providerTabs?.[provider] && state.phase === "first-round" && !answers[provider]) {
     return "回答中";
   }
-  if (answers[provider] && state.phase === "critique" && !critiques[provider]) {
+  if (answers[provider] && isCritiquePhase(state.phase) && !critiques[provider]) {
     return "互評中";
   }
   if (critiques[provider]) {
@@ -745,6 +926,17 @@ function providerLabelForPhase(provider, state, answers, critiques) {
 
 function setActionButtonsDisabled(disabled) {
   basicDebateButton.disabled = disabled;
+  checkReadinessButton.disabled = disabled;
+  providerToggleEls.forEach((button) => {
+    button.disabled = disabled;
+  });
+  advancedControlEls.forEach((control) => {
+    control.disabled = disabled;
+  });
+}
+
+function safeProviderClass(id) {
+  return PROVIDERS.some((provider) => provider.id === id) ? id : "unknown-provider";
 }
 
 function renderEntitlementState() {
@@ -769,7 +961,7 @@ function renderDebateModeState() {
   let currentMode = selectedDebateMode();
   let featureId = featureForMode(currentMode);
 
-  if (!latestState || latestState.phase !== "waiting_for_user") {
+  if (!latestState || (!latestState.busy && latestState.phase !== "waiting_for_user")) {
     if (currentEntitlements.isPro && !featureId) {
       const fastInput = document.querySelector('input.debate-mode-select[value="fast"]');
       if (fastInput) fastInput.checked = true;
@@ -791,8 +983,12 @@ function renderDebateModeState() {
     theaterSettings.style.display = mode === "theater" ? "block" : "none";
   }
 
+  if (debateRoundsSetting) {
+    debateRoundsSetting.hidden = mode === "chat";
+  }
+
   if (chatControls) {
-    chatControls.style.display = (mode === "basic" || mode === "fast") ? "none" : "block";
+    chatControls.style.display = shouldShowChatControls(mode, latestState) ? "block" : "none";
   }
 }
 
@@ -822,7 +1018,7 @@ function renderDebateModeOptionStates() {
 function renderSummaryStrategyState() {
   const currentStrategy = selectedSummaryStrategy();
   const featureId = featureForSummaryStrategy(currentStrategy);
-  if (featureId && !canUseFeature(currentEntitlements, featureId)) {
+  if (!latestState?.busy && featureId && !canUseFeature(currentEntitlements, featureId)) {
     const standardInput = document.querySelector('input.summary-strategy-select[value="standard"]');
     if (standardInput) standardInput.checked = true;
   }

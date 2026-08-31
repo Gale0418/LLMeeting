@@ -97,6 +97,7 @@ function createEngineState(engine, overrides = {}) {
     resolvedSummaryProvider: engine.resolvedSummaryProvider,
     anonymousNames: { ...engine.anonymousNames },
     interactionStyle: engine.interactionStyle,
+    openEnded: engine.openEnded,
     isTheaterMode: engine.isTheaterMode,
     customPersonas: { ...engine.customPersonas },
     debateRounds: engine.debateRounds,
@@ -132,6 +133,7 @@ export class DebateEngine {
     this.resolvedSummaryProvider = resolvedSummaryProvider;
     this.anonymousNames = { ...(options.anonymousNames || {}) };
     this.interactionStyle = options.interactionStyle || "critique";
+    this.openEnded = options.openEnded === true;
     this.debateRounds = normalizeDebateRoundsForInteraction(debateRounds, this.interactionStyle);
     this.isTheaterMode = options.isTheaterMode || false;
     this.customPersonas = options.customPersonas || {};
@@ -139,8 +141,24 @@ export class DebateEngine {
   }
 
   static restore(snapshot) {
+    if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+      throw new Error("Invalid snapshot: snapshot must be an object");
+    }
     const state = JSON.parse(JSON.stringify(snapshot || {}));
-    if (!Array.isArray(state.activeProviders) || !Array.isArray(state.critiqueRounds)) {
+    if (
+      !state ||
+      typeof state !== "object" ||
+      Array.isArray(state) ||
+      !Array.isArray(state.activeProviders) ||
+      state.activeProviders.length < 2 ||
+      !state.activeProviders.every((providerId) => isProviderId(providerId)) ||
+      !Array.isArray(state.critiqueRounds) ||
+      state.critiqueRounds.length < 1 ||
+      !state.critiqueRounds.every((round) => round && typeof round === "object" && !Array.isArray(round)) ||
+      !state.answers ||
+      typeof state.answers !== "object" ||
+      Array.isArray(state.answers)
+    ) {
       throw new Error("Invalid debate snapshot");
     }
 
@@ -155,6 +173,7 @@ export class DebateEngine {
         summaryStrategy: state.summaryStrategy,
         resolvedSummaryProvider: state.resolvedSummaryProvider || state.summaryProvider,
         anonymousNames: state.anonymousNames,
+        openEnded: state.openEnded === true,
       },
     );
     engine.debateRounds = state.critiqueRounds.length;
@@ -166,6 +185,7 @@ export class DebateEngine {
       resolvedSummaryProvider: engine.resolvedSummaryProvider,
       anonymousNames: { ...engine.anonymousNames },
       interactionStyle: engine.interactionStyle,
+      openEnded: engine.openEnded,
       isTheaterMode: engine.isTheaterMode,
       customPersonas: { ...engine.customPersonas },
       debateRounds: engine.debateRounds,
@@ -259,12 +279,17 @@ ${rawProviderContent}`
   }
 
   getLastCompletedRoundData() {
-    for (let i = this.debateRounds - 1; i >= 0; i--) {
+    for (let i = this.state.critiqueRounds.length - 1; i >= 0; i--) {
       if (this.activeProviders.every(p => this.state.critiqueRounds[i] && this.state.critiqueRounds[i][p])) {
-        return { data: this.state.critiqueRounds[i], phase: critiquePhase(i + 1), isCritique: true };
+        return {
+          data: this.state.critiqueRounds[i],
+          phase: critiquePhase(i + 1),
+          round: i + 1,
+          isCritique: true,
+        };
       }
     }
-    return { data: this.state.answers, phase: "first-round", isCritique: false };
+    return { data: this.state.answers, phase: "first-round", round: 0, isCritique: false };
   }
 
   buildCritiqueJobs(roundNumber = 1) {
@@ -380,6 +405,35 @@ ${rawProviderContent}`
   }
 
   buildFinalJob() {
+    if (this.openEnded) {
+      const lastCompleted = this.getLastCompletedRoundData();
+      this.requireComplete(this.state.answers, "first-round");
+      this.state.phase = "summary";
+      const speakerLabels = this.summaryStrategy === "anonymousReview"
+        ? Object.fromEntries(this.activeProviders.map((providerId) => [
+          providerId,
+          this.state.anonymousNames?.[providerId] || parseAnonymousName(this.state.answers[providerId], providerId),
+        ]))
+        : {};
+
+      return providerJob(
+        this.resolvedSummaryProvider,
+        "summary",
+        buildFinalSummaryPrompt({
+          originalQuestion: this.state.originalQuestion,
+          answers: this.state.answers,
+          critiques: lastCompleted.isCritique ? lastCompleted.data : undefined,
+          critiqueRounds: lastCompleted.isCritique ? [lastCompleted.data] : [],
+          critiqueRoundNumber: lastCompleted.round,
+          lastRoundOnly: lastCompleted.isCritique,
+          activeProviders: this.activeProviders,
+          speakerLabels,
+          anonymizeSpeakers: this.summaryStrategy === "anonymousReview",
+        }),
+        { forceNewTab: this.summaryStrategy === "anonymousReview" },
+      );
+    }
+
     for (let round = 1; round <= this.debateRounds; round += 1) {
       this.requireComplete(this.state.critiqueRounds[round - 1], critiquePhase(round));
     }

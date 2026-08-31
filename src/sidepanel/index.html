@@ -8,47 +8,108 @@
   </head>
   <body>
     <main class="shell">
-      <header class="topbar">
-        <div>
+      <header class="topbar glass-surface">
+        <div class="brand-lockup">
+          <img class="brand-icon" src="../../assets/icons/icon-48.png" alt="">
+          <div>
           <div class="brand-row">
             <h1>LLMeeting</h1>
             <span id="planBadge" class="plan-badge" role="button" tabindex="0" aria-label="方案徽章：Free">Free</span>
-            <span class="version-badge">v0.4.7</span>
+            <span class="version-badge">v0.5.0</span>
           </div>
-          <p id="statusText">等待開始</p>
+          <p id="statusText" role="status" aria-live="polite" aria-atomic="true">等待開始</p>
+          </div>
         </div>
         <div class="topbar-actions">
-          <button id="resetButton" type="button" title="重置目前流程">Reset</button>
-          <button id="clearLocalDataButton" type="button" title="清除本機辯論紀錄">清除紀錄</button>
+          <button id="resetButton" class="icon-action" type="button" title="重置目前流程">Reset</button>
+          <button id="clearLocalDataButton" class="icon-action" type="button" title="清除本機辯論紀錄">清除</button>
         </div>
       </header>
 
       <div class="main-content">
-        <!-- 狀態進度條 -->
-        <div id="progressContainer" class="progress-container">
-          <div id="progressBar" class="progress-bar" style="width: 0%"></div>
+        <section class="command-stage" aria-label="全息龍艦橋">
+          <div class="stage-stars" aria-hidden="true"></div>
+          <div class="dragon-hologram" aria-hidden="true"></div>
+          <div class="holo-projector" aria-hidden="true"><span></span></div>
+        </section>
+
+        <div id="progressContainer" class="reactor-route" role="progressbar" aria-label="會議進度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="連線：等待開始">
+          <span class="route-node is-current" data-progress-stage="0">連線</span>
+          <span class="route-node" data-progress-stage="1">整合</span>
+          <span class="route-node" data-progress-stage="2">協調</span>
+          <span class="route-node" data-progress-stage="3">完成</span>
+          <div id="progressBar" class="progress-bar" aria-hidden="true"></div>
         </div>
 
-      <form id="debateForm" class="composer">
+      <form id="debateForm" class="composer glass-surface">
+        <div class="section-heading">
+          <div>
+            <h2>會議核心</h2>
+            <p>輸入目標，讓已啟用的 AI 進入協作航道。</p>
+          </div>
+          <span class="signal-chip">LOCAL</span>
+        </div>
         <label for="questionInput" class="sr-only">問題</label>
         <textarea id="questionInput" rows="4" placeholder="輸入題目，或留空後從目前 AI 分頁總結..."></textarea>
+
+        <section id="providerDeck" class="provider-deck" aria-labelledby="providerSummaryText">
+          <div class="provider-head">
+            <span class="provider-summary-icon" aria-hidden="true"></span>
+            <span id="providerSummaryText" role="status">4 家已啟用・等待檢查</span>
+          </div>
+          <div class="provider-console" role="group" aria-label="選擇參與會議的 AI">
+            <article class="provider-row" data-provider="chatgpt">
+              <button type="button" class="provider-toggle" data-provider-toggle="chatgpt" aria-pressed="true" aria-describedby="chatgptState">
+                <span class="provider-orb chatgpt" aria-hidden="true">GPT</span>
+                <span class="provider-copy"><strong>ChatGPT</strong></span>
+                <span class="power-core" aria-hidden="true"></span>
+              </button>
+              <span id="chatgptState" class="provider-state state-waiting">待檢查</span>
+            </article>
+            <article class="provider-row" data-provider="gemini">
+              <button type="button" class="provider-toggle" data-provider-toggle="gemini" aria-pressed="true" aria-describedby="geminiState">
+                <span class="provider-orb gemini" aria-hidden="true">Gem</span>
+                <span class="provider-copy"><strong>Gemini</strong></span>
+                <span class="power-core" aria-hidden="true"></span>
+              </button>
+              <span id="geminiState" class="provider-state state-waiting">待檢查</span>
+            </article>
+            <article class="provider-row" data-provider="grok">
+              <button type="button" class="provider-toggle" data-provider-toggle="grok" aria-pressed="true" aria-describedby="grokState">
+                <span class="provider-orb grok" aria-hidden="true">Grok</span>
+                <span class="provider-copy"><strong>Grok</strong></span>
+                <span class="power-core" aria-hidden="true"></span>
+              </button>
+              <span id="grokState" class="provider-state state-waiting">待檢查</span>
+            </article>
+            <article class="provider-row" data-provider="claude">
+              <button type="button" class="provider-toggle" data-provider-toggle="claude" aria-pressed="true" aria-describedby="claudeState">
+                <span class="provider-orb claude" aria-hidden="true">Cl</span>
+                <span class="provider-copy"><strong>Claude</strong></span>
+                <span class="power-core" aria-hidden="true"></span>
+              </button>
+              <span id="claudeState" class="provider-state state-waiting">待檢查</span>
+            </article>
+            <article class="provider-row is-off" data-provider="meta">
+              <button type="button" class="provider-toggle" data-provider-toggle="meta" aria-pressed="false" aria-describedby="metaState">
+                <span class="provider-orb meta" aria-hidden="true">Meta</span>
+                <span class="provider-copy"><strong>Meta AI</strong></span>
+                <span class="power-core" aria-hidden="true"></span>
+              </button>
+              <span id="metaState" class="provider-state state-inactive">未啟用</span>
+            </article>
+          </div>
+          <div class="provider-actions">
+            <button type="button" id="checkReadinessButton" class="secondary-action" aria-describedby="readinessHint">重新檢查連線</button>
+            <span id="readinessHint" role="status">啟航前會再次確認</span>
+          </div>
+        </section>
 
 
         <!-- 進階自訂面板 -->
         <details class="settings-panel">
-          <summary>⚙️ 進階辯論設定</summary>
+          <summary><span>會議模式與進階設定</span><span class="deck-chevron" aria-hidden="true"></span></summary>
           <div class="settings-content">
-            <fieldset class="providers-fieldset">
-              <legend>參與辯論的 AI</legend>
-              <div class="checkbox-group">
-                <label><input type="checkbox" class="provider-select" value="chatgpt" checked> ChatGPT</label>
-                <label><input type="checkbox" class="provider-select" value="gemini" checked> Gemini</label>
-                <label><input type="checkbox" class="provider-select" value="grok" checked> Grok</label>
-                <label><input type="checkbox" class="provider-select" value="claude" checked> Claude</label>
-                <label><input type="checkbox" class="provider-select" value="meta"> Meta AI <span class="beta-pill">BETA</span></label>
-              </div>
-            </fieldset>
-
             <fieldset class="mode-fieldset">
               <legend>辯論模式</legend>
               <div class="mode-options">
@@ -109,15 +170,15 @@
               <label><input type="checkbox" id="skipSummaryCheckbox"> 略過最後的總結裁決 (放空模式)</label>
             </div>
 
-            <div class="setting-item compact-setting">
+            <div id="debateRoundsSetting" class="setting-item compact-setting">
               <label for="debateRoundsInput">交叉評析輪次：</label>
               <input id="debateRoundsInput" type="number" min="1" max="5" step="1" value="1">
             </div>
 
             <!-- 互動風格設定 -->
-            <div class="setting-item compact-setting" style="margin-top: 12px;">
+            <div class="setting-item compact-setting interaction-setting">
               <label for="interactionStyleSelect">🎬 互動風格：</label>
-              <select id="interactionStyleSelect" style="flex: 1;">
+              <select id="interactionStyleSelect">
                 <option value="critique">⚖️ 嚴肅互評 (預設)</option>
                 <option value="casual">🍻 酒吧閒聊</option>
                 <option value="brawl">🥊 無差別格鬥</option>
@@ -127,37 +188,37 @@
             </div>
 
             <!-- 劇場模式專用自定義人設 -->
-            <fieldset id="theaterSettings" style="display: none; margin-top: 12px; border: none; border-top: 1px solid var(--border-color); padding: 12px 0 0 0; margin: 12px 0 0 0;">
-              <legend style="font-weight: 500; font-size: 0.875rem; color: var(--text-primary); margin-bottom: 8px;">🎭 自定義劇場人設</legend>
-              <div style="display: flex; flex-direction: column; gap: 8px;">
+            <fieldset id="theaterSettings" class="theater-settings">
+              <legend>🎭 自定義劇場人設</legend>
+              <div class="persona-stack">
                 <div>
-                  <label for="personaChatgpt" style="font-size: 0.75rem; color: var(--text-secondary);">ChatGPT (預設: 決策架構師)</label>
-                  <textarea id="personaChatgpt" rows="2" style="width:100%; border-radius:4px; padding:4px; font-size:0.875rem;" placeholder="輸入 ChatGPT 的人設...">【強制人設】你現在負責「決策架構師」：先定義問題與成功判準，再攤開方案取捨，最後給出可執行的行動結論。</textarea>
+                  <label for="personaChatgpt">ChatGPT (預設: 決策架構師)</label>
+                  <textarea id="personaChatgpt" rows="2" placeholder="輸入 ChatGPT 的人設...">【強制人設】你現在負責「決策架構師」：先定義問題與成功判準，再攤開方案取捨，最後給出可執行的行動結論。</textarea>
                 </div>
                 <div>
-                  <label for="personaClaude" style="font-size: 0.75rem; color: var(--text-secondary);">Claude (預設: 鋼人風險編輯)</label>
-                  <textarea id="personaClaude" rows="2" style="width:100%; border-radius:4px; padding:4px; font-size:0.875rem;" placeholder="輸入 Claude 的人設...">【強制人設】你現在負責「鋼人風險編輯」：先用最強解讀重述對方方案，再檢查邊界、反例與可行緩解，讓批評能真正幫上忙。</textarea>
+                  <label for="personaClaude">Claude (預設: 鋼人風險編輯)</label>
+                  <textarea id="personaClaude" rows="2" placeholder="輸入 Claude 的人設...">【強制人設】你現在負責「鋼人風險編輯」：先用最強解讀重述對方方案，再檢查邊界、反例與可行緩解，讓批評能真正幫上忙。</textarea>
                 </div>
                 <div>
-                  <label for="personaGrok" style="font-size: 0.75rem; color: var(--text-secondary);">Grok (預設: 短週期輿情壓力測試)</label>
-                  <textarea id="personaGrok" rows="2" style="width:100%; border-radius:4px; padding:4px; font-size:0.875rem;" placeholder="輸入 Grok 的人設...">【強制人設】你現在負責「短週期即時輿情壓力測試」：觀察近期輿情、迷因、炎上與反主流壓力，指出可能的快速擴散與反彈；沒有即時資料時，所有判斷必須標示為推測。</textarea>
+                  <label for="personaGrok">Grok (預設: 短週期輿情壓力測試)</label>
+                  <textarea id="personaGrok" rows="2" placeholder="輸入 Grok 的人設...">【強制人設】你現在負責「短週期即時輿情壓力測試」：觀察近期輿情、迷因、炎上與反主流壓力，指出可能的快速擴散與反彈；沒有即時資料時，所有判斷必須標示為推測。</textarea>
                 </div>
                 <div>
-                  <label for="personaGemini" style="font-size: 0.75rem; color: var(--text-secondary);">Gemini (預設: 腦洞鬧場)</label>
-                  <textarea id="personaGemini" rows="2" style="width:100%; border-radius:4px; padding:4px; font-size:0.875rem;" placeholder="輸入 Gemini 的人設...">【強制人設】你現在負責「腦洞鬧場」，專門提出荒謬創新但確有可行性觀點的創意怪咖，不受傳統思維限制。說話必須大量使用顏文字(如 ヾ(•ω•`)o 等等)，這才是你的靈魂！</textarea>
+                  <label for="personaGemini">Gemini (預設: 腦洞鬧場)</label>
+                  <textarea id="personaGemini" rows="2" placeholder="輸入 Gemini 的人設...">【強制人設】你現在負責「腦洞鬧場」，專門提出荒謬創新但確有可行性觀點的創意怪咖，不受傳統思維限制。說話必須大量使用顏文字(如 ヾ(•ω•`)o 等等)，這才是你的靈魂！</textarea>
                 </div>
                 <div>
-                  <label for="personaMeta" style="font-size: 0.75rem; color: var(--text-secondary);">Meta AI Beta (預設: 社群視角)（長週期採用視角）</label>
-                  <textarea id="personaMeta" rows="2" style="width:100%; border-radius:4px; padding:4px; font-size:0.875rem;" placeholder="輸入 Meta AI 的人設...">【強制人設】你現在負責「長週期跨群體採用視角（社群視角）」：評估不同族群的採用路徑、關係鏈、可及性、分享動機與誤讀風險，並清楚區分流行意見與可靠事實，也標示哪些只是推測。</textarea>
+                  <label for="personaMeta">Meta AI Beta (預設: 社群視角)（長週期採用視角）</label>
+                  <textarea id="personaMeta" rows="2" placeholder="輸入 Meta AI 的人設...">【強制人設】你現在負責「長週期跨群體採用視角（社群視角）」：評估不同族群的採用路徑、關係鏈、可及性、分享動機與誤讀風險，並清楚區分流行意見與可靠事實，也標示哪些只是推測。</textarea>
                 </div>
               </div>
             </fieldset>
 
             <!-- 分頁掛勾設定 -->
-            <details id="tabHookingSettings" style="margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 12px;">
-              <summary style="font-weight: 500; font-size: 0.875rem; color: var(--text-primary); margin-bottom: 8px; cursor: pointer;">🔗 指定連線分頁</summary>
-              <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 8px;">展開以指定要沿用的既有分頁；未指定時，每次會議都會開啟新分頁。</div>
-              <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+            <details id="tabHookingSettings" class="tab-hooking-settings">
+              <summary>🔗 指定連線分頁</summary>
+              <div class="settings-note">展開以指定要沿用的既有分頁；未指定時，每次會議都會開啟新分頁。</div>
+              <div class="hook-stack">
                 <div>
                   <label for="hookChatgpt" style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);">ChatGPT</label>
                   <select id="hookChatgpt" style="width: 100%; margin-top: 2px;">
@@ -189,57 +250,34 @@
                   </select>
                 </div>
               </div>
-              <button type="button" id="refreshHooksBtn" style="margin-top: 8px; font-size: 0.75rem; padding: 4px 8px;">重新掃描分頁 🔄</button>
+              <button type="button" id="refreshHooksBtn" class="secondary-action compact-action">重新掃描分頁</button>
             </details>
           </div>
         </details>
 
         <!-- 互動聊天控制台 -->
-        <details id="chatControls" class="chat-controls" style="margin-top: 12px; border: 1px solid var(--border-color); padding: 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.02);">
-          <summary style="font-weight: 600; font-size: 0.875rem; color: var(--text-primary); cursor: pointer;">💬 互動聊天 (展開以允許對話暫停)</summary>
-          <div style="margin-top: 8px;">
-            <textarea id="chatInput" rows="2" placeholder="使用者補充..." style="width:100%; border-radius:6px; padding:8px; font-family:inherit;"></textarea>
-            <div class="chat-buttons" style="display:flex; gap:8px; margin-top:8px;">
-              <button type="button" id="chatSendBtn" class="primary-action" style="flex:1; padding:8px; min-height:36px; font-size:0.75rem;">送出補充</button>
-              <button type="button" id="chatCritiqueBtn" class="secondary-action" style="flex:1; padding:8px; min-height:36px; font-size:0.75rem;">讓 AI 互評</button>
-              <button type="button" id="chatSummarizeBtn" class="secondary-action" style="flex:1; padding:8px; min-height:36px; font-size:0.75rem;">結案總結</button>
+        <details id="chatControls" class="chat-controls">
+          <summary><span>互動控制台</span><span id="chatRoundBadge" class="signal-chip">OPEN ENDED</span></summary>
+          <div class="chat-console-body">
+            <textarea id="chatInput" rows="2" placeholder="向會議補充新情報..."></textarea>
+            <div class="chat-buttons">
+              <button type="button" id="chatSendBtn" class="primary-action">送出補充</button>
+              <button type="button" id="chatCritiqueBtn" class="secondary-action">再互評</button>
+              <button type="button" id="chatSummarizeBtn" class="secondary-action">結案總結</button>
             </div>
           </div>
         </details>
 
         <div class="action-row">
-          <button id="basicDebateButton" class="primary-action" type="submit">基礎辯論</button>
-          <button type="button" id="stopDebateBtn" style="display:none; padding:8px; background:#ef4444; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:bold;">緊急暫停 🛑</button>
+          <button id="basicDebateButton" class="primary-action launch-action" type="submit"><span>啟動多 AI 會議</span></button>
+          <button type="button" id="stopDebateBtn" class="danger-action" hidden>緊急暫停</button>
         </div>
       </form>
 
-      <section class="status-grid" aria-label="Provider status">
-        <article class="provider" data-provider="chatgpt">
-          <span class="provider-badge chatgpt">GPT</span>
-          <strong id="chatgptState">待命</strong>
-        </article>
-        <article class="provider" data-provider="gemini">
-          <span class="provider-badge gemini">Gemini</span>
-          <strong id="geminiState">待命</strong>
-        </article>
-        <article class="provider" data-provider="grok">
-          <span class="provider-badge grok">Grok</span>
-          <strong id="grokState">待命</strong>
-        </article>
-        <article class="provider" data-provider="claude">
-          <span class="provider-badge claude">Claude</span>
-          <strong id="claudeState">待命</strong>
-        </article>
-        <article class="provider" data-provider="meta">
-          <span class="provider-badge meta">Meta β</span>
-          <strong id="metaState">未啟用</strong>
-        </article>
-      </section>
-
-      <section class="output">
-        <h2>Transcript</h2>
+      <section class="output glass-surface">
+        <div class="section-heading"><div><h2>即時會議紀錄</h2><p>每一輪輸出與人類補充都保留在本機。</p></div><span class="signal-chip">LIVE</span></div>
         <!-- 氣泡對話框 Transcript -->
-        <div id="chatTranscript" class="chat-transcript">
+         <div id="chatTranscript" class="chat-transcript" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false">
           <div class="empty-state">輸入問題跑基礎辯論。</div>
         </div>
         <pre id="transcriptOutput" style="display: none;">尚未開始</pre>

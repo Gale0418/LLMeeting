@@ -2,6 +2,7 @@ import { DebateEngine, normalizeDebateRounds } from "./debateEngine.js";
 import { isProviderTabReady, setSidePanelOpenOnActionClick } from "./chromeCompat.js";
 import { createProviderDiagnostics, updateProviderDiagnostic } from "./diagnostics.js";
 import { RunController, isRunCancelledError } from "./runController.js";
+import { safePersistState } from "./statePersistence.js";
 import { isSessionExpired, recoverSession } from "./sessionRecovery.js";
 import {
   canUseFeature,
@@ -24,12 +25,44 @@ const PROVIDER_TIMEOUT_MS = 240000; // 4分鐘，防話癆
 const SUMMARY_PROVIDER_TIMEOUT_MS = 480000; // 8分鐘，給長篇總結更多時間
 const OVERLOAD_REFRESH_RETRIES = 3;
 const META_INPUT_REFRESH_RETRIES = 1;
+const READINESS_TIMEOUT_MS = 15000;
+const PROVIDER_CONTROL_TIMEOUT_MS = 3000;
+const MAX_PERSISTED_TRANSCRIPT_CHARS = 120000;
+const MAX_PERSISTED_TEXT_CHARS = 12000;
 
 let engine = new DebateEngine();
 let cachedEntitlements = entitlementsForPlan();
 let runtimeState = createIdleState();
 const runController = new RunController();
 let initializationPromise;
+let lifecycleRevision = 0;
+let controlOperation = null;
+
+function beginControlOperation(kind) {
+  if (controlOperation) {
+    return null;
+  }
+  runController.cancel();
+  controlOperation = { kind, revision: ++lifecycleRevision };
+  return controlOperation;
+}
+
+function isCurrentControlOperation(operation) {
+  return Boolean(operation && controlOperation === operation && operation.revision === lifecycleRevision);
+}
+
+function assertCurrentControlOperation(operation) {
+  if (isCurrentControlOperation(operation)) return;
+  const error = new Error("已緊急暫停");
+  error.code = "RUN_CANCELLED";
+  throw error;
+}
+
+function finishControlOperation(operation) {
+  if (isCurrentControlOperation(operation)) {
+    controlOperation = null;
+  }
+}
 
 chrome.runtime.onInstalled.addListener(() => {
   setSidePanelOpenOnActionClick(chrome);
@@ -49,37 +82,61 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "aiDebate:reset") {
+    const operation = beginControlOperation("reset");
+    if (!operation) {
+      sendResponse({ ok: false, code: "BUSY", error: "目前已有控制操作正在進行", state: runtimeState });
+      return true;
+    }
     ensureRuntimeInitialized()
       .then(async () => {
         await ensureRuntimeStateRetention();
-        runController.cancel();
+        assertCurrentControlOperation(operation);
+        await notifyProviderAbortOperations({ tabIds: Object.values(runtimeState.providerTabs || {}) });
+        assertCurrentControlOperation(operation);
         await chrome.storage.local.remove(ENTITLEMENT_STORAGE_KEY);
         cachedEntitlements = entitlementsForPlan();
         engine = new DebateEngine();
         runtimeState = createIdleState(undefined, cachedEntitlements);
-        await publishState();
+        await publishState(undefined, operation);
+        finishControlOperation(operation);
         sendResponse({ ok: true, state: runtimeState });
       })
-      .catch((error) => sendResponse({ ok: false, error: error.message, state: runtimeState }));
+      .catch((error) => {
+        const cancelled = !isCurrentControlOperation(operation) || isRunCancelledError(error);
+        finishControlOperation(operation);
+        sendResponse({ ok: false, code: cancelled ? "RUN_CANCELLED" : error.code, error: cancelled ? "已緊急暫停" : error.message, state: runtimeState });
+      });
     return true;
   }
 
   if (message.type === "aiDebate:clearLocalData") {
+    const operation = beginControlOperation("clear");
+    if (!operation) {
+      sendResponse({ ok: false, code: "BUSY", error: "目前已有控制操作正在進行", state: runtimeState });
+      return true;
+    }
     ensureRuntimeInitialized()
       .then(async () => {
         await ensureRuntimeStateRetention();
-        runController.cancel();
-        await clearProviderSubmittedRuns();
+        assertCurrentControlOperation(operation);
+        await notifyProviderAbortOperations({ clearSubmittedRuns: true });
+        assertCurrentControlOperation(operation);
         engine = new DebateEngine();
         runtimeState = createIdleState(undefined, runtimeState.entitlements);
         await chrome.storage.local.remove(STORAGE_KEY);
+        assertCurrentControlOperation(operation);
         chrome.runtime.sendMessage({
           type: "aiDebate:stateChanged",
           state: runtimeState,
         }).catch(() => {});
+        finishControlOperation(operation);
         sendResponse({ ok: true, state: runtimeState });
       })
-      .catch((error) => sendResponse({ ok: false, error: error.message, state: runtimeState }));
+      .catch((error) => {
+        const cancelled = !isCurrentControlOperation(operation) || isRunCancelledError(error);
+        finishControlOperation(operation);
+        sendResponse({ ok: false, code: cancelled ? "RUN_CANCELLED" : error.code, error: cancelled ? "已緊急暫停" : error.message, state: runtimeState });
+      });
     return true;
   }
 
@@ -98,20 +155,75 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return false;
     }
 
+    let reservationToken;
     let runToken;
+    let preflight;
+    if (runtimeState.busy || runController.isReserved() || controlOperation) {
+      sendResponse({ ok: false, code: "BUSY", error: "目前已有辯論正在進行", state: runtimeState });
+      return true;
+    }
+    reservationToken = runController.reserve();
+    const startRevision = lifecycleRevision;
     ensureRuntimeInitialized()
       .then(async () => {
         await ensureRuntimeStateRetention();
-        if (runtimeState.busy) {
+        runController.assertCurrent(reservationToken);
+        if (controlOperation || lifecycleRevision !== startRevision) {
+          throw createRunCancelledError();
+        }
+        if (runtimeState.busy || (runController.isReserved() && !runController.isCurrent(reservationToken))) {
           throw new Error("目前已有辯論正在進行");
         }
-        runToken = runController.start();
-        return startAction(question, { activeProviders, summaryProvider, summaryStrategy, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode, runToken });
+        await validateStartRequestBeforePreflight(message);
+        runController.assertCurrent(reservationToken);
+        if (controlOperation || lifecycleRevision !== startRevision) {
+          throw createRunCancelledError();
+        }
+        preflight = await preflightStartRequest(message, reservationToken);
+        runController.assertCurrent(reservationToken);
+        if (controlOperation || lifecycleRevision !== startRevision) {
+          throw createRunCancelledError();
+        }
+        runtimeState = {
+          ...runtimeState,
+          busy: true,
+          status: "running",
+          phase: "preflight-complete",
+          message: "模型已就緒，準備啟航",
+          providerTabs: { ...runtimeState.providerTabs, ...preflight.providerTabs },
+          preflightResults: preflight.results,
+        };
+        await publishState(reservationToken);
+        runToken = runController.claim(reservationToken);
+        return startAction(question, { activeProviders, summaryProvider, summaryStrategy, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode, preflight, runToken });
       })
       .then((state) => sendResponse({ ok: true, state }))
       .catch(async (error) => {
+        if (reservationToken && !runToken && (!runController.isCurrent(reservationToken) || lifecycleRevision !== startRevision)) {
+          sendResponse({ ok: false, code: "RUN_CANCELLED", error: "已緊急暫停", state: runtimeState });
+          return;
+        }
         if (!runToken) {
-          sendResponse({ ok: false, code: error.code || "ERROR", error: error.message, state: runtimeState });
+          if (!reservationToken || !runController.isCurrent(reservationToken) || lifecycleRevision !== startRevision) {
+            sendResponse({ ok: false, code: "RUN_CANCELLED", error: "已緊急暫停", state: runtimeState });
+            return;
+          }
+          runtimeState = {
+            ...runtimeState,
+            busy: false,
+            status: "idle",
+            phase: "idle",
+            message: error.message,
+            preflightResults: error.results || preflight?.results || runtimeState.preflightResults || [],
+          };
+          try {
+            await publishState(reservationToken);
+          } catch (publishError) {
+            sendResponse({ ok: false, code: "RUN_CANCELLED", error: publishError.message, state: runtimeState });
+            return;
+          }
+          runController.release(reservationToken);
+          sendResponse({ ok: false, code: error.code || "ERROR", error: error.message, results: runtimeState.preflightResults, state: runtimeState });
           return;
         }
         if (isRunCancelledError(error) || (runToken && !runController.isCurrent(runToken))) {
@@ -121,11 +233,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
         const isProRequired = error.code === "PRO_REQUIRED";
         const entitlements = await getEntitlements();
-        if (runToken && !runController.isCurrent(runToken)) {
+        if (runToken && (!runController.isCurrent(runToken) || lifecycleRevision !== startRevision || controlOperation)) {
           sendResponse({ ok: false, code: "RUN_CANCELLED", error: "已緊急暫停", state: runtimeState });
           return;
         }
-        runController.cancel();
         runtimeState = {
           ...runtimeState,
           busy: false,
@@ -135,7 +246,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           errors: isProRequired ? runtimeState.errors : [...runtimeState.errors, { message: error.message }],
           entitlements,
         };
-        await publishState();
+        try {
+          await publishState(runToken);
+        } catch (publishError) {
+          sendResponse({ ok: false, code: "RUN_CANCELLED", error: publishError.message, state: runtimeState });
+          return;
+        }
+        runController.cancel();
         sendResponse({
           ok: false,
           code: error.code || "ERROR",
@@ -147,16 +264,50 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "aiDebate:checkReadiness") {
+    if (runtimeState.busy || controlOperation || runController.isReserved()) {
+      sendResponse({ ok: false, code: "BUSY", error: "目前已有辯論正在進行", state: runtimeState });
+      return true;
+    }
+    const readinessToken = runController.reserve();
+    if (readinessToken === null) {
+      sendResponse({ ok: false, code: "BUSY", error: "目前已有辯論正在進行", state: runtimeState });
+      return true;
+    }
+    const readinessRevision = lifecycleRevision;
+    ensureRuntimeInitialized()
+      .then(() => {
+        runController.assertCurrent(readinessToken);
+        if (controlOperation || lifecycleRevision !== readinessRevision) throw createRunCancelledError();
+        return checkReadinessRequest(message, readinessToken);
+      })
+      .then((result) => {
+        runController.assertCurrent(readinessToken);
+        if (controlOperation || lifecycleRevision !== readinessRevision) throw createRunCancelledError();
+        sendResponse(result);
+      })
+      .catch((error) => sendResponse({
+        ok: false,
+        code: isRunCancelledError(error) ? "RUN_CANCELLED" : (error.code || "PROVIDER_ERROR"),
+        error: error.message,
+        state: runtimeState,
+      }))
+      .finally(() => runController.release(readinessToken));
+    return true;
+  }
+
   if (message.type === "aiDebate:nextRound") {
     let runToken;
+    let runRevision;
     ensureRuntimeInitialized()
       .then(async () => {
         await ensureRuntimeStateRetention();
         validateNextRound(message.action);
-        if (runtimeState.busy) {
+        if (runtimeState.busy || controlOperation || runController.isReserved()) {
           throw new Error("目前忙碌中");
         }
         runToken = runController.start();
+        runRevision = lifecycleRevision;
         return handleNextRound(message.action, message.text, runToken);
       })
       .then((state) => sendResponse({ ok: state.status !== "error", state }))
@@ -165,11 +316,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ ok: false, code: error.code || "ERROR", error: error.message, state: runtimeState });
           return;
         }
-        if (isRunCancelledError(error) || (runToken && !runController.isCurrent(runToken))) {
+        if (
+          isRunCancelledError(error) ||
+          !runController.isCurrent(runToken) ||
+          controlOperation ||
+          lifecycleRevision !== runRevision
+        ) {
           sendResponse({ ok: false, code: "RUN_CANCELLED", error: "已緊急暫停", state: runtimeState });
           return;
         }
-        runController.cancel();
         runtimeState = {
           ...runtimeState,
           busy: false,
@@ -177,18 +332,33 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           phase: "waiting_for_user",
           message: `發送失敗：${error.message}`,
         };
-        await publishState();
+        try {
+          await publishState(runToken);
+        } catch (publishError) {
+          sendResponse({ ok: false, code: "RUN_CANCELLED", error: publishError.message, state: runtimeState });
+          return;
+        }
+        runController.cancel();
         sendResponse({ ok: false, error: error.message, state: runtimeState });
       });
     return true;
   }
 
   if (message.type === "aiDebate:stop") {
+    const hadActiveOperation = runtimeState.busy || runController.isReserved();
+    const operation = beginControlOperation("stop");
+    if (!operation) {
+      sendResponse({ ok: false, code: "BUSY", error: "目前已有控制操作正在進行", state: runtimeState });
+      return true;
+    }
     ensureRuntimeInitialized()
       .then(async () => {
         await ensureRuntimeStateRetention();
-        runController.cancel();
-        if (runtimeState.busy) {
+        assertCurrentControlOperation(operation);
+        const ownedTabIds = Object.values(runtimeState.providerTabs || {});
+        await notifyProviderAbortOperations({ tabIds: ownedTabIds });
+        assertCurrentControlOperation(operation);
+        if (runtimeState.busy || hadActiveOperation) {
           runtimeState = {
             ...runtimeState,
             busy: false,
@@ -197,11 +367,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             message: "已緊急暫停",
             errors: [...runtimeState.errors, { message: "使用者手動取消操作" }],
           };
-          await publishState();
+          await publishState(undefined, operation);
         }
+        finishControlOperation(operation);
         sendResponse({ ok: true, state: runtimeState });
       })
-      .catch((error) => sendResponse({ ok: false, error: error.message, state: runtimeState }));
+      .catch((error) => {
+        const cancelled = !isCurrentControlOperation(operation) || isRunCancelledError(error);
+        finishControlOperation(operation);
+        sendResponse({ ok: false, code: cancelled ? "RUN_CANCELLED" : error.code, error: cancelled ? "已緊急暫停" : error.message, state: runtimeState });
+      });
     return true;
   }
 
@@ -233,8 +408,354 @@ function createIdleState(providerIds = DEFAULT_ACTIVE_PROVIDER_IDS, entitlements
     entitlements,
     skipSummary: false,
     workflowCheckpoint: null,
+    preflightResults: [],
     savedAt: Date.now(),
   };
+}
+
+async function checkReadinessRequest(message = {}, readinessToken) {
+  if (runtimeState.busy || controlOperation ||
+    (runController.isReserved() && !runController.isCurrent(readinessToken))) {
+    return {
+      ok: false,
+      code: "BUSY",
+      error: "目前已有辯論正在進行",
+      results: runtimeState.preflightResults || [],
+      state: runtimeState,
+    };
+  }
+
+  if (Array.isArray(message.activeProviders)) {
+    const providerIds = requiredProviderIdsForMessage(message, message.mode === "summary");
+    const requestedTabs = { ...(message.hookedTabs || {}) };
+    if (message.mode === "summary") {
+      const { tab: sourceTab, provider } = await getActiveProviderTab();
+      if (providerIds.filter((providerId) => providerId !== provider.id).length < 2) {
+        const error = new Error("總結辯論至少需要目前頁面以外的 2 家 AI。");
+        error.code = "NOT_ENOUGH_PROVIDERS";
+        throw error;
+      }
+      providerIds.unshift(provider.id);
+      requestedTabs[provider.id] = sourceTab.id;
+    }
+    const results = await checkProviderTabsSequentially([...new Set(providerIds)], requestedTabs, readinessToken);
+    if (readinessToken) runController.assertCurrent(readinessToken);
+    if (controlOperation) throw createRunCancelledError();
+    const providerTabs = Object.fromEntries(results
+      .filter((result) => Number.isInteger(result.tabId))
+      .map((result) => [result.provider, result.tabId]));
+    runtimeState = {
+      ...runtimeState,
+      busy: false,
+      message: results.every((result) => result.ready) ? "所有模型皆可送出" : "部分模型尚未就緒",
+      providerTabs: { ...runtimeState.providerTabs, ...providerTabs },
+      preflightResults: results,
+    };
+    await publishState(readinessToken);
+    return {
+      ok: results.every((result) => result.ready),
+      error: results.every((result) => result.ready) ? "" : "部分模型尚未就緒",
+      results,
+      state: runtimeState,
+    };
+  }
+
+  const providerId = String(message.provider || "");
+  const provider = PROVIDERS.find((item) => item.id === providerId);
+  if (!provider) {
+    return readinessResult(providerId, null, "WRONG_URL", "未知的 provider");
+  }
+
+  return checkReadinessForProvider(providerId, message.tabId);
+}
+
+async function checkReadinessForProvider(providerId, requestedTabId) {
+  let tab;
+  const normalizedTabId = Number(requestedTabId);
+  if (Number.isInteger(normalizedTabId)) {
+    tab = await getTabForReadiness(normalizedTabId);
+  } else {
+    const boundTabId = runtimeState.providerTabs?.[providerId];
+    try {
+      tab = Number.isInteger(boundTabId)
+        ? await getTabForReadiness(boundTabId)
+        : await getOrCreateProviderTab(providerId);
+    } catch (error) {
+      return readinessResult(providerId, null, readinessCodeForTabError(error), error.message);
+    }
+  }
+  if (!tab) {
+    try {
+      tab = await getOrCreateProviderTab(providerId, { forceNewTab: true });
+    } catch (error) {
+      return readinessResult(providerId, null, readinessCodeForTabError(error), error.message);
+    }
+  }
+  return checkProviderTabReadiness(tab.id, providerId);
+}
+
+async function preflightStartRequest(message = {}, runToken) {
+  const providerIds = requiredProviderIdsForMessage(message, true);
+  const hookedTabs = { ...(message.hookedTabs || {}) };
+
+  if (message.mode === "summary") {
+    const { tab: sourceTab, provider } = await getActiveProviderTab();
+    const sourceProvider = provider.id;
+    if (providerIds.filter((providerId) => providerId !== sourceProvider).length < 2) {
+      const error = new Error(`總結辯論至少需要目前頁面以外的 2 家 AI。現在目前頁面是 ${providerLabel(sourceProvider)}，請再啟用兩家其他 AI。`);
+      error.code = "NOT_ENOUGH_PROVIDERS";
+      throw error;
+    }
+    providerIds.unshift(sourceProvider);
+    hookedTabs[sourceProvider] = sourceTab.id;
+  }
+
+  return preflightProviderTabs([...new Set(providerIds)], hookedTabs, runToken);
+}
+
+async function validateStartRequestBeforePreflight(message = {}) {
+  if (message.mode !== "summary" && !String(message.question || "").trim()) {
+    throw new Error("請先輸入問題");
+  }
+  const modeFeature = {
+    fast: "fastDebate",
+    summary: "summaryDebate",
+    chat: "chatMode",
+    theater: "chatMode",
+  }[message.mode];
+  if (modeFeature) await requireProFeature(modeFeature);
+  if (!message.skipSummary) {
+    await requireSummaryStrategyFeature(normalizeSummaryStrategy(message.summaryStrategy));
+  }
+  if (
+    message.mode !== "summary" &&
+    !message.skipSummary &&
+    isProviderId(message.summaryProvider) &&
+    Array.isArray(message.activeProviders) &&
+    !message.activeProviders.includes(message.summaryProvider)
+  ) {
+    const error = new Error(`請先啟用要擔任總結的 ${providerLabel(message.summaryProvider)}`);
+    error.code = "SUMMARY_PROVIDER_DISABLED";
+    throw error;
+  }
+}
+
+function requiredProviderIdsForMessage(message = {}, requireTwo = false) {
+  const requestedProviders = Array.isArray(message.activeProviders)
+    ? message.activeProviders
+    : DEFAULT_ACTIVE_PROVIDER_IDS;
+  const selected = [...new Set(requestedProviders
+    .filter((providerId) => isProviderId(providerId)))];
+  const minimum = requireTwo ? 2 : 1;
+  if (selected.length < minimum) {
+    const error = new Error(requireTwo ? "至少需要啟用 2 家 AI" : "請先啟用至少一家 AI");
+    error.code = "NOT_ENOUGH_PROVIDERS";
+    throw error;
+  }
+  return [...new Set(selected)];
+}
+
+async function preflightProviderTabs(providerIds, hookedTabs = {}, runToken) {
+  const uniqueProviderIds = [...new Set(providerIds.filter((providerId) => isProviderId(providerId)))];
+  const results = await checkProviderTabsSequentially(uniqueProviderIds, hookedTabs, runToken);
+
+  if (runToken) runController.assertCurrent(runToken);
+  const failed = results.find((result) => !result.ready);
+  if (failed) {
+    const error = new Error(`${providerLabel(failed.provider)} 尚未就緒：${failed.error || failed.code}`);
+    error.code = failed.code;
+    error.readiness = failed;
+    error.results = results;
+    throw error;
+  }
+
+  return {
+    providerTabs: Object.fromEntries(results.map((result) => [result.provider, result.tabId])),
+    results,
+  };
+}
+
+async function checkProviderTabsSequentially(providerIds, seededTabs = {}, runToken) {
+  const originalTab = await getCurrentActiveTab();
+  const results = [];
+  try {
+    for (const providerId of providerIds) {
+      if (runToken) runController.assertCurrent(runToken);
+      let tab;
+      try {
+        const seededTabId = Number(seededTabs?.[providerId]);
+        tab = await getOrCreateProviderTab(providerId, {
+          preferredTabId: Number.isInteger(seededTabId) ? seededTabId : undefined,
+        });
+        await activateProviderTabForReadiness(tab);
+        results.push(await checkProviderTabReadiness(tab.id, providerId));
+      } catch (error) {
+        results.push(readinessResult(
+          providerId,
+          Number.isInteger(tab?.id) ? tab.id : null,
+          readinessCodeForTabError(error),
+          error.message,
+        ));
+      }
+    }
+  } finally {
+    await restoreActiveTab(originalTab);
+  }
+  return results;
+}
+
+async function getCurrentActiveTab() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tab || null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function activateProviderTabForReadiness(tab) {
+  if (!Number.isInteger(tab?.id)) {
+    const error = new Error("Provider 分頁不存在");
+    error.code = "TAB_NOT_FOUND";
+    throw error;
+  }
+  await chrome.tabs.update(tab.id, { active: true });
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    const activeTab = await chrome.tabs.get(tab.id);
+    if (activeTab.active && activeTab.status === "complete") break;
+    await delay(50);
+  }
+  // Give lazy-rendered composers one short paint window after foregrounding.
+  await delay(200);
+}
+
+async function restoreActiveTab(tab) {
+  if (!Number.isInteger(tab?.id)) return;
+  try {
+    await chrome.tabs.update(tab.id, { active: true });
+  } catch (_error) {
+    // The original tab may have been closed during readiness checks.
+  }
+}
+
+async function checkProviderTabReadiness(tabId, providerId) {
+  const provider = PROVIDERS.find((item) => item.id === providerId);
+  let effectiveTabId = tabId;
+  let tab = await getTabForReadiness(tabId);
+  if (!tab && provider) {
+    try {
+      tab = await getOrCreateProviderTab(providerId, { forceNewTab: true });
+      effectiveTabId = tab.id;
+    } catch (error) {
+      return readinessResult(providerId, null, readinessCodeForTabError(error), error.message);
+    }
+  }
+  if (!tab) {
+    return readinessResult(providerId, effectiveTabId, "TAB_NOT_FOUND", "找不到 provider 分頁");
+  }
+  if (!provider || !isProviderTabReady(tab, provider)) {
+    const url = tab.url || tab.pendingUrl || "";
+    const urlMatches = provider?.matchPatterns?.some((pattern) => urlMatchesPatternForReadiness(url, pattern));
+    return {
+      ...readinessResult(providerId, effectiveTabId, urlMatches ? "TIMEOUT" : "WRONG_URL", `目前網址：${url || "unknown"}`),
+      url,
+    };
+  }
+
+  let response;
+  try {
+    response = await withReadinessTimeout(
+      sendProviderMessage(effectiveTabId, {
+        provider: providerId,
+        phase: "readiness",
+        round: 0,
+        prompt: "",
+      }, "aiDebate:checkReadiness"),
+      READINESS_TIMEOUT_MS,
+    );
+  } catch (error) {
+    return readinessResult(
+      providerId,
+      effectiveTabId,
+      error.code === "READINESS_TIMEOUT" ? "TIMEOUT" : "CONTENT_SCRIPT_UNAVAILABLE",
+      error.message,
+    );
+  }
+
+  const codeByStatus = {
+    ready: "READY",
+    "wrong-page": "WRONG_URL",
+    "login-required": "LOGIN_REQUIRED",
+    "input-not-ready": "INPUT_NOT_FOUND",
+    "send-not-ready": "SEND_UNAVAILABLE",
+    generating: "GENERATING",
+    error: "PROVIDER_ERROR",
+  };
+  const code = response?.ready === true
+    ? "READY"
+    : codeByStatus[response?.status] || "PROVIDER_ERROR";
+  return {
+    ...readinessResult(providerId, effectiveTabId, code, response?.checks?.error?.message || response?.error || ""),
+    ready: code === "READY",
+    status: response?.status || code,
+    url: tab.url || tab.pendingUrl || "",
+    checks: response?.checks || null,
+  };
+}
+
+async function getTabForReadiness(tabId) {
+  try {
+    return await chrome.tabs.get(tabId);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function readinessResult(provider, tabId, code, error = "") {
+  return {
+    ok: code === "READY",
+    ready: code === "READY",
+    provider,
+    tabId,
+    code,
+    status: code,
+    message: error,
+    error,
+    url: "",
+  };
+}
+
+function readinessCodeForTabError(error) {
+  if (error?.code && ["TAB_NOT_FOUND", "WRONG_URL", "TIMEOUT"].includes(error.code)) {
+    return error.code;
+  }
+  if (/(?:尚未就緒|timeout|timed out)/i.test(error?.message || "")) {
+    return "TIMEOUT";
+  }
+  return "TAB_NOT_FOUND";
+}
+
+function urlMatchesPatternForReadiness(url, pattern) {
+  if (!url || !pattern) return false;
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`).test(url);
+}
+
+async function withReadinessTimeout(promise, timeoutMs) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const error = new Error("provider readiness timeout");
+      error.code = "READINESS_TIMEOUT";
+      reject(error);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function startBasicDebate(question, options = {}) {
@@ -266,6 +787,9 @@ async function startChatDebate(question, options = {}) {
   return startInteractiveDebate(question, {
     ...options,
     mode: "chat",
+    openEnded: true,
+    interactiveMode: true,
+    debateRounds: 1,
     openingMessage: "自由群聊開始：各就各位，準備送出第一句話",
   });
 }
@@ -275,6 +799,7 @@ async function startTheaterDebate(question, options = {}) {
   return startInteractiveDebate(question, {
     ...options,
     mode: "theater",
+    interactiveMode: true,
     openingMessage: "劇場大亂鬥：各就各位，準備送出第一句話",
     engineOptions: {
       isTheaterMode: true,
@@ -294,12 +819,19 @@ async function startInteractiveDebate(question, options = {}) {
   const summarySetup = await prepareSummarySetup(requestedProviders, options);
   const activeProviders = summarySetup.debateProviders;
   const summaryProvider = summarySetup.resolvedSummaryProvider;
-  const debateRounds = normalizeDebateRounds(options.debateRounds);
   const entitlements = await getEntitlements();
   runController.assertCurrent(runToken);
+  const preflight = options.preflight || await preflightProviderTabs(
+    [...activeProviders, ...(!options.skipSummary ? [summaryProvider] : [])],
+    options.hookedTabs,
+    runToken,
+  );
+  const debateRounds = normalizeDebateRounds(options.debateRounds);
+  const providerTabs = { ...(options.hookedTabs || {}), ...preflight.providerTabs };
   engine = new DebateEngine(activeProviders, summaryProvider, debateRounds, {
     ...(options.engineOptions || {}),
     interactionStyle: options.interactionStyle,
+    openEnded: options.openEnded === true,
     summaryStrategy: summarySetup.summaryStrategy,
     resolvedSummaryProvider: summaryProvider,
   });
@@ -318,7 +850,8 @@ async function startInteractiveDebate(question, options = {}) {
     currentCritiqueRound: 0,
     entitlements,
     skipSummary: options.skipSummary || false,
-    providerTabs: options.hookedTabs || {},
+    providerTabs,
+    preflightResults: preflight.results,
   };
   await publishState(runToken);
 
@@ -447,11 +980,15 @@ function resolveSummaryProvider(summaryProvider, candidates) {
 
 async function prepareSummarySetup(requestedProviders, options = {}) {
   const summaryStrategy = normalizeSummaryStrategy(options.summaryStrategy);
-  await requireSummaryStrategyFeature(summaryStrategy);
+  if (!options.skipSummary) {
+    await requireSummaryStrategyFeature(summaryStrategy);
+  }
 
-  const resolvedSummaryProvider = resolveSummaryProvider(options.summaryProvider, requestedProviders);
+  const resolvedSummaryProvider = options.skipSummary
+    ? requestedProviders[0]
+    : resolveSummaryProvider(options.summaryProvider, requestedProviders);
   let debateProviders = [...requestedProviders];
-  if (summaryStrategy === "observerChair") {
+  if (!options.skipSummary && summaryStrategy === "observerChair") {
     if (requestedProviders.length < 3) {
       throw new Error("圍觀主席制至少需勾選 3 家 AI，扣掉主席後才有 2 家能辯論。");
     }
@@ -528,10 +1065,17 @@ async function startQuestionDebate(question, options = {}) {
   runController.assertCurrent(runToken);
   const mode = options.mode || "basic";
   const scheduler = options.scheduler || "sequential";
+  const preflight = options.preflight || await preflightProviderTabs(
+    [...activeProviders, ...(!options.skipSummary ? [summaryProvider] : [])],
+    options.hookedTabs,
+    runToken,
+  );
   const debateRounds = normalizeDebateRounds(options.debateRounds);
+  const providerTabs = { ...(options.hookedTabs || {}), ...preflight.providerTabs };
 
   engine = new DebateEngine(activeProviders, summaryProvider, debateRounds, {
     interactionStyle: options.interactionStyle,
+    openEnded: options.openEnded === true,
     summaryStrategy: summarySetup.summaryStrategy,
     resolvedSummaryProvider: summaryProvider,
   });
@@ -550,7 +1094,8 @@ async function startQuestionDebate(question, options = {}) {
     currentCritiqueRound: 0,
     entitlements,
     skipSummary: options.skipSummary || false,
-    providerTabs: options.hookedTabs || {},
+    providerTabs,
+    preflightResults: preflight.results,
   };
   await publishState(runToken);
 
@@ -579,6 +1124,12 @@ async function startSummaryDebate(userNote, options = {}) {
   if (debateProviders.length < 2) {
     throw new Error(`總結辯論至少需要目前頁面以外的 2 家 AI。現在目前頁面是 ${providerLabel(sourceProvider)}，請再勾選兩家其他 AI。`);
   }
+  const preflight = options.preflight || await preflightProviderTabs(
+    [sourceProvider, ...debateProviders],
+    { ...(options.hookedTabs || {}), [sourceProvider]: sourceTab.id },
+    runToken,
+  );
+  const providerTabs = { ...(options.hookedTabs || {}), ...preflight.providerTabs };
 
   engine = new DebateEngine(debateProviders, sourceProvider, debateRounds, {
     interactionStyle: options.interactionStyle,
@@ -593,7 +1144,7 @@ async function startSummaryDebate(userNote, options = {}) {
     phase: "source-summary",
     message: `請 ${providerLabel(sourceProvider)} 總結目前對話`,
     question: String(userNote || "").trim(),
-    providerTabs: { ...(options.hookedTabs || {}), [sourceProvider]: sourceTab.id },
+    providerTabs,
     activeProviders: debateProviders,
     sourceProvider,
     summaryProvider: sourceProvider,
@@ -602,6 +1153,7 @@ async function startSummaryDebate(userNote, options = {}) {
     currentCritiqueRound: 0,
     entitlements,
     skipSummary: options.skipSummary || false,
+    preflightResults: preflight.results,
   };
   await publishState(runToken);
 
@@ -1188,15 +1740,22 @@ async function getOrCreateProviderTab(providerId, options = {}) {
     throw new Error(`Unknown provider: ${providerId}`);
   }
 
+  const candidateTabIds = [];
+  if (!options.forceNewTab && Number.isInteger(options.preferredTabId)) {
+    candidateTabIds.push(options.preferredTabId);
+  }
   const boundTabId = runtimeState.providerTabs?.[providerId];
-  if (!options.forceNewTab && typeof boundTabId === "number") {
+  if (!options.forceNewTab && typeof boundTabId === "number" && !candidateTabIds.includes(boundTabId)) {
+    candidateTabIds.push(boundTabId);
+  }
+  for (const candidateTabId of candidateTabIds) {
     try {
-      const boundTab = await chrome.tabs.get(boundTabId);
-      if (isProviderTabReady(boundTab, provider)) {
-        return boundTab;
+      const candidateTab = await chrome.tabs.get(candidateTabId);
+      if (isProviderTabReady(candidateTab, provider)) {
+        return candidateTab;
       }
     } catch (_error) {
-      // The user closed the debate tab. Open a fresh conversation below.
+      // The user closed this candidate tab. Open a fresh conversation below.
     }
   }
 
@@ -1278,6 +1837,33 @@ async function refreshMetaInputProvider(tabId, job, runToken) {
   runController.assertCurrent(runToken);
 }
 
+const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.0-readiness.4";
+
+async function ensureProviderContentScript(tabId) {
+  let capabilities = null;
+  try {
+    capabilities = await chrome.tabs.sendMessage(tabId, { type: "aiDebate:getCapabilities" });
+  } catch (_error) {
+    // A missing or invalidated listener is repaired by the local injection below.
+  }
+  if (capabilities?.contentScriptVersion === PROVIDER_CONTENT_SCRIPT_VERSION) return;
+
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: [
+      "src/content/automation-core.js",
+      "src/content/provider-adapters.js",
+      "src/content/provider-page.js",
+    ],
+  });
+  capabilities = await chrome.tabs.sendMessage(tabId, { type: "aiDebate:getCapabilities" });
+  if (capabilities?.contentScriptVersion !== PROVIDER_CONTENT_SCRIPT_VERSION) {
+    const error = new Error("Provider content script 版本不一致，請重新整理該分頁後再試一次");
+    error.code = "CONTENT_SCRIPT_VERSION_MISMATCH";
+    throw error;
+  }
+}
+
 async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", extra = {}) {
   const payload = {
     type,
@@ -1289,23 +1875,14 @@ async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", ex
     ...extra,
   };
 
+  const tab = await chrome.tabs.get(tabId);
   try {
+    await ensureProviderContentScript(tabId);
     return await chrome.tabs.sendMessage(tabId, payload);
-  } catch (_error) {
-    const tab = await chrome.tabs.get(tabId);
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        files: [
-          "src/content/automation-core.js",
-          "src/content/provider-adapters.js",
-          "src/content/provider-page.js",
-        ],
-      });
-      return await chrome.tabs.sendMessage(tabId, payload);
-    } catch (error) {
-      throw new Error(`${error.message}（目前網址：${tab.url || tab.pendingUrl || "unknown"}）`);
-    }
+  } catch (error) {
+    const wrapped = new Error(`${error.message}（目前網址：${tab.url || tab.pendingUrl || "unknown"}）`);
+    wrapped.code = error.code || "CONTENT_SCRIPT_UNAVAILABLE";
+    throw wrapped;
   }
 }
 
@@ -1315,27 +1892,69 @@ function getProviderTimeoutMs(phase) {
     : PROVIDER_TIMEOUT_MS;
 }
 
-async function clearProviderSubmittedRuns() {
-  const tabs = await chrome.tabs.query({});
-  await Promise.all(tabs.map(async (tab) => {
-    if (typeof tab.id !== "number") {
-      return;
+async function notifyProviderAbortOperations({ clearSubmittedRuns = false, tabIds = null } = {}) {
+  const providerTabs = new Map();
+  if (Array.isArray(tabIds)) {
+    for (const rawTabId of tabIds) {
+      const tabId = Number(rawTabId);
+      if (!Number.isInteger(tabId)) continue;
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        const url = tab.url || tab.pendingUrl || "";
+        const provider = PROVIDERS.find((item) => item.matchPatterns?.some((pattern) =>
+          urlMatchesPatternForReadiness(url, pattern),
+        ));
+        if (provider) providerTabs.set(tabId, provider);
+      } catch (_error) {
+        // A closed tab is already stopped; map it to no provider operation.
+      }
     }
-    const provider = PROVIDERS.find((item) => isProviderTabReady(tab, item));
-    if (!provider) {
-      return;
-    }
+  } else for (const provider of PROVIDERS) {
+    let tabs = [];
     try {
-      await sendProviderMessage(tab.id, {
-        provider: provider.id,
-        phase: "clear",
-        round: 0,
-        prompt: "",
-      }, "aiDebate:clearSubmittedRuns");
+      tabs = await chrome.tabs.query({ url: provider.matchPatterns });
+    } catch (_error) {
+      continue;
+    }
+    for (const tab of tabs) {
+      if (typeof tab.id !== "number") continue;
+      const url = tab.url || tab.pendingUrl || "";
+      if (provider.matchPatterns?.some((pattern) => urlMatchesPatternForReadiness(url, pattern))) {
+        providerTabs.set(tab.id, provider);
+      }
+    }
+  }
+
+  await Promise.all([...providerTabs.keys()].map(async (tabId) => {
+    try {
+      await withProviderControlTimeout(
+        chrome.tabs.sendMessage(tabId, { type: "aiDebate:abortAutomation" }),
+      );
     } catch (_error) {
       // A closed or changing provider tab must not block local data deletion.
     }
+    if (clearSubmittedRuns) {
+      try {
+        await withProviderControlTimeout(
+          chrome.tabs.sendMessage(tabId, { type: "aiDebate:clearSubmittedRuns" }),
+        );
+      } catch (_error) {
+        // A closed or changing provider tab must not block local data deletion.
+      }
+    }
   }));
+}
+
+async function withProviderControlTimeout(promise) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error("provider control message timeout")), PROVIDER_CONTROL_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function finishWithError(result, runToken) {
@@ -1353,10 +1972,11 @@ async function finishWithError(result, runToken) {
   return runtimeState;
 }
 
-async function publishState(runToken) {
+async function publishState(runToken, operation) {
   if (runToken !== undefined) {
     runController.assertCurrent(runToken);
   }
+  if (operation) assertCurrentControlOperation(operation);
 
   if (!Number.isFinite(runtimeState.savedAt)) {
     runtimeState = {
@@ -1364,16 +1984,95 @@ async function publishState(runToken) {
       savedAt: Date.now(),
     };
   }
-  let stateToPublish = JSON.parse(JSON.stringify(runtimeState));
-  await chrome.storage.local.set({ [STORAGE_KEY]: stateToPublish });
-
-  if (runToken !== undefined && !runController.isCurrent(runToken)) {
-    await chrome.storage.local.set({ [STORAGE_KEY]: runtimeState });
-    stateToPublish = JSON.parse(JSON.stringify(runtimeState));
-    runController.assertCurrent(runToken);
+  const stateToPublish = JSON.parse(JSON.stringify(runtimeState));
+  const persistedState = createBoundedPersistedState(stateToPublish);
+  try {
+    await safePersistState(chrome.storage, persistedState, STORAGE_KEY);
+  } catch (_error) {
+    // Quota or storage availability must not make the active in-memory run fail.
   }
 
+  if (runToken !== undefined) {
+    runController.assertCurrent(runToken);
+  }
+  if (operation) assertCurrentControlOperation(operation);
   chrome.runtime.sendMessage({ type: "aiDebate:stateChanged", state: stateToPublish }).catch(() => {});
+}
+
+function createBoundedPersistedState(state) {
+  const bounded = JSON.parse(JSON.stringify(state));
+  if (!bounded.transcript) {
+    return bounded;
+  }
+
+  bounded.transcript = boundTranscript(bounded.transcript, MAX_PERSISTED_TEXT_CHARS);
+  if (JSON.stringify(bounded.transcript).length <= MAX_PERSISTED_TRANSCRIPT_CHARS) {
+    return bounded;
+  }
+
+  bounded.transcript = boundTranscript(bounded.transcript, 2000);
+  if (JSON.stringify(bounded.transcript).length <= MAX_PERSISTED_TRANSCRIPT_CHARS) {
+    return bounded;
+  }
+
+  const transcript = bounded.transcript;
+  const providerIds = Array.isArray(transcript.activeProviders) ? transcript.activeProviders : [];
+  const emptyMap = Object.fromEntries(providerIds.map((providerId) => [providerId, "[內容已截斷]" ]));
+  bounded.transcript = {
+    phase: transcript.phase || "idle",
+    originalQuestion: boundText(transcript.originalQuestion, 2000),
+    activeProviders: providerIds,
+    summaryProvider: transcript.summaryProvider,
+    summaryStrategy: transcript.summaryStrategy,
+    resolvedSummaryProvider: transcript.resolvedSummaryProvider,
+    interactionStyle: transcript.interactionStyle,
+    openEnded: transcript.openEnded === true,
+    isTheaterMode: transcript.isTheaterMode === true,
+    customPersonas: {},
+    debateRounds: transcript.debateRounds,
+    currentCritiqueRound: transcript.currentCritiqueRound,
+    imposterProvider: transcript.imposterProvider || null,
+    reveal: null,
+    answers: { ...emptyMap },
+    critiques: { ...emptyMap },
+    critiqueRounds: Array.from({ length: Math.max(1, Number(transcript.debateRounds) || 1) }, () => ({ ...emptyMap })),
+    errors: [],
+  };
+  return bounded;
+}
+
+function boundTranscript(transcript, textLimit) {
+  const bounded = JSON.parse(JSON.stringify(transcript));
+  bounded.originalQuestion = boundText(bounded.originalQuestion, textLimit);
+  for (const key of ["answers", "critiques"]) {
+    if (bounded[key] && typeof bounded[key] === "object") {
+      bounded[key] = Object.fromEntries(Object.entries(bounded[key]).map(([providerId, value]) => [
+        providerId,
+        boundText(value, textLimit),
+      ]));
+    }
+  }
+  if (Array.isArray(bounded.critiqueRounds)) {
+    bounded.critiqueRounds = bounded.critiqueRounds.map((round) =>
+      Object.fromEntries(Object.entries(round || {}).map(([providerId, value]) => [
+        providerId,
+        boundText(value, textLimit),
+      ])),
+    );
+  }
+  if (Array.isArray(bounded.errors)) {
+    bounded.errors = bounded.errors.map((error) => ({
+      ...error,
+      message: boundText(error?.message, textLimit),
+      error: boundText(error?.error, textLimit),
+    }));
+  }
+  return bounded;
+}
+
+function boundText(value, limit) {
+  const text = String(value || "");
+  return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }
 
 async function setProviderDiagnostic(providerId, patch, runToken) {
@@ -1500,6 +2199,12 @@ function providerResponseError(response, fallbackMessage) {
   const error = new Error(response?.error || fallbackMessage);
   error.code = response?.code || "PROVIDER_AUTOMATION_FAILED";
   error.providerContent = response?.providerContent || "";
+  return error;
+}
+
+function createRunCancelledError() {
+  const error = new Error("已緊急暫停");
+  error.code = "RUN_CANCELLED";
   return error;
 }
 

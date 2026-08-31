@@ -22,8 +22,19 @@
   - Gemini 可靠送出已有單元與來源安全測試，仍需在使用者登入的 Chrome 實際跑一次完整流程。
   - 0.4.1 上傳包已產生；商店截圖仍待乾淨實機畫面。
   - MissionCenter `sync_mission_center.py` 無法解析既有繁中欄位，本輪保留手動同步。
+  - v0.5.0 文件與版本欄位已先同步；Command Deck 實作、候選包、登入態 Chrome 驗證與發布決定仍待完成，不能以此紀錄宣稱上架或 smoke 通過。
 
 
   - [2026-07-21] 使用者核准 LLM-E3「社交推理與劇場差異化」：鎖定 Gemini 腦洞鬧場原文、Grok 短週期輿情、Meta 長週期群體採用，揭曉保留最後猜測與內鬼第一輪原文並附真相，內鬼採單一荒謬但自洽怪規則。
   - CodeRabbit 已取得明確上傳同意；僅在本地驗證後做小範圍審查，任何維修先交由使用者查看。
   - [2026-07-21] T30 CodeRabbit minor 修正完成：app.js transcript 支援 reveal-only、新增 diagnostics regression；165/165 pass、uncommitted review 0 issues，並產出 0.4.7 封裝。
+  - [2026-08-27] 使用者核准 v0.5.0「Holographic Dragon Command Deck」發布準備：暗黑金屬、鏡面玻璃、青藍／紫／琥珀流光、三龍指揮層、Operate 模式，以及可及性與效能規則；新增 LLM-E4／LLM-T32–LLM-T36，均維持執行中。
+  - [2026-08-31] 新增 LLM-T37 Provider DOM 漂移韌性層：以五家登入態 Chrome 現場證據、多訊號候選、安全 composer 範圍、唯讀 readiness 與版本化 content script 降低後續改版維護成本。
+  - [2026-08-31] LLM-T37 進入 Review：五家現場頁面皆唯一命中可見 composer；196/196、三個關鍵腳本語法、diff 與 `dist/llmeeting-0.5.0.zip` 封裝通過，保留 reload 後正式 readiness／送出 smoke 門檻。
+  - [2026-09-01] 修正 readiness 背景分頁競態：檢查連線與正式 preflight 改為快速逐家前景喚醒、等待頁面 complete、執行唯讀檢查，最後復原使用者原分頁；197/197 通過。
+  - [2026-09-01] Provider 控制台改為五家常駐單列，移除 Provider disclosure 與「決策架構／靈感整合」等按鈕副標；真實 320／480px viewport 均同列且無水平溢位，198/198 通過。
+  - [2026-09-01] 移除 Provider 控制台中 Meta 的 BETA 視覺標籤與專用樣式，使五張模型卡維持相同內容層級與外形；Beta 產品語意仍保留於進階選項與既有功能邊界。
+  - [2026-09-01] Provider 卡片進一步收縮為真正的 1:1 正方形，狀態文字改為卡片底部覆層；真實 Chrome CDP 量測在 320px 為約 50.4×50.4px、480px 為約 78.4×78.4px，整顆按鈕完整填滿卡片且無水平溢位。
+  - [2026-09-01] 修復劇場模式互動控制台回歸：side panel 重新辨識劇場／等待中的劇場 session，background 強制劇場走互動等待路徑而不信任 UI 傳值；200/200 通過。
+  - [2026-09-01] 使用者核准 v0.5.0 全域硬化：新增 LLM-T38–T42，涵蓋 preflight／取消競態、五家送出與回覆關聯、storage/session 防護、side panel 多輪與可及性，以及登入態對抗 smoke；T36 新增 T42 發布閘門。
+  - [2026-09-01] 全域硬化進入 Review：228/228 通過；preflight／readiness／control lifecycle 改用 ownership revision，五家送出採 fail-closed 證據與 abort epoch，storage 採 bounded 三層降級，side panel 補 critique-N／busy 鎖／ARIA。Chrome 登入態五家皆命中可見 composer；CodeRabbit 三輪修正 4 項真實問題後終局 0 findings；實際送出需使用者於動作當下確認。

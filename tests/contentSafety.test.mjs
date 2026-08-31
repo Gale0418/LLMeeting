@@ -50,18 +50,19 @@ test("Meta Lexical input writing uses serialized execCommand without events or D
   assert.match(metaWrite, /replace\(\/\\r\\n\?\/g, "\\n"\)[\s\S]*?replace\(\/\\n\/g, "\\u2028"\)/);
   assert.match(metaWrite, /document\.execCommand\("insertText", false, serializedText\) === false/);
   assert.doesNotMatch(metaWrite, /textContent\s*=/);
-  assert.match(metaWrite, /await waitForInputWritten\(element, serializedText\)/);
+  assert.match(metaWrite, /await waitForInputWritten\(element, serializedText, INPUT_WRITE_TIMEOUT_MS, abortCheck\)/);
   assert.doesNotMatch(inputWait, /dispatchEvent|execCommand|textContent\s*=/);
   assert.match(script, /const INPUT_WRITE_TIMEOUT_MS = 2000/);
   assert.match(inputWait, /while \(true\) \{[\s\S]*?normalizeInputText\(readInputText\(element\)\) === expected[\s\S]*?throw createInputWriteError\(\)/);
 });
 
-test("content script falls back to Enter submit after writing the prompt", async () => {
+test("content script keeps Enter fallback without a global generic submit selector", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
   const adapters = await readFile("src/content/provider-adapters.js", "utf8");
 
   assert.match(script, /dispatchEnter\(input\)/);
-  assert.match(adapters, /button\[type='submit'\]/);
+  assert.doesNotMatch(adapters, /button\[type='submit'\]/);
+  assert.match(script, /findLikelySendButton\(findComposerScope\(input, config\)\)/);
 });
 
 test("content script does not accept the submitted prompt bubble as an AI response", async () => {
@@ -69,7 +70,7 @@ test("content script does not accept the submitted prompt bubble as an AI respon
 
   assert.match(script, /!isPromptEcho\(prompt, currentText\)/);
   assert.match(script, /baseline,\s+errorBaseline,\s+prompt: message\.prompt/);
-  assert.match(script, /waitForCompletion\(config, providerId, message\.timeoutMs \|\| 120000, run\.baseline, run\.prompt, run\.errorBaseline\)/);
+  assert.match(script, /waitForCompletion\(config, providerId, message\.timeoutMs \|\| 120000, run\.baseline, run\.prompt, run\.errorBaseline, \(\) => assertAutomationEpoch\(runEpoch\)\)/);
 });
 
 test("content script uses inactivity timeout with a bounded completion hard cap", async () => {
@@ -90,7 +91,16 @@ test("Gemini confirms submission before registering the run", async () => {
   assert.match(script, /observeGeminiSubmission/);
   assert.match(script, /findSendButton\(config, input\)/);
   assert.ok(script.indexOf("ensurePromptSubmitted({") < script.indexOf("submittedRuns.set(runId"));
-  assert.match(adapters, /gemini:[\s\S]*?sendSelectors:\s*\[\s*"button\.send-button"[\s\S]*?"button\[type='submit'\]"/);
+  assert.match(adapters, /gemini:[\s\S]*?sendSelectors:\s*\[\s*"button\.send-button"/);
+  assert.doesNotMatch(adapters.match(/gemini:[\s\S]*?(?=\n    grok:)/)?.[0] || "", /button\[type='submit'\]/);
+});
+
+test("every provider uses the confirmed submission path before persisting a run", async () => {
+  const script = await readFile("src/content/provider-page.js", "utf8");
+  const submit = script.slice(script.indexOf("async function submitPrompt"), script.indexOf("async function readSubmittedResponse"));
+  assert.equal((submit.match(/ensurePromptSubmitted\(\{/g) || []).length, 1);
+  assert.match(submit, /observeProviderSubmission\(/);
+  assert.ok(submit.indexOf("ensurePromptSubmitted({") < submit.indexOf("submittedRuns.set(runId"));
 });
 
 test("ChatGPT waits for generation to end and provider errors are rejected", async () => {
@@ -103,4 +113,29 @@ test("ChatGPT waits for generation to end and provider errors are rejected", asy
   assert.match(script, /createProviderResponseError\(providerError, content\)/);
   assert.match(script, /providerContent:\s*error\.providerContent/);
   assert.match(script, /error\.providerContent = content/);
+});
+
+test("provider automation exposes a per-tab abort epoch", async () => {
+  const script = await readFile("src/content/provider-page.js", "utf8");
+  assert.match(script, /"aiDebate:abort": abortAutomation/);
+  assert.match(script, /Promise\.resolve\(\)[\s\S]*?\.then\(\(\) => handler\(message\)\)/);
+  assert.match(script, /let automationEpoch = 0/);
+  assert.match(script, /automationEpoch \+= 1/);
+  assert.match(script, /assertAutomationEpoch\(epoch\)/);
+  assert.match(script, /PROVIDER_AUTOMATION_ABORTED/);
+});
+
+test("response reads recheck the epoch before classifying or persisting", async () => {
+  const script = await readFile("src/content/provider-page.js", "utf8");
+  const readResponse = script.slice(script.indexOf("async function readSubmittedResponse"));
+  const afterAwait = readResponse.indexOf("const responseCandidate = await waitForCompletion");
+  const firstEpochCheck = readResponse.indexOf("assertAutomationEpoch(runEpoch);", afterAwait);
+  const classify = readResponse.indexOf("const providerError = classifyProviderResponseError", afterAwait);
+  const remove = readResponse.indexOf("submittedRuns.delete(message.runId)", afterAwait);
+  const persist = readResponse.indexOf("persistSubmittedRuns();", remove);
+
+  assert.ok(afterAwait >= 0);
+  assert.ok(firstEpochCheck > afterAwait && firstEpochCheck < classify);
+  assert.ok(firstEpochCheck < remove);
+  assert.ok(readResponse.indexOf("assertAutomationEpoch(runEpoch);", remove) < persist);
 });

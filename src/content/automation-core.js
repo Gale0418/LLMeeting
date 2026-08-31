@@ -1,17 +1,29 @@
 (() => {
   function assistantSnapshot(messages) {
     const normalized = Array.from(messages || [])
-      .map((message) => String(message || "").trim())
-      .filter(Boolean);
+      .map((message) => {
+        if (message && typeof message === "object") {
+          const text = String(message.text || "").trim();
+          return {
+            text,
+            identity: String(message.identity || ""),
+          };
+        }
+        return { text: String(message || "").trim(), identity: "" };
+      })
+      .filter((message) => message.text);
+    const last = normalized[normalized.length - 1] || { text: "", identity: "" };
 
     return {
       count: normalized.length,
-      lastText: normalized[normalized.length - 1] || "",
+      lastText: last.text,
+      lastFingerprint: normalizeWhitespace(last.text).toLowerCase(),
+      lastIdentity: last.identity,
     };
   }
 
   function hasFreshAssistantResponse(baseline, current) {
-    return current.count > baseline.count || current.lastText !== baseline.lastText;
+    return current.count > baseline.count || current.lastFingerprint !== baseline.lastFingerprint;
   }
 
   function isPromptEcho(prompt, candidate) {
@@ -152,6 +164,17 @@
           /(?:發生錯誤|暫時錯誤).*(?:重試|再試|稍後)/,
         ],
       },
+      {
+        code: "PROVIDER_PAGE_ERROR",
+        message: `${providerId} 回覆失敗`,
+        tests: [
+          /^(?:error|failed|failure)(?:\s+(?:generating|to generate|loading|processing))?(?:\s+(?:the|a))?\s+(?:response|reply|answer)?[.!]?$/,
+          /^(?:error|failed|failure)\s+(?:generating|to generate)\s+(?:response|reply|answer)\b/,
+          /^(?:unable|cannot|can't|couldn't)\s+(?:to\s+)?(?:generate|load|process)\s+(?:a\s+)?(?:response|reply|answer)\b/,
+          /^something went wrong[.!]?$/,
+          /^(?:發生錯誤|回覆失敗|無法(?:產生|生成|載入)回覆)[。.!]?$/,
+        ],
+      },
     ];
 
     for (const candidate of patterns) {
@@ -178,10 +201,25 @@
     return Array.isArray(config?.hosts) && config.hosts.some(hostMatches);
   }
 
-  async function ensurePromptSubmitted({ clickButton, pressEnter, confirmSubmission }) {
+  function createAutomationAbortError() {
+    const error = new Error("Provider automation aborted");
+    error.code = "PROVIDER_AUTOMATION_ABORTED";
+    return error;
+  }
+
+  async function ensurePromptSubmitted({
+    clickButton,
+    pressEnter,
+    promptStillPresent = async () => true,
+    confirmSubmission,
+    providerName = "Gemini",
+  }) {
     const clicked = Boolean(await clickButton());
     let method = clicked ? "button" : "enter";
     if (!clicked) {
+      if (!await promptStillPresent()) {
+        throw createSubmissionUnconfirmedError(providerName);
+      }
       await pressEnter();
     }
 
@@ -190,16 +228,16 @@
       return { method, evidence, retried: false };
     }
 
-    if (clicked) {
-      await pressEnter();
-      method = "enter";
-      evidence = await confirmSubmission();
-      if (evidence) {
-        return { method, evidence, retried: true };
-      }
-    }
+    // A successful click is an explicit action.  Keeping the prompt in the
+    // composer is not evidence that the click was a no-op, so never submit a
+    // second time merely because confirmation is delayed or absent.
+    throw createSubmissionUnconfirmedError(providerName);
+  }
 
-    throw new Error("Gemini 未確認送出");
+  function createSubmissionUnconfirmedError(providerName) {
+    const error = new Error(`${providerName} 未確認送出`);
+    error.code = "PROVIDER_SUBMISSION_UNCONFIRMED";
+    return error;
   }
 
   globalThis.aiDebateAutomationCore = {
@@ -213,6 +251,7 @@
     isPromptEcho,
     matchesProviderLocation,
     normalizeProviderResponse,
+    createAutomationAbortError,
   };
 
   function normalizeWhitespace(text) {

@@ -30,3 +30,6 @@
 - 2026-07-21：核准 LLM-E3「社交推理與劇場差異化」方案：Gemini 腦洞鬧場原文鎖定；Grok 採短週期輿情、Meta 採長週期群體採用；揭曉必須包含最後猜測、內鬼第一輪原文與真相；內鬼任務採單一荒謬但自洽的怪規則。
 - 2026-07-21：CodeRabbit 已取得明確上傳同意；僅於本地驗證後以小範圍審查，任何維修先給使用者看。
 - 2026-07-21：依 CodeRabbit minor 建議修正 src/sidepanel/app.js transcript reveal-only 支援並新增 diagnostics regression；修後 uncommitted review 為 0 issues，T30 維持 Review，待使用者實機驗證。
+- 2026-08-27：核准 v0.5.0「Holographic Dragon Command Deck」作為側邊欄的視覺方向：暗黑金屬承載結構、鏡面玻璃承載工作面，青藍／紫／琥珀流光分別服務執行、互評／主操作與主席／揭曉；三龍是視覺指揮層，不得取代 provider 文字狀態。
+- 2026-08-27：v0.5.0 採 Operate 模式，a11y 與效能為發布門檻；鍵盤 focus、對比、語意狀態、reduced motion、靜態 fallback 與效果降級需在驗證後才能宣稱完成。
+- 2026-08-27：版本與商店文件先同步為 0.5.0，但候選包、登入態 Chrome 試玩、smoke 與上架狀態未驗證前，公開文案只能描述發布準備與目標，不得宣稱已發布。

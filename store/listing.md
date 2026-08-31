@@ -1,5 +1,7 @@
 # LLMeeting
 
+版本：**0.5.0**（發布準備中；功能以驗證結果為準）
+
 LLMeeting 是一個 Chrome 側邊欄 AI 議事空間，可以把同一個問題交給 ChatGPT、Gemini、Grok、Claude，以及預設關閉的 Meta AI Beta。它不只並排回答，還會讓 AI 互相閱讀、質疑、扮演角色，並接受使用者中途插話。
 
 ## Short description

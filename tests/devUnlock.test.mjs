@@ -32,7 +32,7 @@ function readStoredZipEntry(zipBuffer, archiveName) {
   return null;
 }
 
-function createHarness({ plan = "free", random = () => 0, confirmResult = false } = {}) {
+function createHarness({ plan = "free", random = () => 0, confirmResult = false, tabs } = {}) {
   let storedPlan = plan;
   const alerts = [];
   const confirms = [];
@@ -70,6 +70,7 @@ function createHarness({ plan = "free", random = () => 0, confirmResult = false 
       },
     },
     openPage: (...args) => opened.push(args),
+    tabs,
     random,
     timers: {
       setTimeout: (callback) => {
@@ -142,6 +143,35 @@ test("fifth Free click unlocks sheep mode and offers the author YouTube link", a
   assert.match(harness.confirms[0], /恭喜解鎖🐑模式~/);
   assert.ok(harness.confirms[0].includes(AUTHOR_YOUTUBE_URL));
   assert.deepEqual(harness.opened, [[AUTHOR_YOUTUBE_URL, "_blank"]]);
+});
+
+test("author tab creation is awaited and rejected tabs do not escape the unlock flow", async () => {
+  let createCalls = 0;
+  const errors = [];
+  const originalConsoleError = console.error;
+  console.error = (error) => errors.push(error);
+  const harness = createHarness({
+    confirmResult: true,
+    tabs: {
+      async create(details) {
+        createCalls += 1;
+        assert.equal(details.url, AUTHOR_YOUTUBE_URL);
+        await Promise.resolve();
+        throw new Error("tabs.create unavailable");
+      },
+    },
+  });
+
+  try {
+    for (let click = 0; click < 5; click += 1) await harness.click();
+  } finally {
+    console.error = originalConsoleError;
+  }
+
+  assert.equal(createCalls, 1);
+  assert.equal(errors.length, 1);
+  assert.equal(harness.getPlan(), "pro");
+  assert.equal(harness.planBadge.textContent, "🐑");
 });
 
 test("rapid repeated click bursts unlock only once", async () => {

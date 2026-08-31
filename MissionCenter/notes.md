@@ -62,3 +62,11 @@
   2. npm test 165/165；修後 CodeRabbit uncommitted review 0 issues。
   3. npm run package 產出 dist/llmeeting-0.4.7.zip，2186164 bytes，SHA256 51897478EF8B5D671799541F6DAC4261B0E13D22C97C9A4100246EBFB154DB9C。
   4. T30 維持 Review，T31 維持 Backlog；不得標 Done。
+
+- 2026-08-27 v0.5.0 provider readiness drift：
+  1. Chrome 唯讀 DOM 顯示 Grok 使用 `div[aria-label='Ask Grok anything']`，空 composer 時送出控制可能延遲掛載；Claude 使用 `div[aria-label='Write your prompt to Claude']`，空 composer 的送出鈕可存在但 disabled。
+  2. Claude 的側欄歷史對話「異星工廠停止更新的消息」讓「更多選項」aria-label 含有「停止」，觸發過寬的 `aria-label*='停止'` 假生成判斷；所有 provider 已改成完整停止片語與 test-id。
+  3. 採 provider-specific accessibility／test-id selector、短輪詢等待 hydration、生成狀態 200ms 穩定取樣；不填入探測文字、不點擊、不依賴整頁泛用 `aria-busy`。
+  4. 參考 GitHub 上的 multi-LLM orchestrator 與 AI council selector registry（僅作 Learn，不複製程式碼、不新增外部依賴），並以官方 Playwright locator 與 Chrome content-script 文件作為 selector 與 SPA DOM 判斷依據。
+  5. 登入牆／provider error 會提前結束 readiness 輪詢；Gemini 首次回覆慢屬送出後冷啟動／生成等待，與 readiness 不混為同一狀態。
+  6. Claude 空白 composer 的可編輯 div 與 `chat-input-send` 均存在，但送出鈕正常 disabled；已補 `sendControlDeferredWhenEmpty`，避免把待輸入狀態誤報為 `SEND_UNAVAILABLE`。
