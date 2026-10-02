@@ -13,6 +13,7 @@ import {
   proRequiredMessage,
 } from "../shared/entitlements.js";
 import { buildConversationSummaryPrompt } from "../shared/prompts.js";
+import { normalizeRoundNumber } from "../shared/text.js";
 import {
   DEFAULT_ACTIVE_PROVIDER_IDS,
   PROVIDERS,
@@ -1888,7 +1889,7 @@ async function refreshMetaInputProvider(tabId, job, runToken) {
   runController.assertCurrent(runToken);
 }
 
-const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.0-driver.5";
+const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.0-driver.6";
 const PROVIDER_DRIVER_CONTRACT_VERSION = 1;
 
 function isProviderLoginTab(tab, provider) {
@@ -2357,14 +2358,14 @@ function phaseLabel(phase, round) {
 }
 
 function critiqueRoundLabel(round, totalRounds = 1) {
-  const normalizedRound = normalizeDebateRounds(round);
-  const total = normalizeDebateRounds(totalRounds);
+  const normalizedRound = normalizeRoundNumber(round);
+  const total = normalizeRoundNumber(totalRounds);
   return total > 1 ? `第 ${normalizedRound}/${total} 輪互評` : "互評";
 }
 
 function critiqueRoundFromPhase(phase) {
   const match = String(phase || "").match(/^critique(?:-(\d+))?$/);
-  return normalizeDebateRounds(match?.[1] || 1);
+  return normalizeRoundNumber(match?.[1] || 1);
 }
 
 function createRunId(job) {

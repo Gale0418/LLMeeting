@@ -212,6 +212,46 @@ test("open-ended chat can summarize directly after the first answers", () => {
   assert.match(job.prompt, /答案 B/);
 });
 
+test("open-ended imposter can reveal after first answers without mandatory critiques", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 1, {
+    openEnded: true, interactionStyle: "imposter",
+  });
+  engine.start("自由群聊直接揭曉");
+  engine.recordAnswer("chatgpt", "首輪甲");
+  assert.throws(() => engine.buildReveal(), /missing gemini/);
+  engine.recordAnswer("gemini", "首輪乙");
+  engine.buildReveal();
+  assert.equal(engine.debateRounds, 1);
+  for (const job of engine.buildRevealJobs()) {
+    assert.match(job.prompt, /首輪甲/);
+    assert.match(job.prompt, /首輪乙/);
+    assert.doesNotMatch(job.prompt, /沒有取得最後猜測/);
+  }
+});
+
+test("restored open-ended imposter uses the last completed round even with a pending round", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 1, {
+    openEnded: true, interactionStyle: "imposter",
+  });
+  engine.start("自由群聊末輪揭曉");
+  engine.recordAnswer("chatgpt", "首輪甲");
+  engine.recordAnswer("gemini", "首輪乙");
+  for (let round = 1; round <= 6; round++) {
+    assert.equal(engine.addChatRound(`補充 ${round}`), round);
+    engine.recordCritique("chatgpt", `完整 ${round} 甲`, round);
+    engine.recordCritique("gemini", `完整 ${round} 乙`, round);
+  }
+  const pending = engine.addChatRound("尚未完成");
+  engine.recordCritique("chatgpt", "未完成甲", pending);
+  const restored = DebateEngine.restore(engine.snapshot());
+  restored.buildReveal();
+  for (const job of restored.buildRevealJobs()) {
+    assert.match(job.prompt, /完整 6 甲/);
+    assert.match(job.prompt, /完整 6 乙/);
+    assert.doesNotMatch(job.prompt, /完整 5|未完成甲/);
+  }
+});
+
 test("open-ended chat summarizes only the last complete critique round", () => {
   const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 1, { openEnded: true });
   engine.start("只取最後有效輪");

@@ -6,6 +6,9 @@ import {
 } from "../shared/entitlements.js";
 import { DEFAULT_ACTIVE_PROVIDER_IDS, PROVIDERS } from "../shared/providers.js";
 import { isCritiquePhase, shouldShowChatControls } from "./modeRules.js";
+import { hasMeetingContent, launchGuide, readinessRecovery } from "./experienceRules.js";
+import { appendPlayIdea, canUsePlayIdeas, playIdeas } from "./playIdeas.js";
+import { normalizeRoundNumber } from "../shared/text.js";
 
 const PROVIDER_SELECTION_STORAGE_KEY = "aiDebate.providerSelection.v1";
 
@@ -25,6 +28,8 @@ const progressNodes = Array.from(document.querySelectorAll("#progressContainer .
 const providerSummaryText = document.querySelector("#providerSummaryText");
 const readinessHint = document.querySelector("#readinessHint");
 const checkReadinessButton = document.querySelector("#checkReadinessButton");
+const providerRecovery = document.querySelector("#providerRecovery");
+const launchGuideEl = document.querySelector("#launchGuide");
 
 const summaryProviderSelect = document.querySelector("#summaryProviderSelect");
 const debateRoundsInput = document.querySelector("#debateRoundsInput");
@@ -42,6 +47,9 @@ const chatInput = document.querySelector("#chatInput");
 const chatSendBtn = document.querySelector("#chatSendBtn");
 const chatCritiqueBtn = document.querySelector("#chatCritiqueBtn");
 const chatSummarizeBtn = document.querySelector("#chatSummarizeBtn");
+const playIdeaButtons = document.querySelector("#playIdeaButtons");
+const playCue = document.querySelector("#playCue");
+const chatRoundBadge = document.querySelector("#chatRoundBadge");
 const theaterSettings = document.querySelector("#theaterSettings");
 const refreshHooksBtn = document.querySelector("#refreshHooksBtn");
 
@@ -184,7 +192,9 @@ async function checkSelectedProviders() {
   renderProviderStatuses(latestState || { activeProviders });
   readinessHint.textContent = response?.ok
     ? "診斷完成；正式會議仍會建立全新對話"
-    : `${response?.error || "部分模型尚未就緒"}；正式會議會以新分頁重試`;
+    : Object.values(latestReadiness).some((result) => result.ready === false)
+      ? "檢查未完成，請依下方指引處理；技術細節可在診斷資訊查看。"
+      : "未取得檢查結果，請重新檢查；若仍失敗，確認擴充套件已載入。";
   checkReadinessButton.disabled = false;
 }
 
@@ -248,6 +258,7 @@ async function startDebate(mode) {
   const question = questionInput.value.trim();
   if (mode !== "summary" && !question) {
     renderMessage("請先輸入問題");
+    questionInput.focus();
     return;
   }
 
@@ -328,10 +339,25 @@ function selectedHookedTabs() {
   return hookedTabs;
 }
 
-resetButton.addEventListener("click", async () => {
-  const response = await chrome.runtime.sendMessage({ type: "aiDebate:reset" });
-  renderState(response?.state);
-});
+resetButton.addEventListener("click", resetCurrentMeeting);
+let resetActionPending = false;
+
+async function resetCurrentMeeting() {
+  if (resetActionPending || resetButton.disabled) return;
+  if (hasMeetingContent(latestState) && !globalThis.confirm("重置會結束目前會議並清除這場紀錄，無法復原。模型選擇會保留。確定重置？")) return;
+  resetActionPending = true;
+  resetButton.disabled = true;
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "aiDebate:reset" });
+    if (response?.ok) renderState(response.state);
+    else renderMessage(response?.error || "重置未完成，請稍後再試。");
+  } catch (_error) {
+    renderMessage("無法連線到擴充套件；重置結果尚未確認，請先確認目前會議狀態。");
+  } finally {
+    resetActionPending = false;
+    resetButton.disabled = false;
+  }
+}
 
 clearLocalDataButton?.addEventListener("click", async () => {
   const confirmed = globalThis.confirm("確定要清除本機保存的辯論內容與等待紀錄嗎？");
@@ -370,6 +396,35 @@ async function sendChatAction(action, text = "") {
 chatSendBtn?.addEventListener("click", () => sendChatAction("user_message", chatInput.value.trim()));
 chatCritiqueBtn?.addEventListener("click", () => sendChatAction("critique"));
 chatSummarizeBtn?.addEventListener("click", () => sendChatAction("summarize"));
+
+function renderPlayIdeas() {
+  if (!playIdeaButtons) return;
+  const available = canUsePlayIdeas(latestState, chatActionPending);
+  const liveMeeting = latestState?.busy || latestState?.phase === "waiting_for_user";
+  const mode = liveMeeting ? latestState.mode : selectedDebateMode();
+  const style = liveMeeting ? latestState.interactionStyle : interactionStyleSelect?.value;
+  playIdeaButtons.replaceChildren();
+  for (const idea of playIdeas(mode, style)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary-action play-idea";
+    button.textContent = idea.label;
+    button.disabled = !available;
+    button.addEventListener("click", () => {
+      if (!canUsePlayIdeas(latestState, chatActionPending)) return;
+      chatInput.value = appendPlayIdea(chatInput.value, idea.text);
+      chatInput.focus();
+      chatInput.dispatchEvent(new Event("input", { bubbles: true }));
+      if (playCue) playCue.textContent = "轉折已加入草稿；修改好，再按送出補充。";
+    });
+    playIdeaButtons.append(button);
+  }
+  if (chatRoundBadge) chatRoundBadge.textContent = available ? "輪到你" : latestState?.busy ? "AI 回應中" : "等開場";
+  if (playCue) playCue.textContent = available
+    ? "輪到你改變局勢。加個轉折、再互評，或結案收下這場討論。"
+    : latestState?.busy ? "AI 正在回應，轉折靈感稍後可用。"
+      : "先開始互動會議；等 AI 回答後，就輪到你加入討論。";
+}
 
 const stopDebateBtn = document.getElementById("stopDebateBtn");
 
@@ -592,6 +647,32 @@ function renderProviderStatuses(state) {
   }
 
   renderProviderSummary();
+  renderProviderRecovery(state);
+}
+
+function renderProviderRecovery(state) {
+  if (!providerRecovery) return;
+  providerRecovery.replaceChildren();
+  const needed = new Set([...selectedProviderIds(), state.sourceProvider,
+    ...(state.skipSummary || state.summaryStrategy === "allAnonymous" ? [] : [state.summaryProvider])]);
+  const failures = PROVIDERS.filter((provider) => needed.has(provider.id) && latestReadiness[provider.id]?.ready === false);
+  providerRecovery.hidden = state.busy || failures.length === 0;
+  if (providerRecovery.hidden) return;
+  for (const provider of failures) {
+    const item = document.createElement("div");
+    item.className = "recovery-item";
+    const heading = document.createElement("strong");
+    heading.textContent = `${provider.label}：${readinessFailureLabel(latestReadiness[provider.id])}`;
+    const guidance = document.createElement("p");
+    guidance.textContent = readinessRecovery(latestReadiness[provider.id].code);
+    const link = document.createElement("a");
+    link.href = provider.startUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = `開啟 ${provider.label}`;
+    item.append(heading, guidance, link);
+    providerRecovery.append(item);
+  }
 }
 
 function readinessFailureLabel(result) {
@@ -655,8 +736,8 @@ function updateProgressBar(state) {
     if (state.phase === "source-summary") percent = 15;
     else if (state.phase === "first-round") percent = state.skipSummary ? 50 : 30;
     else if (isCritiquePhase(state.phase)) {
-      const totalRounds = normalizeDebateRounds(state.debateRounds || state.transcript?.debateRounds || 1);
-      const currentRound = normalizeDebateRounds(state.currentCritiqueRound || state.transcript?.currentCritiqueRound || 1);
+      const totalRounds = normalizeRoundNumber(state.debateRounds || state.transcript?.debateRounds || 1);
+      const currentRound = normalizeRoundNumber(state.currentCritiqueRound || state.transcript?.currentCritiqueRound || 1);
       const base = state.skipSummary ? 50 : 30;
       const roundAlloc = state.skipSummary ? 50 : 45;
       percent = base + Math.round((Math.min(currentRound, totalRounds) / totalRounds) * roundAlloc);
@@ -718,7 +799,7 @@ function renderChatBubbles(state) {
       return;
     }
 
-    replaceChatTranscriptHTML(`<div class="empty-state">輸入問題，開始快速鬥技場。</div>`);
+    replaceChatTranscriptHTML(`<div class="empty-state">會議開始後，各家回覆會出現在這裡。比較觀點，也記得查證重要事實。</div>`);
     return;
   }
 
@@ -763,7 +844,7 @@ function renderChatBubbles(state) {
   // 3. 多輪互評與使用者發言
   const critiqueRounds = critiqueRoundMaps(transcript);
   const activeCritiqueRound = isCritiquePhase(state.phase)
-    ? normalizeDebateRounds(state.currentCritiqueRound || transcript.currentCritiqueRound || 1)
+    ? normalizeRoundNumber(state.currentCritiqueRound || transcript.currentCritiqueRound || 1)
     : 0;
   critiqueRounds.forEach((critiques, index) => {
     const roundNumber = index + 1;
@@ -899,7 +980,7 @@ function currentCritiqueMap(state) {
   const fallbackRound = state.phase === "done" || state.phase === "summary"
     ? rounds.length
     : 1;
-  const roundNumber = normalizeDebateRounds(state.currentCritiqueRound || state.transcript?.currentCritiqueRound || fallbackRound);
+  const roundNumber = normalizeRoundNumber(state.currentCritiqueRound || state.transcript?.currentCritiqueRound || fallbackRound);
   return rounds[Math.min(rounds.length, roundNumber) - 1] || {};
 }
 
@@ -978,6 +1059,7 @@ function renderDebateModeState() {
   }
 
   const mode = selectedDebateMode();
+  if (launchGuideEl) launchGuideEl.textContent = launchGuide(mode);
   const featureId = featureForMode(mode);
   const locked = Boolean(featureId && !canUseFeature(currentEntitlements, featureId));
   basicDebateButton.textContent = debateModeButtonLabel(mode);
@@ -996,6 +1078,7 @@ function renderDebateModeState() {
   if (chatControls) {
     chatControls.style.display = shouldShowChatControls(mode, latestState) ? "block" : "none";
   }
+  renderPlayIdeas();
 }
 
 function renderDebateModeOptionStates() {
@@ -1036,18 +1119,18 @@ function renderSummaryStrategyOptionStates() {
 
 function debateModeButtonLabel(mode) {
   if (mode === "fast") {
-    return "快速鬥技場 ⚡";
+    return "開始快速鬥技場 ⚡";
   }
   if (mode === "summary") {
-    return "總結辯論 ✦";
+    return "開始總結辯論 ✦";
   }
   if (mode === "chat") {
     return "開啟群聊 💬";
   }
   if (mode === "theater") {
-    return "劇場大亂鬥 🎭";
+    return "開始劇場大亂鬥 🎭";
   }
-  return "快速鬥技場 ⚡";
+  return "開始快速鬥技場 ⚡";
 }
 
 function debateModeButtonTitle(mode) {

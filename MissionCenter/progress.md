@@ -2,9 +2,9 @@
 # 進度
 
 - 專案: LLMeeting
-- 目標: 核對 Antigravity 架構報告並補強回覆定位
+- 目標: 保存免費體驗與 Provider 修補，完成審查並準備商店更新
 - 目前狀態: 35/50 tasks
-- 里程碑: Assistant response semantic fallback verified
+- 里程碑: 317 tests / CodeRabbit follow-up 0 issues / manual Store handoff
 - 進度條: [#######---] 70%
 - 進行中任務:
   - LLM-T27 揭曉證據板 (Review)

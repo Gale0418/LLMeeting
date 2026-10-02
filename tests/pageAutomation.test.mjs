@@ -451,7 +451,7 @@ test("Grok readiness recognizes the localized live composer structure", async ()
 test("provider content script uses a replaceable versioned listener after extension reload", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
 
-  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.0-driver\.5"/);
+  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.0-driver\.6"/);
   assert.match(script, /"aiDebate:getCapabilities": getCapabilities/);
   assert.match(script, /__aiDebateContentVersion/);
   assert.match(script, /onMessage\.removeListener\(globalThis\.__aiDebateContentMessageListener\)/);
@@ -472,7 +472,7 @@ test("same-version content reinjection replaces the listener without duplicating
   assert.equal(listeners.size, 1);
   assert.notEqual(context.__aiDebateContentMessageListener, previous);
   const response = await new Promise(resolve => context.__aiDebateContentMessageListener({ type: "aiDebate:getCapabilities" }, {}, resolve));
-  assert.equal(response.contentScriptVersion, "0.5.0-driver.5");
+  assert.equal(response.contentScriptVersion, "0.5.0-driver.6");
 });
 
 test("failed content initialization cannot poison the next injection", async () => {
@@ -1131,6 +1131,49 @@ test("Meta submission failure names the correct provider", async () => {
   );
 });
 
+function paragraphEditorFixture(lines) {
+  return {
+    innerText: lines.map((line) => line || "\n").join("\n\n"),
+    matches: (selector) => selector === ".ProseMirror[contenteditable='true']",
+    childNodes: lines.map((line) => ({
+      tagName: "P",
+      childNodes: line
+        ? [{ nodeType: 3, textContent: line }]
+        : [{ tagName: "BR", classList: { contains: (name) => name === "ProseMirror-trailingBreak" } }],
+    })),
+  };
+}
+
+test("ChatGPT paragraph editor verifies exact source despite rendered paragraph spacing", async () => {
+  const context = await loadProviderPageTestContext();
+  const input = paragraphEditorFixture(["第一段", "", "第二段", "第三段"]);
+  assert.notEqual(input.innerText, "第一段\n\n第二段\n第三段");
+  await context.aiDebateProviderPageTest.waitForInputWritten(input, "第一段\n\n第二段\n第三段", 0);
+});
+
+test("ChatGPT paragraph verification rejects missing text, extra blank lines and partial writes", async () => {
+  const context = await loadProviderPageTestContext();
+  const input = paragraphEditorFixture(["第一段", "", "第二段"]);
+  for (const prompt of ["第一段\n第二段", "第一段\n\n\n第二段", "第一段\n\n第二段遺漏的尾巴"]) {
+    await assert.rejects(context.aiDebateProviderPageTest.waitForInputWritten(input, prompt, 0),
+      (error) => error.code === "PROVIDER_INPUT_WRITE_FAILED");
+  }
+});
+
+test("ChatGPT paragraph reader preserves literal Markdown and inline breaks without ignoring unknown nodes", async () => {
+  const context = await loadProviderPageTestContext();
+  const input = paragraphEditorFixture(["**引用**", "尾端"]);
+  input.childNodes[0].childNodes.push({ tagName: "BR" }, { nodeType: 3, textContent: "換行" });
+  await context.aiDebateProviderPageTest.waitForInputWritten(input, "**引用**\n換行\n尾端", 0);
+  input.childNodes[0].childNodes.push({ tagName: "IMG", textContent: "" });
+  await assert.rejects(context.aiDebateProviderPageTest.waitForInputWritten(input, "**引用**\n換行\n尾端", 0),
+    (error) => error.code === "PROVIDER_INPUT_WRITE_FAILED");
+  input.childNodes[0].childNodes.pop();
+  input.matches = () => false;
+  await assert.rejects(context.aiDebateProviderPageTest.waitForInputWritten(input, "**引用**\n換行\n尾端", 0),
+    (error) => error.code === "PROVIDER_INPUT_WRITE_FAILED");
+});
+
 test("Gemini accepts exact Markdown reconstructed from asynchronously formatted Quill text", async () => {
   const textNode = (text) => ({ nodeType: 3, textContent: text });
   const input = {
@@ -1193,7 +1236,8 @@ test("Gemini Quill paragraph placeholders preserve exact blank lines rather than
     { tagName: "P", childNodes: [text("第二段")] },
   ];
   paragraphs.forEach((p, index) => { p.nextSibling = paragraphs[index + 1] || null; });
-  const input = { innerText: "第一段\n\n\n\n\n第二段", matches: () => true, childNodes: paragraphs };
+  const input = { innerText: "第一段\n\n\n\n\n第二段",
+    matches: (selector) => selector === ".ql-editor.rich-query-formatting-enabled", childNodes: paragraphs };
   const context = await loadProviderPageTestContext();
   await context.aiDebateProviderPageTest.waitForInputWritten(input, "第一段\n\n第二段", 40);
   await assert.rejects(context.aiDebateProviderPageTest.waitForInputWritten(input, "第一段\n第二段", 40),
@@ -1306,12 +1350,22 @@ test("submission correlation accepts UI text around the submitted prompt", async
 
 test("submission generation evidence requires a false-to-true transition", async () => {
   let generating = true;
+  // 使用可控時鐘，避免機器忙碌時跨過期限；不放寬生成訊號的判定。
+  let now = 0;
+  let startOnNextTick = false;
   const stopButton = {
     disabled: false,
     getAttribute: () => null,
     getBoundingClientRect: () => ({ width: 40, height: 40 }),
   };
   const context = await loadProviderPageTestContext({
+    Date: class extends Date { static now() { return now; } },
+    setTimeout: (callback, milliseconds) => {
+      now += milliseconds;
+      if (startOnNextTick) generating = true;
+      callback();
+      return 0;
+    },
     document: {
       querySelectorAll: (selector) => selector === ".stop" && generating ? [stopButton] : [],
     },
@@ -1334,7 +1388,7 @@ test("submission generation evidence requires a false-to-true transition", async
   );
 
   generating = false;
-  setTimeout(() => { generating = true; }, 15);
+  startOnNextTick = true;
   assert.equal(
     await context.aiDebateProviderPageTest.observeProviderSubmission(
       config,

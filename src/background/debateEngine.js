@@ -134,7 +134,9 @@ export class DebateEngine {
     this.anonymousNames = { ...(options.anonymousNames || {}) };
     this.interactionStyle = options.interactionStyle || "critique";
     this.openEnded = options.openEnded === true;
-    this.debateRounds = normalizeDebateRoundsForInteraction(debateRounds, this.interactionStyle);
+    this.debateRounds = this.openEnded
+      ? normalizeDebateRounds(debateRounds)
+      : normalizeDebateRoundsForInteraction(debateRounds, this.interactionStyle);
     this.isTheaterMode = options.isTheaterMode || false;
     this.customPersonas = options.customPersonas || {};
     this.state = createEngineState(this);
@@ -478,8 +480,12 @@ ${rawProviderContent}`
       throw new Error("Reveal is only available in imposter mode");
     }
 
-    for (let round = 1; round <= this.debateRounds; round += 1) {
-      this.requireComplete(this.state.critiqueRounds[round - 1], critiquePhase(round));
+    if (this.openEnded) {
+      this.requireComplete(this.state.answers, "first-round");
+    } else {
+      for (let round = 1; round <= this.debateRounds; round += 1) {
+        this.requireComplete(this.state.critiqueRounds[round - 1], critiquePhase(round));
+      }
     }
 
     const imposterProvider = this.state.imposterProvider || null;
@@ -540,7 +546,9 @@ ${rawProviderContent}`
         maxChars: blockLimit,
       },
     );
-    const finalRound = this.state.critiqueRounds[this.debateRounds - 1] || {};
+    const finalRound = this.openEnded
+      ? this.getLastCompletedRoundData().data
+      : (this.state.critiqueRounds[this.debateRounds - 1] || {});
     const guessBlocks = this.activeProviders.map((providerId) => formatSpeakerBlock(
       labels[providerId],
       quote(finalRound[providerId], "[沒有取得最後猜測]"),

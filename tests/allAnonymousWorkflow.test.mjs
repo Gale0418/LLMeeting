@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-const PROVIDER_CONTENT_VERSION = "0.5.0-driver.5";
+const PROVIDER_CONTENT_VERSION = "0.5.0-driver.6";
 
 function createChromeMock({ failSummaryProvider, pauseFirstRead, initialUrl = "chrome://newtab/" } = {}) {
   const tabs = new Map();
@@ -145,6 +145,26 @@ test("chat accepts the preflight handoff and waits after answers without running
     assert.equal(mock.sent.filter((m) => m.type === "aiDebate:submitPrompt" && m.phase === "first-round").length, 2);
     assert.equal(mock.sent.filter((m) => m.type === "aiDebate:submitPrompt" && m.phase === "critique").length, 0);
   });
+});
+
+test("chat imposter can conclude immediately after first answers", async () => {
+  const previousChrome = globalThis.chrome;
+  try {
+    await quickly(async () => {
+      const mock = createChromeMock();
+      await loadWorker(mock, "chat-imposter-direct-reveal");
+      const start = await mock.dispatch({ type: "aiDebate:start", mode: "chat",
+        question: "群聊揭曉", activeProviders: ["chatgpt", "gemini"], interactionStyle: "imposter" });
+      assert.equal(start.ok, true, start.error);
+      const result = await mock.dispatch({ type: "aiDebate:nextRound", action: "summarize" });
+      assert.equal(result.ok, true, result.error);
+      assert.equal(result.state.status, "done");
+      assert.ok(result.state.transcript.reveal.reactions.chatgpt);
+      assert.ok(result.state.transcript.reveal.reactions.gemini);
+    });
+  } finally {
+    globalThis.chrome = previousChrome;
+  }
 });
 
 test("theater honors Engine imposter minimum rounds before waiting for user input", async () => {

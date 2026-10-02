@@ -1,5 +1,12 @@
 # Smoke Tests
 
+## 2026-10-02 免費體驗第一批（LLM-T49/T50）
+
+- 執行：`npm test`、末次修改後 `node --test tests/experienceRules.test.mjs tests/diagnostics.test.mjs`、3 個變更 JS/MJS 語法與 `git diff --check`。預期安全重置與修復指引不影響既有行為；實際全套 296/296、末次 focused 25/25；通過程式驗證。
+- Chrome 模擬：實際 production side panel 加模擬 runtime，320/480px iframe 觸發登入／逾時；預期逐家指引、安全網址、窄版不重疊／溢位。實際 iframe 內容 314/474px 均等於 scrollWidth，320px brand/actions overlap=false，修復連結高 44px；兩輪後通過此模擬 QA，證據 `output/experience-320-480-recovery.jpg`。
+- Impeccable detector：執行一次；parser 缺失而 degraded，且報既有 token/可讀性規格漂移。不是乾淨 pass。未重新執行正式 council／extension 五家實際會議；原 Review 不改 Done。
+- 封裝：`npm run package` 通過，候選包 `dist/llmeeting-0.5.0.zip` 2310024 bytes，SHA256 `6551C1E4B43131096F419B403DA4B90E7E6A696C4486684B4D4B2EAC19C6308D`；未提交或上傳此批體驗修改。
+
 ## 2026-10-02 LLM-T50 抓蟲清理補充
 
 - 自動化：`npm test` 預期全部通過，實際 286/286；最後文字版匿名 fallback 小修後 `node --test tests/sidepanelRequests.test.mjs` 7/7。全量來源／測試／scripts JS/MJS 語法及 diff 無錯誤；通過，不冒稱最後小修後重新跑過全套。
@@ -84,3 +91,8 @@
 | 2026-09-21 | LLM-T43–LLM-T47 | Web Provider Driver 抗改版驗證 | `npm test`；變更 JS/MJS `node --check`；`git diff --check`；Chrome 五家登入態唯讀 DOM；`npm run package`；zip 內容與 SHA256 | versioned Driver、site-default model、歧義 fail-closed、icon-only send、SPA 路徑重驗與既有功能通過；五家現行 composer 仍可由穩定或語意訊號辨識 | 237/237 pass；所有變更 JS/MJS 語法通過；diff 無 whitespace error（僅 CRLF warning）；五家 Chrome 唯讀 composer 證據完成且未輸入／點擊／送出；`dist/llmeeting-0.5.0.zip` 2288264 bytes、SHA256 `4870785DFE9AE6D0C30F33B738DF28426FDAF17C0AAA83EE3697919A179DB138`，含 `provider-driver.js` | 部分通過 | automated+live-readonly |
 | 2026-09-21 | LLM-T47 | CodeRabbit 抗改版終局複查 | `coderabbit review --agent -t uncommitted -c .coderabbit.yaml`（2 次） | 驗證 Provider Driver、readiness 提示與測試沒有剩餘可行動問題 | 首輪 2 findings：移除過時 Gemini submission alias、修正 summary 分頁沿用提示；修正後 follow-up 0 findings | 通過 | external |
 | 2026-09-23 | LLM-T46–LLM-T47 | Antigravity 報告驗收與回覆定位備援 | 原 request ID 完成交付對帳；`npm test`；`node --test tests/pageAutomation.test.mjs`；`npm run package`；CodeRabbit uncommitted review | 回覆 selector 退役時僅擷取有明確 assistant 身分的內容，排除使用者訊息與模型選單 | Antigravity `COMPLETED/DONE`；238/238 全套、69/69 最終 targeted、CodeRabbit 0 findings；候選包 2290452 bytes，SHA256 `F98798C5F2931FC8748F4D1A245FBD3024E9763C731F7B9C08B795C71B86DF56`；實際擴充套件送出仍待 smoke | 部分通過 | automated+external |
+| 2026-10-03 | LLM-T47, LLM-T49, LLM-T50 | 免費體驗、轉折靈感與 ChatGPT 段落驗證回歸 | `npm test`；ChatGPT 現場唯讀段落比對與新增正負向 regression | 正確段落文字通過，不接受缺字、錯誤空白行、部分寫入或未知編輯器節點 | 310/310 pass；前一日三項新回歸在舊版有兩項失敗，修後全通過；Chrome 草稿保持未送出；不代表完整實機矩陣 | 通過 | automated+live-readonly |
+| 2026-10-03 | LLM-T47 | 使用者試用回報 | 使用者訊息「感覺都沒問題了」 | 取得試用結果而不虛構模式／模型明細 | 使用者回報目前正常並授權更新；沒有具名五家、各總結模式或鍵盤矩陣，這些範圍仍待驗 | 部分通過 | manual-user-report |
+| 2026-10-03 | LLM-T47 | Chrome Web Store 更新入口 | 官方文件入口直接導覽；改以官方頁面「前往資訊主頁」連結確認 | 能進入既有商店項目並上傳 ZIP | 前者 Not allowed、後者 extensions gallery cannot be scripted；未進入項目、未上傳／送審／發布，保留手動接手 | 受阻 | external |
+| 2026-10-03 | LLM-T50 | CodeRabbit 歷史核心與修後複查 | 隔離副本 `coderabbit review --agent --base main --uncommitted -c .coderabbit.yaml`，2 次 | 確認有證據才修正，修後不留下已確認 findings | 59 檔首查 major／minor 各一，失敗回歸證實；修後 22 檔含相關上下文，0 issues；本輪 2/3，均未超過 150 檔 | 通過 | external+automated |
+| 2026-10-03 | LLM-T36, LLM-T47, LLM-T50 | 更新候選終局驗證 | `npm test`、48 檔 `node --check`、`git diff --check`、`npm run package`、ZIP 清單／SHA256 | 群聊內鬼首輪結案、恢復末輪與第 6 輪以上顯示正常，一般限制與證據保護不退步 | 317/317、48/48 語法、diff 通過；文件補寫後相關 7/7；ZIP 29 檔、2317446 bytes、SHA256 CCA5514ED6864DBE6182B51D970BF6C6909A44509796BF14314BEF41B1C0A70B；不是完整 extension E2E | 通過 | automated |

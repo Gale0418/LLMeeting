@@ -163,7 +163,7 @@ test("side panel exposes accessible live status and progress semantics", async (
   assert.equal(html.match(/aria-describedby="(?:chatgpt|gemini|grok|claude|meta)State"/g)?.length, 5);
   assert.match(html, /id="checkReadinessButton"[^>]+aria-describedby="readinessHint"/);
   assert.match(html, /檢查連線/);
-  assert.match(html, /可選診斷；正式會議通常建立新對話，總結辯論則沿用目前來源分頁/);
+  assert.match(html, /不用先檢查也能開始；啟動時會檢查必要模型。一般會議會開新對話/);
   assert.match(app, /progressContainer\?\.setAttribute\("aria-valuenow"/);
   assert.match(app, /replaceChatTranscriptHTML\(html\)/);
 });

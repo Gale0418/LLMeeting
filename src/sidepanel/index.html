@@ -21,7 +21,7 @@
           </div>
         </div>
         <div class="topbar-actions">
-          <button id="resetButton" class="icon-action" type="button" title="重置目前流程">Reset</button>
+          <button id="resetButton" class="icon-action" type="button" title="結束並重置目前會議；模型選擇會保留">重置</button>
           <button id="clearLocalDataButton" class="icon-action" type="button" title="清除本機辯論紀錄">清除</button>
         </div>
       </header>
@@ -44,13 +44,14 @@
       <form id="debateForm" class="composer glass-surface">
         <div class="section-heading">
           <div>
-            <h2>會議核心</h2>
-            <p>輸入目標，讓已啟用的 AI 進入協作航道。</p>
+            <h2>一個問題，多個 AI 觀點。</h2>
+            <p>先登入至少兩家 AI，點亮參與模型，再輸入你想比較的問題。</p>
           </div>
           <span class="signal-chip">LOCAL</span>
         </div>
-        <label for="questionInput" class="sr-only">問題</label>
-        <textarea id="questionInput" rows="4" placeholder="輸入題目，或留空後從目前 AI 分頁總結..."></textarea>
+        <label for="questionInput" class="sr-only">會議問題</label>
+        <textarea id="questionInput" rows="4" aria-describedby="launchGuide" placeholder="例如：我的新專案，應該先做哪個功能？"></textarea>
+        <p id="launchGuide" class="launch-guide">各家先回答同一題，再互評與總結。第一次使用，維持預設設定就可以。</p>
 
         <section id="providerDeck" class="provider-deck" aria-labelledby="providerSummaryText">
           <div class="provider-head">
@@ -101,8 +102,9 @@
           </div>
           <div class="provider-actions">
             <button type="button" id="checkReadinessButton" class="secondary-action" aria-describedby="readinessHint">檢查連線</button>
-            <span id="readinessHint" role="status">可選診斷；正式會議通常建立新對話，總結辯論則沿用目前來源分頁</span>
+            <span id="readinessHint" role="status">不用先檢查也能開始；啟動時會檢查必要模型。一般會議會開新對話。</span>
           </div>
+          <div id="providerRecovery" class="provider-recovery" hidden aria-label="模型連線修復指引"></div>
         </section>
 
 
@@ -257,9 +259,13 @@
 
         <!-- 互動聊天控制台 -->
         <details id="chatControls" class="chat-controls">
-          <summary><span>互動控制台</span><span id="chatRoundBadge" class="signal-chip">OPEN ENDED</span></summary>
+          <summary><span>互動控制台</span><span id="chatRoundBadge" class="signal-chip">等開場</span></summary>
           <div class="chat-console-body">
-            <textarea id="chatInput" rows="2" placeholder="向會議補充新情報..."></textarea>
+            <p id="playCue" class="play-cue" role="status">等 AI 回答後，就輪到你加入討論。</p>
+            <div id="playIdeaButtons" class="play-ideas" role="group" aria-label="轉折靈感，僅加入草稿"></div>
+            <p class="play-note">靈感只加入草稿，可以修改；按「送出補充」才會送給 AI。</p>
+            <label for="chatInput" class="sr-only">補充會議內容</label>
+            <textarea id="chatInput" rows="2" placeholder="補充想法、提出疑問，或請大家換個角度..."></textarea>
             <div class="chat-buttons">
               <button type="button" id="chatSendBtn" class="primary-action">送出補充</button>
               <button type="button" id="chatCritiqueBtn" class="secondary-action">再互評</button>
@@ -278,7 +284,7 @@
         <div class="section-heading"><div><h2>即時會議紀錄</h2><p>每一輪輸出與人類補充都保留在本機。</p></div><span class="signal-chip">LIVE</span></div>
         <!-- 氣泡對話框 Transcript -->
          <div id="chatTranscript" class="chat-transcript" role="region" aria-label="即時會議紀錄" aria-live="off">
-          <div class="empty-state">輸入問題，開始快速鬥技場。</div>
+          <div class="empty-state">會議開始後，各家回覆會出現在這裡。比較觀點，也記得查證重要事實。</div>
         </div>
         <pre id="transcriptOutput" style="display: none;">尚未開始</pre>
       </section>

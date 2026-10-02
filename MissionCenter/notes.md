@@ -125,3 +125,17 @@
   3. 報告建議預先派發合成 `beforeinput`，但該事件由 `dispatchEvent()` 產生時為 untrusted，不能保證富文本編輯器執行真實輸入的預設動作；保留現有寫入與同步驗證流程。
   4. `npm test` 238/238；修正最後一個模型選單反例後 targeted page automation 69/69；CodeRabbit uncommitted review 0 findings。
   5. 重建 `dist/llmeeting-0.5.0.zip` 為 2290452 bytes，SHA256 `F98798C5F2931FC8748F4D1A245FBD3024E9763C731F7B9C08B795C71B86DF56`；仍待重載擴充套件後的五家實際送出 smoke。
+
+- 2026-10-02 免費產品體驗第一批：
+  1. 保留所有功能免費與羊模式彩蛋，以 Impeccable harden 改善模式說明、空題焦點、逐家 readiness 修復指引及官方網頁入口，不改寫 Provider automation。
+  2. 重置已有會議須確認；請求失敗不顯示假成功，以獨立 pending guard 阻擋重複重置。
+  3. Chrome 模擬側欄的第二輪 320/480px QA 修正窄版標頭重疊；314/474px iframe 內容無水平溢位，修復入口高 44px。證據 `output/experience-320-480-recovery.jpg`，不是 extension E2E。
+  4. 全套 296/296；最後未知狀態碼補強後相關 25/25、語法與 diff 通過。Impeccable detector 缺少 parser，degraded 並報既有規格漂移，不宣稱視覺全數通過。
+  5. 當日 PRODUCT/DESIGN 尚有舊 Pro 與版面描述，僅記錄漂移；LLM-T49/T50 維持原狀，未重新做正式 council 或五家實際會議，不宣稱商用品質已達成。2026-10-03 已修正文檔漂移，未額外重設計介面。
+
+- 2026-10-03 平台更新交接：
+  1. 使用者回報目前正常並授權 main／CodeRabbit／平台更新；未提供逐模型模式矩陣，不據此補造完整 E2E 證據。
+  2. CodeRabbit CLI 0.7.6 已登入；隔離 corpus 59 檔首查（含既有歷史核心），兩個有效 findings 經失敗回歸確認；修後複查實際覆蓋 22 檔，0 issues；本輪 2/3，單次均低於 150 檔。
+  3. 開放式內鬼不套最低兩輪，首輪即可主動揭曉；恢復未完成輪以最後完整輪猜測為準，內鬼首輪獨立證據與 bounded 最低兩輪保持不變。
+  4. 設定輪數 1–5 與執行輪號分離；全套 317/317、48 檔語法、diff、封裝通過。T36/T47/T49/T50 保持 Review，既有正式 CACC 為 limited。
+  5. Chrome 官方後台禁止 scripting，未上傳／送審／發布；手動接手 dist/llmeeting-0.5.0.zip，2317446 bytes，SHA256 CCA5514ED6864DBE6182B51D970BF6C6909A44509796BF14314BEF41B1C0A70B。

@@ -32,6 +32,26 @@
   --user-color: #5856d6;
 }
 
+.launch-guide {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+  margin-block: 8px 16px;
+}
+
+.provider-recovery {
+  display: grid;
+  gap: 16px;
+  padding-block-start: 16px;
+}
+
+.provider-recovery[hidden] { display: none; }
+.recovery-item { min-width: 0; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.recovery-item p { color: var(--text-secondary); margin-block: 4px 8px; }
+.recovery-item a { color: var(--text-primary); text-underline-offset: 4px; display: inline-flex; align-items: center; min-height: 44px; }
+.recovery-item a:hover { color: var(--cyan-flow, #00f2fe); }
+.recovery-item a:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 4px; border-radius: 4px; }
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -873,6 +893,8 @@ body::before {
   z-index: 20;
   min-height: 58px;
   padding: 8px 10px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .brand-lockup,
@@ -881,7 +903,7 @@ body::before {
   align-items: center;
 }
 
-.brand-lockup { gap: 9px; min-width: 0; flex: 1; }
+.brand-lockup { gap: 9px; min-width: 0; flex: 1 1 220px; }
 .brand-lockup > div { min-width: 0; }
 .brand-row { gap: 7px; }
 
@@ -924,12 +946,12 @@ body::before {
   white-space: normal;
 }
 
-.topbar-actions { gap: 5px; }
+.topbar-actions { gap: 5px; flex-shrink: 0; margin-left: auto; }
 
 #resetButton.icon-action,
 #clearLocalDataButton.icon-action {
-  min-width: 42px;
-  min-height: 36px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 5px 8px;
   border-radius: 9px;
   color: var(--text-secondary);
@@ -1443,6 +1465,11 @@ details[open] > summary .deck-chevron { transform: rotate(225deg) translate(-2px
 .chat-controls[open] { border-color: rgba(85,232,255,.35); }
 .chat-controls > summary { justify-content: space-between; }
 .chat-console-body { padding: 0 9px 9px; }
+.play-cue { color: var(--text-primary); font-size: 13px; line-height: 1.6; margin-block: 8px; }
+.play-ideas { display: flex; flex-wrap: wrap; gap: 8px; }
+.play-ideas .play-idea { min-height: 44px; padding: 8px 12px; font-size: 12px; }
+.play-note { color: var(--text-secondary); font-size: 12px; line-height: 1.6; margin-block: 8px 12px; }
+.play-idea:focus-visible { outline: 2px solid var(--cyan-soft); outline-offset: 3px; }
 .chat-console-body textarea { width: 100%; padding: 9px; border-radius: 9px; font-family: inherit; }
 .chat-buttons { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 6px; margin-top: 7px; }
 .chat-buttons button { min-height: 40px; padding: 7px; font-size: 10px; }

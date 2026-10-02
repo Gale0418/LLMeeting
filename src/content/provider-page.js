@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = "0.5.0-driver.5";
+  const CONTENT_SCRIPT_VERSION = "0.5.0-driver.6";
   const {
     assistantSnapshot,
     classifyProviderResponseError,
@@ -969,10 +969,41 @@
   function isPromptStillPresent(input, prompt) {
     const expected = normalizeInputText(prompt);
     if (normalizeInputText(readInputText(input)) === expected) return true;
+    // ProseMirror stores pasted lines as paragraphs. innerText adds visual
+    // paragraph spacing; reconstruct only the observed plain-text structure.
+    if (input.matches?.(".ProseMirror[contenteditable='true']")) {
+      const source = readParagraphEditorSource(input);
+      return source !== null && normalizeInputText(source) === expected;
+    }
     // Gemini asynchronously converts Markdown into Quill formatting after input.
     // Reconstruct only known formatting, without dropping arbitrary source characters.
     if (!input.matches?.(".ql-editor.rich-query-formatting-enabled")) return false;
     return normalizeInputText(readFormattedEditorSource(input)) === expected;
+  }
+
+  function readParagraphEditorSource(element) {
+    const paragraphs = Array.from(element.childNodes || []);
+    if (!paragraphs.length || paragraphs.some((node) => node.tagName !== "P")) return null;
+    const lines = [];
+    for (const paragraph of paragraphs) {
+      const nodes = Array.from(paragraph.childNodes || []);
+      let line = "";
+      for (const [index, node] of nodes.entries()) {
+        if (node.nodeType === 3) {
+          line += node.textContent || "";
+        } else if (node.tagName === "BR") {
+          const isPlaceholder = index === nodes.length - 1 &&
+            node.classList?.contains("ProseMirror-trailingBreak");
+          if (!isPlaceholder) line += "\n";
+        } else {
+          // Fail closed for formatting, attachments and future editor widgets.
+          // Never silently omit unknown content or collapse source whitespace.
+          return null;
+        }
+      }
+      lines.push(line);
+    }
+    return lines.join("\n");
   }
 
   function readFormattedEditorSource(element) {

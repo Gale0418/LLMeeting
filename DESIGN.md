@@ -79,7 +79,7 @@ components:
 
 LLMeeting v0.5.0 的介面採 Operate 模式：它是一座供使用者操控多 AI 議事流程的指揮甲板。暗黑金屬是穩定的艦橋結構，鏡面玻璃是承載表單、狀態與 transcript 的工作面；青藍、紫與琥珀只在流程、焦點與重要狀態需要被看見時流動。視覺可以有奇幻科技感，但每個控制仍要像熟悉的工具，掃一眼就能知道下一步。
 
-三龍是甲板上的視覺守衛，而不是功能狀態的唯一載體：青藍龍守護協調與執行，紫龍守護互評與洞察，琥珀龍守護主席、總結與揭曉。龍的存在可以透過背景、徽記或狀態裝飾出現，但 provider 名稱、文字狀態、錯誤與操作結果始終獨立且可讀。流光是訊號，不是常駐噪音；玻璃是指定的工作面，不是把所有內容模糊化。
+三龍保留原本金色素材，作為甲板上的視覺守衛，而不是功能狀態的唯一載體。青藍、紫、琥珀光譜用於介面訊號，不替三龍重新上色。provider 名稱、文字狀態、錯誤與操作結果始終獨立且可讀。流光是訊號，不是常駐噪音；玻璃是指定的工作面，不是把所有內容模糊化。
 
 **Key Characteristics:**
 
@@ -140,9 +140,9 @@ Palette character is dark metal with restrained holographic signals: cyan, viole
 
 ## Layout
 
-側邊欄是單欄 command deck，內容寬度以現有約 480px 上限為基準，內邊距與間距使用 4／8／12／16／24px 節奏。固定的閱讀順序是：品牌與流程狀態 → 問題輸入與主操作 → 可展開進階設定 → provider 狀態 → transcript → diagnostics／隱私說明。設定與互動控制採漸進揭露，不把所有控制塞在第一眼。
+側邊欄是單欄 command deck，內容寬度以現有約 480px 上限為基準，內邊距與間距使用 4／8／12／16／24px 節奏。閱讀順序是：品牌與流程狀態 → 三龍與航道 → 問題輸入 → provider 控制與修復入口 → 可展開進階設定／互動控制 → 主操作 → transcript → diagnostics／隱私說明。provider 清單不另設伸縮功能；其他設定採漸進揭露。
 
-背景龍場景應位於甲板後方並讓工作面保持清楚；鏡面玻璃區塊以 tonal layering 分組，避免巢狀卡片堆疊。窄視窗下不縮小字體換取密度：五家 provider 的狀態可換成可換行或分段排列，transcript 保持直向閱讀且不得出現水平捲動。鍵盤焦點順序與視覺順序一致。
+背景龍場景應位於甲板後方並讓工作面保持清楚；鏡面玻璃區塊以 tonal layering 分組，避免巢狀卡片堆疊。約 320–480px 下五家 provider 以單一橫列近方形按鈕排列，不附角色副標；長錯誤另由修復區與診斷呈現。transcript 保持直向閱讀且不得出現水平捲動。鍵盤焦點順序與視覺順序一致。
 
 ## Elevation & Depth
 
@@ -174,7 +174,7 @@ Palette character is dark metal with restrained holographic signals: cyan, viole
 
 ### Status & Dragon Rail
 
-provider status 保留 provider 名稱、目前狀態文字與可讀的 selected／active／error 語意。三龍可以成為頂部背景、狀態徽記或揭曉裝飾：青藍＝協調執行、紫＝互評洞察、琥珀＝主席揭曉，但不能一龍對應一個 provider，也不能取代文字狀態。Meta AI Beta 保留 Beta 標籤，與穩定 provider 清楚區分。
+provider status 保留 provider 名稱、目前狀態文字與可讀的 selected／active／error 語意；啟用使用 aria-pressed，readiness 為獨立維度。三龍與介面光譜不能取代文字狀態。Meta AI 按鈕不顯示 Beta 副標，以保持五家一致尺寸；支援限制仍於產品與商店文件誠實說明。
 
 ### Cards / Containers
 

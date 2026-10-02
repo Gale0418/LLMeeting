@@ -6,6 +6,12 @@ export function normalizeText(value) {
   return String(value ?? "").replace(/\r\n/g, "\n").trim();
 }
 
+// Runtime round numbers can grow indefinitely; only configured round limits use 1–5.
+export function normalizeRoundNumber(value) {
+  const round = Number(value);
+  return Number.isSafeInteger(round) && round > 0 ? round : 1;
+}
+
 export function clipText(value, maxChars = DEFAULT_SAFE_CHAR_LIMIT) {
   const text = normalizeText(value);
   if (text.length <= maxChars) {
