@@ -1,5 +1,43 @@
 # 筆記
 
+- 2026-10-02 main 原始碼保存與擴大 CodeRabbit 審查（LLM-T50）：
+  1. 確認本機 main 與 origin/main 同為 b37be87，CodeRabbit 0.7.6 已登入；上次 review 12:47 已超過 rolling hour，重新計算本輪 2/3 次額度。隔離 repo 的空 main baseline 使未改動的舊程式也納入審查，共 48 個檔案，排除圖片、封裝、cache、MissionCenter 和大型歷史文稿；沒有為湊 150 製造重複檔案。
+  2. 首掃 2 issues：Critical 是 startInteractiveDebate 的 busy guard 擋住合法 preflight-complete；Major 是互動劇場 local debateRounds 與 Engine 的內鬼最少兩輪不一致。新流程測試先重現兩者失敗，分別核實後修復，沒有套用未驗證建議。
+  3. 修正 diff 三檔，隔離副本以審查前內容作 baseline；複查完成 0 issues（complete receipt 列出 17 個 context／reviewedFiles，並非只輸出三檔）。新全套 289/289；全量 node --check、封裝通過。zip 2304150 bytes；SHA256 8CDBBFEAE5A7B7659B4C69CB421133C269A2A7362AADFDD1E519E39C008A2295。
+  4. README 已同步四模式、四總結方式、開放功能、Driver 韌性及最新驗證限制。此次只依使用者授權直接 main commit/push 原始碼，不建立分支／PR，不發布商店；T47/T50 保持 Review。Chrome extension E2E／窄側欄／鍵盤仍未知；前次專家快照不涵蓋本輪交接與輪數新修，不冒稱完整 CACC 已過。
+
+- 2026-10-02 正式多席抓蟲與清理（LLM-T50，仍 Review）：
+  1. 使用者批准三席 Luna＋獨立仲裁，各席累計 6000 tokens，總 24000 tokens／40 工具／30 分鐘，不逐輪重設；14:19 起。初輪盲審、封存後仲裁、聚焦修復複查，immutable artifact 在 output/mission-center-critique/LLM-T50-20261002-wave1～wave3。
+  2. 修正已核實的延遲 storage.set 與 clear 競態（狀態 set/remove 共用序列佇列）、過期廣播、模型偏好保存失敗無提示、等待聊天重複搶焦點、匿名缺名編號映射（含文字版揭曉），及後續手動使用者回合污染擷取；新增相關回歸。手動回合偵測仍受真實虛擬 DOM 計數能力限制。
+  3. Gemini 新建獨立 Chrome 對話測試粗體、斜體、空白段落及字面星號；只點傳送一次，實際收到 LLMEETING_GEMINI_FORMAT_OK。原使用者未送草稿未修改。現場 Quill 空段落為 p/br，精確來源重建已避免重複換行；不是 extension 全員匿名端到端通過證據。
+  4. 全套 286/286；最後文字版匿名備援小修後 focused 7/7。src/tests/scripts 所有 JS/MJS node --check、git diff --check 通過（只有 CRLF 提示）；driver.5；zip 2304089 bytes，SHA256 D7989B330226F4CF3E9750A255F7023C84B94E3F7F5A9B6BFA2A37E7515CC126。
+  5. CodeRabbit 本小時三次額度已用完，本輪新修未外部重掃。MissionCenter 套件未附 critic_contract.py，有限範圍檔案搜尋確認缺失，機器 schema validator 未執行。正式門檻維持 limited：Chrome extension 完整 allAnonymous 送出／擷取、320/480 實際側欄與鍵盤焦點仍 unknown，不以沒有發現 P0/P1 取代缺少的驗證。沒有 commit/push 或自動登入。
+
+- 2026-10-02 Gemini 全員匿名總結送出前驗證補強（LLM-T47）：
+  1. Chrome 唯讀現場：草稿保留；唯一「傳送訊息」按鈕 enabled 且屬於 composer，ql-editor 啟用 rich-query-formatting-enabled，內容已轉成 STRONG 節點。未取得該 run 原始提示字串，不能斷言歷史失敗必定是同一比對差異。
+  2. 可重現程式缺陷：Markdown 粗體寫入驗證成功後被 Quill 非同步轉換，原本 readiness 僅逐字比較 innerText 與原始 Markdown，會拋 PROVIDER_SUBMISSION_NOT_READY。現在僅對該富文字 editor 重建已知粗斜體來源、仍精確比對完整文字；未加入模糊比對、延長等待或重送。
+  3. content/background 握手升 driver.4；新增格式化通過、文字改動拒絕、非 Quill 不放行等測試。全套 278/278、兩來源 node --check、diff／封裝通過（2302534 bytes）。未點傳送、未改使用者草稿；extension 重載後實機驗收待完成。
+
+- 2026-10-02 ChatGPT 實機訊息擷取修復（LLM-T47）：
+  1. 已讀使用者引用「測試回應」對話；首輪、互評、總結實際有回答，但 LLMeeting 的引用誤記未確認送出，不能當成模型未回應。
+  2. Chrome 唯讀 DOM 證據：既有 ChatGPT responseSelectors 與 userMessageSelectors 各 0 命中；data-chatgpt-search-unit-key 的 :assistant 與 :user 各辨識 4 則。assistant 只取其 data-chatgpt-selection-message-id 內容節點，避免 heading／控制鈕；同屬性保留回覆 identity。
+  3. 保留舊 selector、新增兩個新版 selector；content script / background handshake 同升 driver.3。新增新版正文與舊 composer 未清空但新使用者訊息已出現的回歸測試。
+  4. 相關 113/113、全套 277/277；三來源 node --check、git diff --check、封裝通過（2301594 bytes）。沒有重送訊息或 reload 使用者頁面；重新載入 extension 後的真實會議送出／擷取仍待驗，不宣稱現有 run 已恢復。未增加 CodeRabbit 次數。
+
+- 2026-10-02 本機擴大抓蟲（LLM-T50，仍 Review）：
+  1. 檢查 run/session 恢復、儲存、互動請求、總結及 provider driver；修正啟動重入、互動失敗清空草稿、重複互動請求、停止後舊儲存重試，以及讀不到舊 checkpoint 時最小 fallback 覆寫風險。
+  2. 本小時第 3 次 CodeRabbit 完成（43 個 tracked 變更檔；不涵蓋 untracked），提出 2 minor：顯式 sheepMode=false 被舊 Pro 蓋過、空裁判結果回傳 undefined；已核實修正並加入行為測試，受額度限制未再次兔子重掃。
+  3. 275/275 測試、三個修改來源語法、diff 檢查與封裝通過。zip 2301408 bytes；SHA256 2C26ED3CE1EE33EDFF2DD0B8EF12F1258912104842AB8766D70F11AEC8B5E684。
+  4. 正式 CACC 尚未派席：Mission Center 要求使用者批准數值預算，已詢問 3 Luna 專家＋1 仲裁、每席 6000 tokens、總 24000 tokens／40 tools／30 分鐘，或精簡方案；尚未取得回答。不能宣稱完整專家驗收或無剩餘 P0/P1。
+  5. Chrome 實際送出矩陣仍未完成；儲存 fence 只能阻止過期重試，不能取消 Chrome 已受理的 set。未 commit／push，保留既有未提交工作。
+
+- 2026-10-02 readiness 通道修復：
+  1. Chrome 唯讀確認 Grok 有唯一 DIV contenteditable textbox（Ask Grok anything）；Claude 目前網址為 /login 並顯示 Sign in，未進行登入或送出。
+  2. 握手 1.5 秒、注入 3 秒、DOM readiness 5 秒與共同期限；只讀重查最多一次。注入結果未知不再啟第二次；DOM timeout 不強制換 listener。送題失去回覆不等同未送出，禁止通道錯誤自動重送。
+  3. 同版重注入移除舊 listener，初始化完成才寫版本標記；content driver.2 強迫舊版 handshake 更新。一般 provider driver 的契約版仍為 1。
+  4. 267/267 pass；兩次 CodeRabbit 共檢查 43 個已追蹤變更檔（未涵蓋 untracked 新檔），首輪 2 minor 已核實修正，末輪 0 issues；新檔有 Luna 測試與 Codex 檢查。定向工程複查未見新 P0/P1，不等同正式完整 CACC 或實機送出驗收。
+  5. 封裝 2300918 bytes，SHA256 2F638C798430F2DB3A2A3E576AB57106B8DFDDDD9426E80E790499A17B02845D。已受理的單次 Chrome 注入無法取消；測試覆蓋晚完成不重複注入。Antigravity request llmeeting-readonly-channel-review-20261002 為 INPUT_REQUIRED，沒有審查結果。
+
 - 2026-07-17 0.4.7 補強範圍：
   1. 商店目前版本與 repo 0.4.6 不一致，README 的 API 敘述也與實作不符。
   2. 最新 transcript、summary 與 diagnostics 會存在 `chrome.storage.local`，需要保留期限與真正清除入口。
@@ -70,3 +108,20 @@
   4. 參考 GitHub 上的 multi-LLM orchestrator 與 AI council selector registry（僅作 Learn，不複製程式碼、不新增外部依賴），並以官方 Playwright locator 與 Chrome content-script 文件作為 selector 與 SPA DOM 判斷依據。
   5. 登入牆／provider error 會提前結束 readiness 輪詢；Gemini 首次回覆慢屬送出後冷啟動／生成等待，與 readiness 不混為同一狀態。
   6. Claude 空白 composer 的可編輯 div 與 `chat-input-send` 均存在，但送出鈕正常 disabled；已補 `sendControlDeferredWhenEmpty`，避免把待輸入狀態誤報為 `SEND_UNAVAILABLE`。
+
+- 2026-09-21 Web Provider Driver 抗改版研究：
+  1. 官方 Playwright locator 指南支持以 role、label 等使用者可見語意定位，並在每次動作重新解析 DOM；採為 LLMeeting 的語意 fallback 與 SPA 重驗原則。
+  2. GitHub `microsoft/playwright`、`browserbase/stagehand`、`Skyvern-AI/skyvern` 僅作 Learn：採用 locator ladder、observe／validate／act、element evidence／fingerprint 概念；不引入 runtime LLM、遠端腳本、視覺服務或新增套件。
+  3. 新增本機 `provider-driver.js`，統一 candidate dedupe、score、ambiguity margin、confidence、無頁面文字的結構指紋與 versioned capability contract。
+  4. 模型策略固定為 `site-default`：provider 路由與模型 identity 分離；網站升級或改名時不猜名稱、不硬編碼版本，也不阻塞送出。
+  5. Chrome 唯讀證據：ChatGPT 暴露 `prompt-textarea`／textbox；Gemini 為 `ql-editor`、`role=textbox`、aria「請輸入 Gemini 提示詞」；Grok 為 `data-testid=chat-input` 內 ProseMirror；Claude 為 `data-testid=chat-input` 與 disabled `chat-input-send`；Meta 為 Lexical `composer-input` 與 disabled `composer-send-button`。
+  6. Antigravity read-only architecture lane request `6acfbf87-9415-4eb7-976c-8584fb5d8d77` 於 2026-09-23 對帳為 `COMPLETED/DONE`，marker `30bb742ff2d240e19719ace3b9157eb5`；交付唯讀架構報告，沒有修改工作樹。Codex 已逐項核對，不把報告中的建議直接視為已驗證事實。
+  7. CodeRabbit 首輪確認兩項有效問題：過時 Gemini submission alias 造成假覆蓋、readiness 提示未說明 summary 會沿用來源分頁；修正後 follow-up 為 0 findings。
+  8. 當時候選包 `dist/llmeeting-0.5.0.zip` 為 2288264 bytes，SHA256 `4870785DFE9AE6D0C30F33B738DF28426FDAF17C0AAA83EE3697919A179DB138`；T47 維持 Review，等待重載擴充套件後的五家 readiness／實際送出 smoke。
+
+- 2026-09-23 Antigravity 架構報告驗收與回覆定位補強：
+  1. 報告指出既有 `readAssistantSnapshot` 在 response selector 全失效時直接回傳空快照；程式碼核對屬實。
+  2. 新增只接受明確 assistant／model 身分的語意備援，排除 user/human、身份不明文章與模型選單；既有 selector 優先，語意備援僅於沒有可用回覆時啟動。
+  3. 報告建議預先派發合成 `beforeinput`，但該事件由 `dispatchEvent()` 產生時為 untrusted，不能保證富文本編輯器執行真實輸入的預設動作；保留現有寫入與同步驗證流程。
+  4. `npm test` 238/238；修正最後一個模型選單反例後 targeted page automation 69/69；CodeRabbit uncommitted review 0 findings。
+  5. 重建 `dist/llmeeting-0.5.0.zip` 為 2290452 bytes，SHA256 `F98798C5F2931FC8748F4D1A245FBD3024E9763C731F7B9C08B795C71B86DF56`；仍待重載擴充套件後的五家實際送出 smoke。

@@ -2,6 +2,31 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DebateEngine, normalizeDebateRounds } from "../src/background/debateEngine.js";
 
+test("all-anonymous assigns every participant an independent anonymous final judgment", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 2, { summaryStrategy: "allAnonymous" });
+  const openings = engine.start("測試全員裁判");
+  assert.match(openings[0].prompt, /暱稱：<你的暱稱>/);
+  engine.recordAnswer("chatgpt", "暱稱：焦糖雲朵\n首輪秘密 A");
+  engine.recordAnswer("gemini", "暱稱：星星果凍\n首輪秘密 B");
+  for (let round = 1; round <= 2; round++) {
+    engine.buildCritiqueJobs(round);
+    engine.recordCritique("chatgpt", `第${round}輪甲`, round);
+    engine.recordCritique("gemini", `第${round}輪乙`, round);
+  }
+  const jobs = engine.buildFinalJobs();
+  assert.deepEqual(jobs.map((job) => job.provider), ["chatgpt", "gemini"]);
+  for (const job of jobs) {
+    assert.equal(job.forceNewTab, true);
+    assert.equal(job.phase, "summary");
+    assert.match(job.prompt, /焦糖雲朵/);
+    assert.match(job.prompt, /星星果凍/);
+    assert.match(job.prompt, /第2輪甲/);
+    assert.doesNotMatch(job.prompt, /首輪秘密|第1輪甲|ChatGPT|Gemini/);
+  }
+  const restored = DebateEngine.restore(engine.snapshot());
+  assert.equal(restored.buildFinalJobs().length, 2);
+});
+
 test("DebateEngine.restore throws on invalid corrupted snapshot", () => {
   assert.throws(
     () => DebateEngine.restore(null),
@@ -76,7 +101,7 @@ test("engine builds final ChatGPT summary job after all critiques are recorded",
   assert.equal(engine.snapshot().phase, "summary");
   assert.equal(job.provider, "chatgpt");
   assert.equal(job.phase, "summary");
-  assert.match(job.prompt, /第一輪回答:/);
+  assert.doesNotMatch(job.prompt, /第一輪回答:/);
   assert.match(job.prompt, /第二輪互評:/);
   assert.match(job.prompt, /Gemini 太草率。/);
   assert.throws(() => engine.buildReveal(), /only available in imposter mode/);
@@ -107,9 +132,9 @@ test("engine can run multiple critique rounds before the final summary", () => {
   assert.equal(firstCritiqueJobs[0].round, 1);
   assert.equal(secondCritiqueJobs[0].phase, "critique-2");
   assert.match(secondCritiqueJobs.find((item) => item.provider === "chatgpt").prompt, /上一輪對話/);
-  assert.match(job.prompt, /第二輪互評:/);
   assert.match(job.prompt, /第三輪互評:/);
   assert.match(job.prompt, /我補上瑞利散射。/);
+  assert.doesNotMatch(job.prompt, /Gemini 少了瑞利散射。/);
 });
 
 test("debate round count is clamped to the supported one through five range", () => {

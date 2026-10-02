@@ -59,8 +59,8 @@ test("side panel exposes one main debate button and advanced mutually exclusive 
   assert.match(html, /id="basicDebateButton"/);
   assert.doesNotMatch(html, /id="quickDebateButton"/);
   assert.doesNotMatch(html, /id="summaryDebateButton"/);
-  assert.match(html, /name="debateMode"[^>]+value="basic"[^>]+checked/);
-  assert.match(html, /id="basicModeOption"/);
+  assert.doesNotMatch(html, /name="debateMode"[^>]+value="basic"/);
+  assert.match(html, /name="debateMode"[^>]+value="fast"[^>]+checked/);
   assert.match(html, /name="debateMode"[^>]+value="fast"/);
   assert.match(html, /name="debateMode"[^>]+value="summary"/);
   assert.match(html, /id="debateRoundsInput"/);
@@ -87,19 +87,15 @@ test("side panel exposes one main debate button and advanced mutually exclusive 
   assert.match(app, /const debateRounds = mode === "chat" \? undefined : selectedDebateRounds\(\);/);
   assert.match(app, /mode === "chat"[\s\S]*?啟動自由群聊中/);
   assert.match(app, /mode === "theater"[\s\S]*?啟動劇場大亂鬥中/);
-  assert.match(app, /basicDebateModeOption\.style\.display/);
-  assert.match(app, /proPillEls\.forEach/);
-  assert.match(app, /pill\.textContent = currentEntitlements\.isPro \? "🐑" : "PRO"/);
+  assert.doesNotMatch(html, /class="pro-pill"/);
+  assert.match(app, /planBadge\.textContent = currentEntitlements\.sheepMode \? "🐑" : "Free"/);
 });
 
-test("debate mode entitlement keeps Pro on Fast and Free on Basic", async () => {
+test("all debate modes remain visible without plan-based automatic switching", async () => {
   const app = await readFile("src/sidepanel/app.js", "utf8");
 
-  // Product semantics: Pro does not expose ordinary Basic; Basic is the Free fallback.
-  assert.match(app, /currentEntitlements\.isPro && !featureId/);
-  assert.match(app, /input\.debate-mode-select\[value="fast"\]/);
-  assert.match(app, /!currentEntitlements\.isPro && featureId/);
-  assert.match(app, /input\.debate-mode-select\[value="basic"\]/);
+  assert.doesNotMatch(app, /currentEntitlements\.isPro/);
+  assert.doesNotMatch(app, /basicDebateModeOption/);
 });
 
 test("side panel exposes Pro summary strategy modes and random chair choice", async () => {
@@ -109,6 +105,8 @@ test("side panel exposes Pro summary strategy modes and random chair choice", as
   assert.match(html, /name="summaryStrategy"[^>]+value="standard"[^>]+checked/);
   assert.match(html, /name="summaryStrategy"[^>]+value="observerChair"/);
   assert.match(html, /name="summaryStrategy"[^>]+value="anonymousReview"/);
+  assert.match(html, /name="summaryStrategy"[^>]+value="allAnonymous"/);
+  assert.equal(html.match(/name="summaryStrategy"/g)?.length, 4);
   assert.match(html, /data-pro-feature="observerChair"/);
   assert.match(html, /data-pro-feature="anonymousReview"/);
   assert.match(html, /<option value="random">隨機主席<\/option>/);
@@ -160,10 +158,12 @@ test("side panel exposes accessible live status and progress semantics", async (
   const app = await readFile("src/sidepanel/app.js", "utf8");
 
   assert.match(html, /id="statusText" role="status" aria-live="polite"/);
-  assert.match(html, /id="chatTranscript" class="chat-transcript" role="log" aria-live="polite"/);
+  assert.match(html, /id="chatTranscript" class="chat-transcript" role="region" aria-label="即時會議紀錄" aria-live="off"/);
   assert.match(html, /id="progressContainer" class="reactor-route" role="progressbar"/);
   assert.equal(html.match(/aria-describedby="(?:chatgpt|gemini|grok|claude|meta)State"/g)?.length, 5);
   assert.match(html, /id="checkReadinessButton"[^>]+aria-describedby="readinessHint"/);
+  assert.match(html, /檢查連線/);
+  assert.match(html, /可選診斷；正式會議通常建立新對話，總結辯論則沿用目前來源分頁/);
   assert.match(app, /progressContainer\?\.setAttribute\("aria-valuenow"/);
   assert.match(app, /replaceChatTranscriptHTML\(html\)/);
 });
@@ -259,12 +259,14 @@ test("side panel export keeps reveal content when summary is empty", async () =>
     "PROVIDERS",
     "critiqueRoundMaps",
     "providerLabel",
+    "meetingSpeakerLabel",
     `${app.slice(start, end)} return buildTranscriptText;`,
   );
   const buildTranscriptText = createTranscriptBuilder(
     [{ id: "chatgpt", label: "ChatGPT" }],
     () => [],
     (providerId) => providerId,
+    (_state, providerId) => providerId,
   );
   const output = buildTranscriptText({
     transcript: { originalQuestion: "測試問題", answers: {} },

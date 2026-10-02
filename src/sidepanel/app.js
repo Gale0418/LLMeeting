@@ -16,7 +16,6 @@ const resetButton = document.querySelector("#resetButton");
 const clearLocalDataButton = document.querySelector("#clearLocalDataButton");
 const statusText = document.querySelector("#statusText");
 const planBadge = document.querySelector("#planBadge");
-const proPillEls = Array.from(document.querySelectorAll(".pro-pill"));
 const transcriptOutput = document.querySelector("#transcriptOutput");
 const diagnosticsOutput = document.querySelector("#diagnosticsOutput");
 const chatTranscript = document.querySelector("#chatTranscript");
@@ -34,7 +33,6 @@ const interactionStyleSelect = document.querySelector("#interactionStyleSelect")
 const providerToggleEls = Array.from(document.querySelectorAll("[data-provider-toggle]"));
 const debateModeEls = Array.from(document.querySelectorAll(".debate-mode-select"));
 const debateModeOptionEls = Array.from(document.querySelectorAll(".mode-option[data-pro-feature]"));
-const basicDebateModeOption = document.querySelector("#basicModeOption");
 const summaryStrategyEls = Array.from(document.querySelectorAll(".summary-strategy-select"));
 const summaryStrategyOptionEls = Array.from(document.querySelectorAll(".summary-strategy-option[data-pro-feature]"));
 const skipSummaryCheckbox = document.querySelector("#skipSummaryCheckbox");
@@ -77,6 +75,7 @@ const advancedControlEls = Array.from(document.querySelectorAll(
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (basicDebateButton.disabled || latestState?.busy) return;
   await startSelectedDebate();
 });
 
@@ -121,10 +120,13 @@ async function loadProviderSelection() {
 }
 
 async function persistProviderSelection() {
+  const selection = selectedProviderIds();
   providerSelectionWrite = providerSelectionWrite
     .catch(() => {})
-    .then(() => chrome.storage.local.set({ [PROVIDER_SELECTION_STORAGE_KEY]: selectedProviderIds() }))
-    .catch(() => {});
+    .then(() => chrome.storage.local.set({ [PROVIDER_SELECTION_STORAGE_KEY]: selection }))
+    .catch(() => {
+      renderMessage("模型選擇未能保存；目前選擇仍可使用，重新開啟後可能恢復舊設定。");
+    });
   await providerSelectionWrite;
 }
 
@@ -168,7 +170,7 @@ async function checkSelectedProviders() {
     return;
   }
   checkReadinessButton.disabled = true;
-  readinessHint.textContent = "正在檢查必要分頁…";
+  readinessHint.textContent = "正在逐一檢查 Provider 連線…";
   const response = await chrome.runtime.sendMessage({
     type: "aiDebate:checkReadiness",
     mode: selectedDebateMode(),
@@ -180,7 +182,9 @@ async function checkSelectedProviders() {
   latestReadiness = indexReadinessResults(response?.results || response?.state?.preflightResults || []);
   if (response?.state) latestState = response.state;
   renderProviderStatuses(latestState || { activeProviders });
-  readinessHint.textContent = response?.ok ? "掃描完成" : (response?.error || "部分模型尚未就緒");
+  readinessHint.textContent = response?.ok
+    ? "診斷完成；正式會議仍會建立全新對話"
+    : `${response?.error || "部分模型尚未就緒"}；正式會議會以新分頁重試`;
   checkReadinessButton.disabled = false;
 }
 
@@ -262,7 +266,7 @@ async function startDebate(mode) {
 
   const summaryProvider = document.querySelector("#summaryProviderSelect").value;
   const skipSummary = document.querySelector("#skipSummaryCheckbox").checked;
-  if (mode !== "summary" && !skipSummary && summaryProvider !== "random" && !activeProviders.includes(summaryProvider)) {
+  if (mode !== "summary" && summaryStrategy !== "allAnonymous" && !skipSummary && summaryProvider !== "random" && !activeProviders.includes(summaryProvider)) {
     renderMessage(`❌ 請先啟用要擔任總結的 ${providerLabel(summaryProvider)}。`);
     return;
   }
@@ -339,53 +343,45 @@ clearLocalDataButton?.addEventListener("click", async () => {
   renderMessage(response?.ok ? "本機辯論紀錄已清除" : (response?.error || "清除失敗"));
 });
 
-chatSendBtn?.addEventListener("click", async () => {
-  const text = chatInput.value.trim();
-  if (!text) return;
-  chatControls.style.display = "none";
-  const response = await chrome.runtime.sendMessage({ type: "aiDebate:nextRound", action: "user_message", text }).catch(() => null);
-  if (response?.state) {
-    chatInput.value = "";
-    renderState(response.state);
-  } else {
-    chatControls.style.display = "block";
-    renderMessage(response?.error || "傳送失敗，請重試");
-  }
-});
+let chatActionPending = false;
 
-chatCritiqueBtn?.addEventListener("click", async () => {
+async function sendChatAction(action, text = "") {
+  if (chatActionPending || latestState?.busy) return;
+  if (action === "user_message" && !text.trim()) return;
+  chatActionPending = true;
   chatControls.style.display = "none";
-  const response = await chrome.runtime.sendMessage({ type: "aiDebate:nextRound", action: "critique" }).catch(() => null);
-  if (response?.state) {
-    renderState(response.state);
-  } else {
-    chatControls.style.display = "block";
-    renderMessage("請求失敗，請重試");
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "aiDebate:nextRound", action, ...(action === "user_message" ? { text } : {}),
+    });
+    if (response?.ok && action === "user_message" && chatInput.value.trim() === text) {
+      chatInput.value = "";
+    }
+    if (response?.state) renderState(response.state);
+    if (!response?.ok) renderMessage(response?.error || "請求失敗，內容已保留");
+  } catch (error) {
+    renderMessage(error.message || "請求失敗，內容已保留");
+  } finally {
+    chatActionPending = false;
+    renderDebateModeState();
   }
-});
+}
 
-chatSummarizeBtn?.addEventListener("click", async () => {
-  chatControls.style.display = "none";
-  const response = await chrome.runtime.sendMessage({ type: "aiDebate:nextRound", action: "summarize" }).catch(() => null);
-  if (response?.state) {
-    renderState(response.state);
-  } else {
-    chatControls.style.display = "block";
-    renderMessage("請求失敗，請重試");
-  }
-});
+chatSendBtn?.addEventListener("click", () => sendChatAction("user_message", chatInput.value.trim()));
+chatCritiqueBtn?.addEventListener("click", () => sendChatAction("critique"));
+chatSummarizeBtn?.addEventListener("click", () => sendChatAction("summarize"));
 
 const stopDebateBtn = document.getElementById("stopDebateBtn");
 
 stopDebateBtn?.addEventListener("click", async () => {
   stopDebateBtn.disabled = true;
-  stopDebateBtn.textContent = "暫停中...";
+  stopDebateBtn.textContent = "停止中...";
   const response = await chrome.runtime.sendMessage({ type: "aiDebate:stop" }).catch(() => null);
   if (response?.state) {
     renderState(response.state);
   } else {
     stopDebateBtn.disabled = false;
-    stopDebateBtn.textContent = "緊急暫停 🛑";
+    stopDebateBtn.textContent = "停止本次會議 🛑";
     renderMessage("停止失敗，請重試");
   }
 });
@@ -415,14 +411,15 @@ function renderState(state) {
     return;
   }
 
+  const wasWaiting = latestState?.phase === "waiting_for_user";
   latestState = state;
-  currentEntitlements = state.entitlements || entitlementsForPlan();
+  currentEntitlements = entitlementsForPlan(state.entitlements?.plan, state.entitlements?.sheepMode ?? state.entitlements?.isPro);
 
   if (stopDebateBtn) {
     stopDebateBtn.hidden = !state.busy;
     if (state.busy) {
       stopDebateBtn.disabled = false;
-      stopDebateBtn.textContent = "緊急暫停 🛑";
+      stopDebateBtn.textContent = "停止本次會議 🛑";
     }
   }
 
@@ -470,7 +467,7 @@ function renderState(state) {
 
     if (isWaiting) {
       chatControls.open = true;
-      chatInput.focus();
+      if (!wasWaiting) chatInput.focus();
     }
   }
 
@@ -500,7 +497,7 @@ function selectedProviderIds() {
 }
 
 function selectedDebateMode() {
-  return debateModeEls.find((el) => el.checked)?.value || "basic";
+  return debateModeEls.find((el) => el.checked)?.value || "fast";
 }
 
 function selectedSummaryStrategy() {
@@ -541,6 +538,7 @@ function featureForSummaryStrategy(summaryStrategy) {
   return {
     observerChair: "observerChair",
     anonymousReview: "anonymousReview",
+    allAnonymous: "allAnonymous",
   }[summaryStrategy] || "";
 }
 
@@ -581,6 +579,8 @@ function renderProviderStatuses(state) {
     if (!state.busy && readiness?.ready) {
       providerStateEls[provider].className = "provider-state state-done";
     } else if (!state.busy && readiness && !readiness.ready) {
+      providerStateEls[provider].className = "provider-state state-error";
+    } else if (label === "總結失敗") {
       providerStateEls[provider].className = "provider-state state-error";
     } else if (label === "回答中" || label === "互評中" || label === "總結中") {
       providerStateEls[provider].className = "provider-state state-active pulsing";
@@ -718,7 +718,7 @@ function renderChatBubbles(state) {
       return;
     }
 
-    replaceChatTranscriptHTML(`<div class="empty-state">輸入問題跑基礎辯論。</div>`);
+    replaceChatTranscriptHTML(`<div class="empty-state">輸入問題，開始快速鬥技場。</div>`);
     return;
   }
 
@@ -745,14 +745,14 @@ function renderChatBubbles(state) {
       if (!content && state.phase === "first-round") {
         html += `
             <div class="bubble-group assistant ${safeProviderClass(providerId)} loading">
-            <div class="bubble-meta">${escapeHTML(providerLabel(providerId))}</div>
+            <div class="bubble-meta">${escapeHTML(meetingSpeakerLabel(state, providerId))}</div>
             <div class="bubble-content"><span class="loading-dots">思考生成中<span>.</span><span>.</span><span>.</span></span></div>
           </div>
         `;
       } else if (content) {
         html += `
           <div class="bubble-group assistant ${safeProviderClass(providerId)}">
-            <div class="bubble-meta">${escapeHTML(providerLabel(providerId))}</div>
+            <div class="bubble-meta">${escapeHTML(meetingSpeakerLabel(state, providerId))}</div>
             <div class="bubble-content">${formatContent(content)}</div>
           </div>
         `;
@@ -790,7 +790,7 @@ function renderChatBubbles(state) {
         if (answers[providerId] && !answers[providerId].startsWith("[錯誤：")) {
           html += `
             <div class="bubble-group assistant ${safeProviderClass(providerId)} loading">
-              <div class="bubble-meta">${escapeHTML(providerLabel(providerId))} ${userMessage ? '回應中' : '評析中'}</div>
+              <div class="bubble-meta">${escapeHTML(meetingSpeakerLabel(state, providerId))} ${userMessage ? '回應中' : '評析中'}</div>
               <div class="bubble-content"><span class="loading-dots">${userMessage ? '思考生成中' : '撰寫互評中'}<span>.</span><span>.</span><span>.</span></span></div>
             </div>
           `;
@@ -798,7 +798,7 @@ function renderChatBubbles(state) {
       } else if (content) {
         html += `
             <div class="bubble-group assistant ${safeProviderClass(providerId)} critique">
-            <div class="bubble-meta">${escapeHTML(providerLabel(providerId))} ${userMessage ? '回應' : '評析'}</div>
+            <div class="bubble-meta">${escapeHTML(meetingSpeakerLabel(state, providerId))} ${userMessage ? '回應' : '評析'}</div>
             <div class="bubble-content">${formatContent(content)}</div>
           </div>
         `;
@@ -822,7 +822,7 @@ function renderChatBubbles(state) {
       if (!reaction) return;
       const anonymousLabel = state.transcript?.anonymousNames?.[providerId];
       const label = state.reveal.anonymous
-        ? escapeHTML(anonymousLabel || `參與者 ${index + 1}`)
+        ? escapeHTML(anonymousLabel || "匿名參與者（暱稱未取得）")
         : escapeHTML(providerLabel(providerId));
       html += `
         <div class="bubble-group assistant ${safeProviderClass(providerId)} reveal-reaction">
@@ -831,12 +831,23 @@ function renderChatBubbles(state) {
         </div>
       `;
     });
+  } else if (!state.reveal && state.summaryStrategy === "allAnonymous" && (state.phase === "summary" || state.summary || Object.keys(state.summaries || {}).length)) {
+    html += '<div class="round-divider">全員匿名裁決 👑</div>';
+    const judges = [...new Set([...(state.activeProviders || []), state.summaryProvider])].filter(Boolean);
+    for (const judge of judges) {
+      const content = state.summaries?.[judge];
+      html += `
+        <div class="bubble-group summary${!content && state.busy ? " loading" : ""}">
+          <div class="bubble-meta">${escapeHTML(meetingSpeakerLabel(state, judge))} 的總結</div>
+          <div class="bubble-content">${content ? formatContent(content) : state.busy ? "彙整精華中…" : "總結未完成"}</div>
+        </div>`;
+    }
   } else if (state.phase === "summary" && !state.summary) {
     const sumProvider = state.summaryProvider || "chatgpt";
     html += `
       <div class="round-divider">最終總結 👑</div>
         <div class="bubble-group summary ${safeProviderClass(sumProvider)} loading">
-        <div class="bubble-meta">${escapeHTML(providerLabel(sumProvider))} 總結裁決中</div>
+        <div class="bubble-meta">${escapeHTML(meetingSpeakerLabel(state, sumProvider))} 總結裁決中</div>
         <div class="bubble-content"><span class="loading-dots">彙整精華中<span>.</span><span>.</span><span>.</span></span></div>
       </div>
     `;
@@ -845,7 +856,7 @@ function renderChatBubbles(state) {
     html += `
       <div class="round-divider">最終裁決 👑</div>
       <div class="bubble-group summary ${safeProviderClass(sumProvider)}">
-        <div class="bubble-meta">${escapeHTML(providerLabel(sumProvider))} 總結裁決</div>
+        <div class="bubble-meta">${escapeHTML(meetingSpeakerLabel(state, sumProvider))} 總結裁決</div>
         <div class="bubble-content">${formatContent(state.summary)}</div>
       </div>
     `;
@@ -897,6 +908,10 @@ function zhRoundLabel(roundNumber) {
 }
 
 function providerLabelForPhase(provider, state, answers, critiques) {
+  if (state.summaryStrategy === "allAnonymous" && state.phase === "summary") {
+    if (state.providerDiagnostics?.[provider]?.stage === "error") return "總結失敗";
+    return state.summaries?.[provider] ? "已總結" : "總結中";
+  }
   if (state.phase === "source-summary" && provider === state.sourceProvider) {
     return state.sourceSummary ? "已總結" : "總結中";
   }
@@ -935,18 +950,22 @@ function setActionButtonsDisabled(disabled) {
   });
 }
 
+function meetingSpeakerLabel(state, providerId) {
+  if (["anonymousReview", "allAnonymous"].includes(state.summaryStrategy)) {
+    return state.transcript?.anonymousNames?.[providerId] || "匿名參與者（暱稱未取得）";
+  }
+  return providerLabel(providerId);
+}
+
 function safeProviderClass(id) {
   return PROVIDERS.some((provider) => provider.id === id) ? id : "unknown-provider";
 }
 
 function renderEntitlementState() {
   if (planBadge) {
-    planBadge.textContent = currentEntitlements.isPro ? "🐑" : "Free";
-    planBadge.className = `plan-badge ${currentEntitlements.isPro ? "is-pro" : "is-free"}`;
-    planBadge.setAttribute("aria-label", currentEntitlements.isPro ? "🐑模式，已解鎖" : "方案徽章：Free");
-    proPillEls.forEach((pill) => {
-      pill.textContent = currentEntitlements.isPro ? "🐑" : "PRO";
-    });
+    planBadge.textContent = currentEntitlements.sheepMode ? "🐑" : "Free";
+    planBadge.className = `plan-badge ${currentEntitlements.sheepMode ? "is-pro" : "is-free"}`;
+    planBadge.setAttribute("aria-label", currentEntitlements.sheepMode ? "🐑彩蛋，已啟用" : "Free，所有功能已開放");
   }
 
   renderDebateModeState();
@@ -958,21 +977,8 @@ function renderDebateModeState() {
     return;
   }
 
-  let currentMode = selectedDebateMode();
-  let featureId = featureForMode(currentMode);
-
-  if (!latestState || (!latestState.busy && latestState.phase !== "waiting_for_user")) {
-    if (currentEntitlements.isPro && !featureId) {
-      const fastInput = document.querySelector('input.debate-mode-select[value="fast"]');
-      if (fastInput) fastInput.checked = true;
-    } else if (!currentEntitlements.isPro && featureId) {
-      const basicInput = document.querySelector('input.debate-mode-select[value="basic"]');
-      if (basicInput) basicInput.checked = true;
-    }
-  }
-
   const mode = selectedDebateMode();
-  featureId = featureForMode(mode);
+  const featureId = featureForMode(mode);
   const locked = Boolean(featureId && !canUseFeature(currentEntitlements, featureId));
   basicDebateButton.textContent = debateModeButtonLabel(mode);
   basicDebateButton.classList.toggle("is-locked", locked);
@@ -993,30 +999,21 @@ function renderDebateModeState() {
 }
 
 function renderDebateModeOptionStates() {
-  if (basicDebateModeOption) {
-    const keepVisibleForWaitingSession =
-      currentEntitlements.isPro &&
-      latestState?.phase === "waiting_for_user" &&
-      selectedDebateMode() === "basic";
-    basicDebateModeOption.style.display =
-      currentEntitlements.isPro && !keepVisibleForWaitingSession ? "none" : "";
-  }
   for (const optionEl of debateModeOptionEls) {
     const featureId = optionEl.dataset.proFeature;
     const locked = !canUseFeature(currentEntitlements, featureId);
     optionEl.classList.toggle("is-locked", locked);
     optionEl.title = locked ? proRequiredMessage(featureId) : featureLabel(featureId);
     
-    if (currentEntitlements.isPro) {
-      optionEl.style.display = featureId ? "" : "none";
-    } else {
-      optionEl.style.display = featureId ? "none" : "";
-    }
+    optionEl.style.display = "";
   }
 }
 
 function renderSummaryStrategyState() {
   const currentStrategy = selectedSummaryStrategy();
+  if (summaryProviderSelect) {
+    summaryProviderSelect.closest(".setting-item").hidden = currentStrategy === "allAnonymous";
+  }
   const featureId = featureForSummaryStrategy(currentStrategy);
   if (!latestState?.busy && featureId && !canUseFeature(currentEntitlements, featureId)) {
     const standardInput = document.querySelector('input.summary-strategy-select[value="standard"]');
@@ -1033,11 +1030,7 @@ function renderSummaryStrategyOptionStates() {
     optionEl.classList.toggle("is-locked", locked);
     optionEl.title = locked ? proRequiredMessage(featureId) : featureLabel(featureId);
 
-    if (currentEntitlements.isPro) {
-      optionEl.style.display = featureId ? "" : "none";
-    } else {
-      optionEl.style.display = featureId ? "none" : "";
-    }
+    optionEl.style.display = "";
   }
 }
 
@@ -1054,7 +1047,7 @@ function debateModeButtonLabel(mode) {
   if (mode === "theater") {
     return "劇場大亂鬥 🎭";
   }
-  return "基礎辯論";
+  return "快速鬥技場 ⚡";
 }
 
 function debateModeButtonTitle(mode) {
@@ -1062,7 +1055,7 @@ function debateModeButtonTitle(mode) {
   if (featureId) {
     return featureLabel(featureId);
   }
-  return "開始基礎辯論";
+  return "開始快速鬥技場";
 }
 
 function renderLockedFeatureMessage(featureId) {
@@ -1082,7 +1075,7 @@ function startingMessage(mode) {
   if (mode === "theater") {
     return "啟動劇場大亂鬥中...";
   }
-  return "啟動基礎辯論中...";
+  return "啟動快速鬥技場中...";
 }
 
 function buildTranscriptText(state) {
@@ -1098,19 +1091,20 @@ function buildTranscriptText(state) {
     transcript.originalQuestion || state.question || "",
     "",
     "第一輪回答:",
-    ...PROVIDERS.map((provider) => speakerBlock(provider.label, transcript.answers?.[provider.id])),
+    ...PROVIDERS.map((provider) => speakerBlock(meetingSpeakerLabel(state, provider.id), transcript.answers?.[provider.id])),
   ];
 
   critiqueRoundMaps(transcript).forEach((critiques, index) => {
     lines.push(
       "",
       `${zhRoundLabel(index + 2)}互評:`,
-      ...PROVIDERS.map((provider) => speakerBlock(provider.label, critiques?.[provider.id])),
+      ...PROVIDERS.map((provider) => speakerBlock(meetingSpeakerLabel(state, provider.id), critiques?.[provider.id])),
     );
   });
 
   if (state.summary || state.reveal) {
-    lines.push("", state.reveal ? "遊戲揭曉:" : `${providerLabel(state.summaryProvider)} 最終總結:`, state.reveal?.content || state.summary || "");
+    const heading = state.summaryStrategy === "allAnonymous" ? "全員匿名總結:" : `${meetingSpeakerLabel(state, state.summaryProvider)} 最終總結:`;
+    lines.push("", state.reveal ? "遊戲揭曉:" : heading, state.reveal?.content || state.summary || "");
   }
 
   if (state.reveal?.reactions) {
@@ -1119,7 +1113,7 @@ function buildTranscriptText(state) {
       const reaction = state.reveal.reactions[providerId];
       if (!reaction) return;
       const anonymousLabel = state.transcript?.anonymousNames?.[providerId];
-      const label = state.reveal.anonymous ? (anonymousLabel || `參與者 ${index + 1}`) : providerLabel(providerId);
+      const label = state.reveal.anonymous ? (anonymousLabel || "匿名參與者（暱稱未取得）") : providerLabel(providerId);
       lines.push(`${label} 揭曉反應:`, reaction);
     });
   }

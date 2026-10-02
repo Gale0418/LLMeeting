@@ -14,12 +14,12 @@ LLMeeting helps you run an interactive debate across AI web apps you are already
 
 Core features:
 
-- Four-provider basic debate with ChatGPT, Gemini, Grok, and Claude.
+- Fast arena debate with ChatGPT, Gemini, Grok, and Claude.
 - Optional Meta AI Beta participation; it stays disabled by default because availability and page structure may vary by account or region.
 - One to five cross-critique rounds.
 - Serious critique, casual chat, brawl, Yes-and, and imposter interaction styles.
-- Provider selection, random chair, observer chair, and anonymous review strategies.
-- Pro chat and theater modes with user interjections and custom personas.
+- Judge summary, observer chair, anonymous review, and all-anonymous judgments from every participant.
+- Chat and theater modes with user interjections and custom personas; all modes are available without an upgrade.
 - Bubble-style transcript and provider diagnostics.
 - Fast arena scheduling.
 - Summarize the current AI conversation and send it to the other providers.
@@ -34,7 +34,7 @@ LLMeeting does not send chat content to an LLMeeting developer server. Prompts a
 3. Optionally open Meta AI in a signed-in account; Meta AI Beta is not required for the stable four-provider flow.
 4. Open the LLMeeting side panel from the toolbar icon.
 5. Enter a short question such as `天為什麼是藍的？`.
-6. Set 交叉評析輪次 to 2, run 基礎辯論, and confirm every selected provider receives the initial prompt and two critique prompts, and only the chair provider receives the final summary prompt.
+6. Set 交叉評析輪次 to 2, run 快速鬥技場, and confirm every selected provider receives the initial prompt and two critique prompts. 裁判總結 sends the final prompt to one chair; 全員匿名 sends it to every participant independently.
 7. Confirm Meta AI Beta is unchecked after a fresh install.
 8. Click 清除紀錄 and confirm the transcript returns to an empty local state.
 

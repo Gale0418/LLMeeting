@@ -2,6 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import * as promptModule from "../src/shared/prompts.js";
+
+test("anonymous prompts use safe fallback labels for all providers, including Meta", () => {
+  const providers = ["chatgpt", "gemini", "grok", "claude", "meta"];
+  const unsafeLabels = { chatgpt: "ChatGPT", meta: "Meta AI" };
+  const names = promptModule.resolveSpeakerLabels(unsafeLabels, true);
+  assert.equal(names.meta, "神秘小幫手");
+  assert.ok(providers.every((id) => typeof names[id] === "string" && names[id].length > 0));
+  for (const prompt of [
+    buildInteractionPrompt({ recipient: "gemini", activeProviders: providers,
+      answers: { meta: "Meta AI 同意 ChatGPT", chatgpt: "ChatGPT 同意 Meta AI" },
+      speakerLabels: unsafeLabels, anonymizeSpeakers: true }),
+    buildFinalSummaryPrompt({ originalQuestion: "測試", activeProviders: providers,
+      answers: { meta: "Meta AI 同意 ChatGPT" }, speakerLabels: unsafeLabels, anonymizeSpeakers: true }),
+  ]) {
+    assert.doesNotMatch(prompt, /Meta AI|ChatGPT|undefined:/);
+    assert.match(prompt, /神秘小幫手/);
+  }
+});
 import {
   buildConversationSummaryPrompt,
   buildFinalSummaryPrompt,

@@ -1305,7 +1305,7 @@ details[open] > summary .deck-chevron { transform: rotate(225deg) translate(-2px
 .provider-copy strong {
   display: block;
   overflow: hidden;
-  font-size: 9px;
+  font-size: 10px;
   line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1355,13 +1355,12 @@ details[open] > summary .deck-chevron { transform: rotate(225deg) translate(-2px
   min-width: 0;
   pointer-events: none;
   color: var(--text-secondary);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 740;
   line-height: 1.1;
   overflow: hidden;
   text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .provider-state.state-done { color: var(--green); }
@@ -1577,8 +1576,8 @@ button:active:not(:disabled) { transform: translateY(1px); }
   .provider-console { gap: 3px; padding-inline: 5px; }
   .provider-toggle { gap: 1px; padding: 2px 1px 14px; }
   .provider-orb { width: 18px; height: 18px; font-size: 6px; }
-  .provider-copy strong { font-size: 8px; }
-  .provider-state { bottom: 3px; font-size: 8px; }
+  .provider-copy strong { font-size: 10px; }
+  .provider-state { bottom: 2px; font-size: 10px; }
   .power-core { top: 4px; right: 3px; width: 8px; height: 8px; }
   .power-core::after { inset: 1.5px; }
   .chat-buttons { grid-template-columns: 1fr 1fr; }

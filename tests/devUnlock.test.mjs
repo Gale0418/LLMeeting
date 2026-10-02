@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { THIRD_CLICK_TAUNTS, attachDevUnlock } from "../src/sidepanel/dev-unlock.js";
-import { ENTITLEMENT_STORAGE_KEY } from "../src/shared/entitlements.js";
+import { ENTITLEMENT_STORAGE_KEY, SHEEP_MODE_STORAGE_KEY } from "../src/shared/entitlements.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const AUTHOR_YOUTUBE_URL = "https://www.youtube.com/@gale0418";
@@ -34,6 +34,7 @@ function readStoredZipEntry(zipBuffer, archiveName) {
 
 function createHarness({ plan = "free", random = () => 0, confirmResult = false, tabs } = {}) {
   let storedPlan = plan;
+  let sheepMode = plan === "pro";
   const alerts = [];
   const confirms = [];
   const opened = [];
@@ -53,8 +54,11 @@ function createHarness({ plan = "free", random = () => 0, confirmResult = false,
     hasAttribute() { return false; },
   };
   const storage = {
-    async get() { return { [ENTITLEMENT_STORAGE_KEY]: storedPlan }; },
-    async set(value) { storedPlan = value[ENTITLEMENT_STORAGE_KEY]; },
+    async get(key) { return { [key]: key === SHEEP_MODE_STORAGE_KEY ? sheepMode : storedPlan }; },
+    async set(value) {
+      assert.equal(Object.hasOwn(value, ENTITLEMENT_STORAGE_KEY), false, "the easter egg must not change feature access");
+      sheepMode = value[SHEEP_MODE_STORAGE_KEY];
+    },
   };
 
   attachDevUnlock({
@@ -100,6 +104,7 @@ function createHarness({ plan = "free", random = () => 0, confirmResult = false,
     },
     timerIds: () => [...createdTimerIds],
     getPlan: () => storedPlan,
+    getSheep: () => sheepMode,
   };
 }
 
@@ -108,7 +113,8 @@ test("side panel loads the five-click sheep easter egg", async () => {
   const unlocker = await readFile(path.join(rootDir, "src", "sidepanel", "dev-unlock.js"), "utf8");
 
   assert.ok(app.includes("./dev-unlock.js"));
-  assert.match(unlocker, /ENTITLEMENT_STORAGE_KEY/);
+  assert.match(unlocker, /SHEEP_MODE_STORAGE_KEY/);
+  assert.doesNotMatch(unlocker, /ENTITLEMENT_STORAGE_KEY/);
   assert.match(unlocker, /UNLOCK_STEPS/);
   assert.match(unlocker, /unlockClicks >= 5/);
   assert.match(unlocker, /isTogglingPlan/);
@@ -137,7 +143,8 @@ test("fifth Free click unlocks sheep mode and offers the author YouTube link", a
 
   for (let click = 0; click < 5; click += 1) await harness.click();
 
-  assert.equal(harness.getPlan(), "pro");
+  assert.equal(harness.getPlan(), "free");
+  assert.equal(harness.getSheep(), true);
   assert.equal(harness.planBadge.textContent, "🐑");
   assert.match(harness.messages.at(-1), /🐑已啟用/);
   assert.match(harness.confirms[0], /恭喜解鎖🐑模式~/);
@@ -170,7 +177,7 @@ test("author tab creation is awaited and rejected tabs do not escape the unlock 
 
   assert.equal(createCalls, 1);
   assert.equal(errors.length, 1);
-  assert.equal(harness.getPlan(), "pro");
+  assert.equal(harness.getSheep(), true);
   assert.equal(harness.planBadge.textContent, "🐑");
 });
 
@@ -179,7 +186,7 @@ test("rapid repeated click bursts unlock only once", async () => {
 
   await Promise.all(Array.from({ length: 10 }, () => harness.click()));
 
-  assert.equal(harness.getPlan(), "pro");
+  assert.equal(harness.getSheep(), true);
   assert.equal(harness.planBadge.textContent, "🐑");
   assert.equal(harness.confirms.length, 1);
 });
@@ -190,7 +197,7 @@ test("clicking sheep mode again does not toggle it back", async () => {
   for (let click = 0; click < 5; click += 1) await harness.click();
   await harness.click();
 
-  assert.equal(harness.getPlan(), "pro");
+  assert.equal(harness.getSheep(), true);
   assert.equal(harness.planBadge.textContent, "🐑");
   assert.equal(harness.confirms.length, 1);
 });
@@ -221,7 +228,7 @@ test("keyboard Enter and Space activate the same unlock sequence", async () => {
   }
 
   assert.equal(harness.planBadge.textContent, "🐑");
-  assert.equal(harness.getPlan(), "pro");
+  assert.equal(harness.getSheep(), true);
 });
 
 test("attaching twice still registers only one badge handler", async () => {

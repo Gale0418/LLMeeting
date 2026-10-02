@@ -21,6 +21,7 @@ test("manifest loads automation core before the provider content script", async 
     manifest.content_scripts[0].js,
     [
       "src/content/automation-core.js",
+      "src/content/provider-driver.js",
       "src/content/provider-adapters.js",
       "src/content/provider-page.js",
     ],
@@ -53,7 +54,7 @@ test("Meta Lexical input writing uses serialized execCommand without events or D
   assert.match(metaWrite, /await waitForInputWritten\(element, serializedText, INPUT_WRITE_TIMEOUT_MS, abortCheck\)/);
   assert.doesNotMatch(inputWait, /dispatchEvent|execCommand|textContent\s*=/);
   assert.match(script, /const INPUT_WRITE_TIMEOUT_MS = 2000/);
-  assert.match(inputWait, /while \(true\) \{[\s\S]*?normalizeInputText\(readInputText\(element\)\) === expected[\s\S]*?throw createInputWriteError\(\)/);
+  assert.match(inputWait, /while \(true\) \{[\s\S]*?isPromptStillPresent\(element, expected\)[\s\S]*?throw createInputWriteError\(\)/);
 });
 
 test("content script keeps Enter fallback without a global generic submit selector", async () => {
@@ -70,7 +71,7 @@ test("content script does not accept the submitted prompt bubble as an AI respon
 
   assert.match(script, /!isPromptEcho\(prompt, currentText\)/);
   assert.match(script, /baseline,\s+errorBaseline,\s+prompt: message\.prompt/);
-  assert.match(script, /waitForCompletion\(config, providerId, message\.timeoutMs \|\| 120000, run\.baseline, run\.prompt, run\.errorBaseline, \(\) => assertAutomationEpoch\(runEpoch\)\)/);
+  assert.match(script, /waitForCompletion\(config, providerId, message\.timeoutMs \|\| 120000, run\.baseline, run\.prompt, run\.errorBaseline, \(\) => assertAutomationEpoch\(runEpoch\), run\.userTurnCount\)/);
 });
 
 test("content script uses inactivity timeout with a bounded completion hard cap", async () => {
@@ -88,7 +89,7 @@ test("Gemini confirms submission before registering the run", async () => {
   const adapters = await readFile("src/content/provider-adapters.js", "utf8");
 
   assert.match(script, /ensurePromptSubmitted/);
-  assert.match(script, /observeGeminiSubmission/);
+  assert.match(script, /observeProviderSubmission/);
   assert.match(script, /findSendButton\(config, input\)/);
   assert.ok(script.indexOf("ensurePromptSubmitted({") < script.indexOf("submittedRuns.set(runId"));
   assert.match(adapters, /gemini:[\s\S]*?sendSelectors:\s*\[\s*"button\.send-button"/);

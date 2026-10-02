@@ -44,7 +44,7 @@ function critiqueRoundFromPhase(phase) {
 }
 
 function normalizeSummaryStrategy(value = "standard") {
-  return ["standard", "observerChair", "anonymousReview"].includes(value) ? value : "standard";
+  return ["standard", "observerChair", "anonymousReview", "allAnonymous"].includes(value) ? value : "standard";
 }
 
 const IMPOSTER_SECRET_PROMPT = [
@@ -212,13 +212,13 @@ export class DebateEngine {
     }
 
     return PROVIDERS.filter((p) => this.activeProviders.includes(p.id)).map((provider) => {
-      let prompt = this.summaryStrategy === "anonymousReview"
+      let prompt = this.anonymous
         ? buildAnonymousFirstRoundPrompt(question)
         : buildFirstRoundPrompt(question);
 
       if (this.interactionStyle === "imposter" && provider.id === this.state.imposterProvider) {
         prompt = addImposterSecretPrompt(prompt, {
-          keepPromptFirst: this.summaryStrategy === "anonymousReview",
+          keepPromptFirst: this.anonymous,
         });
       }
 
@@ -234,7 +234,7 @@ export class DebateEngine {
     this.assertKnownProvider(providerId);
     const text = normalizeText(content);
     this.state.answers[providerId] = text;
-    if (this.summaryStrategy === "anonymousReview") {
+    if (this.anonymous) {
       this.anonymousNames = {
         ...this.anonymousNames,
         [providerId]: parseAnonymousName(text, providerId),
@@ -263,7 +263,7 @@ ${rawProviderContent}`
 
     if (phase === "first-round") {
       this.state.answers[providerId] = content;
-      if (this.summaryStrategy === "anonymousReview") {
+      if (this.anonymous) {
         this.anonymousNames = {
           ...this.anonymousNames,
           [providerId]: parseAnonymousName(content, providerId),
@@ -300,7 +300,7 @@ ${rawProviderContent}`
     this.state.phase = phase;
     this.state.currentCritiqueRound = round;
 
-    const speakerLabels = this.summaryStrategy === "anonymousReview"
+    const speakerLabels = this.anonymous
       ? Object.fromEntries(this.activeProviders.map((providerId) => [
         providerId,
         this.state.anonymousNames?.[providerId] || parseAnonymousName(this.state.answers[providerId], providerId),
@@ -317,7 +317,7 @@ ${rawProviderContent}`
         activeProviders: this.activeProviders,
         interactionStyle: this.interactionStyle,
         speakerLabels,
-        anonymizeSpeakers: this.summaryStrategy === "anonymousReview",
+        anonymizeSpeakers: this.anonymous,
         allowImposterAccusation: this.interactionStyle === "imposter" && round > 1 && round >= this.debateRounds,
       });
       if (this.interactionStyle === "imposter" && provider.id === this.state.imposterProvider) {
@@ -369,7 +369,7 @@ ${rawProviderContent}`
     this.state.phase = phase;
     this.state.currentCritiqueRound = round;
 
-    const speakerLabels = this.summaryStrategy === "anonymousReview"
+    const speakerLabels = this.anonymous
       ? Object.fromEntries(this.activeProviders.map((providerId) => [
         providerId,
         this.state.anonymousNames?.[providerId] || parseAnonymousName(this.state.answers[providerId], providerId),
@@ -386,7 +386,7 @@ ${rawProviderContent}`
         activeProviders: this.activeProviders,
         interactionStyle: this.interactionStyle,
         speakerLabels,
-        anonymizeSpeakers: this.summaryStrategy === "anonymousReview",
+        anonymizeSpeakers: this.anonymous,
         allowImposterAccusation: this.interactionStyle === "imposter" && round > 1 && round >= this.debateRounds,
       });
 
@@ -404,12 +404,23 @@ ${rawProviderContent}`
     });
   }
 
+  get anonymous() {
+    return ["anonymousReview", "allAnonymous"].includes(this.summaryStrategy);
+  }
+
+  buildFinalJobs() {
+    const job = this.buildFinalJob();
+    if (this.summaryStrategy !== "allAnonymous") return [job];
+    const judges = [...new Set([...this.activeProviders, this.resolvedSummaryProvider])];
+    return judges.map((provider) => ({ ...job, provider, forceNewTab: true }));
+  }
+
   buildFinalJob() {
     if (this.openEnded) {
       const lastCompleted = this.getLastCompletedRoundData();
       this.requireComplete(this.state.answers, "first-round");
       this.state.phase = "summary";
-      const speakerLabels = this.summaryStrategy === "anonymousReview"
+      const speakerLabels = this.anonymous
         ? Object.fromEntries(this.activeProviders.map((providerId) => [
           providerId,
           this.state.anonymousNames?.[providerId] || parseAnonymousName(this.state.answers[providerId], providerId),
@@ -428,9 +439,9 @@ ${rawProviderContent}`
           lastRoundOnly: lastCompleted.isCritique,
           activeProviders: this.activeProviders,
           speakerLabels,
-          anonymizeSpeakers: this.summaryStrategy === "anonymousReview",
+          anonymizeSpeakers: this.anonymous,
         }),
-        { forceNewTab: this.summaryStrategy === "anonymousReview" },
+        { forceNewTab: this.anonymous },
       );
     }
 
@@ -438,7 +449,7 @@ ${rawProviderContent}`
       this.requireComplete(this.state.critiqueRounds[round - 1], critiquePhase(round));
     }
     this.state.phase = "summary";
-    const speakerLabels = this.summaryStrategy === "anonymousReview"
+    const speakerLabels = this.anonymous
       ? Object.fromEntries(this.activeProviders.map((providerId) => [
         providerId,
         this.state.anonymousNames?.[providerId] || parseAnonymousName(this.state.answers[providerId], providerId),
@@ -451,13 +462,14 @@ ${rawProviderContent}`
       buildFinalSummaryPrompt({
         originalQuestion: this.state.originalQuestion,
         answers: this.state.answers,
-        critiques: this.state.critiques,
-        critiqueRounds: this.state.critiqueRounds,
+        critiqueRounds: [this.state.critiqueRounds[this.debateRounds - 1]],
+        critiqueRoundNumber: this.debateRounds,
+        lastRoundOnly: true,
         activeProviders: this.activeProviders,
         speakerLabels,
-        anonymizeSpeakers: this.summaryStrategy === "anonymousReview",
+        anonymizeSpeakers: this.anonymous,
       }),
-      { forceNewTab: this.summaryStrategy === "anonymousReview" },
+      { forceNewTab: this.anonymous },
     );
   }
 
@@ -471,7 +483,7 @@ ${rawProviderContent}`
     }
 
     const imposterProvider = this.state.imposterProvider || null;
-    const anonymous = this.summaryStrategy === "anonymousReview";
+    const anonymous = this.anonymous;
     const rawDisplayName = imposterProvider
       ? (anonymous
         ? (isSafeAnonymousLabel(this.state.anonymousNames?.[imposterProvider])
@@ -505,7 +517,7 @@ ${rawProviderContent}`
       throw new Error("Reveal is only available in imposter mode");
     }
     const reveal = this.state.reveal || this.buildReveal();
-    const anonymous = this.summaryStrategy === "anonymousReview";
+    const anonymous = this.anonymous;
     const labels = Object.fromEntries(PROVIDERS.map((provider) => {
       const candidate = anonymous
         ? (isSafeAnonymousLabel(this.state.anonymousNames?.[provider.id])

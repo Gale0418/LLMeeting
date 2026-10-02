@@ -1,6 +1,7 @@
 import { PROVIDER_IDS } from "./providers.js";
 
 export const ENTITLEMENT_STORAGE_KEY = "aiDebate.entitlementPlan";
+export const SHEEP_MODE_STORAGE_KEY = "aiDebate.sheepMode.v1";
 
 const FEATURE_LABELS = {
   basicDebate: "基礎辯論",
@@ -8,45 +9,36 @@ const FEATURE_LABELS = {
   summaryDebate: "總結辯論",
   observerChair: "圍觀主席制",
   anonymousReview: "匿名評論制",
+  allAnonymous: "全員匿名",
   chatMode: "自由群聊與劇場模式",
   history: "歷史紀錄",
   export: "匯出",
 };
 
-const PLAN_FEATURES = {
-  free: {
-    basicDebate: true,
-    fastDebate: false,
-    summaryDebate: false,
-    observerChair: false,
-    anonymousReview: false,
-    chatMode: false,
-    history: false,
-    export: false,
-  },
-  pro: {
-    basicDebate: true,
-    fastDebate: true,
-    summaryDebate: true,
-    observerChair: true,
-    anonymousReview: true,
-    chatMode: true,
-    history: true,
-    export: true,
-  },
+const AVAILABLE_FEATURES = {
+  basicDebate: true,
+  fastDebate: true,
+  summaryDebate: true,
+  observerChair: true,
+  anonymousReview: true,
+  allAnonymous: true,
+  chatMode: true,
+  history: true,
+  export: true,
 };
 
 export function normalizePlan(plan) {
   return plan === "pro" ? "pro" : "free";
 }
 
-export function entitlementsForPlan(plan = "free") {
+export function entitlementsForPlan(plan = "free", sheepMode = plan === "pro") {
   const normalizedPlan = normalizePlan(plan);
   return {
     plan: normalizedPlan,
     isPro: normalizedPlan === "pro",
+    sheepMode: sheepMode === true,
     includedProviders: [...PROVIDER_IDS],
-    features: { ...PLAN_FEATURES[normalizedPlan] },
+    features: { ...AVAILABLE_FEATURES },
   };
 }
 
@@ -59,5 +51,5 @@ export function featureLabel(featureId) {
 }
 
 export function proRequiredMessage(featureId) {
-  return `${featureLabel(featureId)} 是 Pro 功能；目前先保留入口，之後接授權後開放。`;
+  return `${featureLabel(featureId)} 目前無法使用，請重新開啟側邊欄。`;
 }

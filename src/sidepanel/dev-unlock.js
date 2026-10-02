@@ -1,4 +1,4 @@
-import { ENTITLEMENT_STORAGE_KEY } from "../shared/entitlements.js";
+import { SHEEP_MODE_STORAGE_KEY } from "../shared/entitlements.js";
 
 const CLICK_WINDOW_MS = 1800;
 const AUTHOR_YOUTUBE_URL = "https://www.youtube.com/@gale0418";
@@ -87,15 +87,15 @@ export function attachDevUnlock({
       timers.clearTimeout(resetTimer);
 
       try {
-        const stored = await storage.get(ENTITLEMENT_STORAGE_KEY);
-        if (stored?.[ENTITLEMENT_STORAGE_KEY] === "pro") {
+        const stored = await storage.get(SHEEP_MODE_STORAGE_KEY);
+        if (stored?.[SHEEP_MODE_STORAGE_KEY] === true) {
           updateBadge("🐑", true);
           return;
         }
 
-        await storage.set({ [ENTITLEMENT_STORAGE_KEY]: "pro" });
+        await storage.set({ [SHEEP_MODE_STORAGE_KEY]: true });
         updateBadge("🐑", true);
-        renderMessage?.("作者模式：🐑已啟用！歡迎大家訂閱分享按讚((被拖走");
+        renderMessage?.("彩蛋：🐑已啟用！歡迎大家訂閱分享按讚((被拖走");
 
         const message = "恭喜解鎖🐑模式~\n\n覺得這個擴充功能好用嗎？\n歡迎訂閱作者的 YouTube 頻道、按讚並分享：\n" +
           AUTHOR_YOUTUBE_URL + "\n\n要去看看嗎？ (被拖走)";

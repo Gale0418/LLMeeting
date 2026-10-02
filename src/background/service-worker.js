@@ -2,11 +2,12 @@ import { DebateEngine, normalizeDebateRounds } from "./debateEngine.js";
 import { isProviderTabReady, setSidePanelOpenOnActionClick } from "./chromeCompat.js";
 import { createProviderDiagnostics, updateProviderDiagnostic } from "./diagnostics.js";
 import { RunController, isRunCancelledError } from "./runController.js";
-import { safePersistState } from "./statePersistence.js";
+import { createStateStorageQueue, safePersistState } from "./statePersistence.js";
 import { isSessionExpired, recoverSession } from "./sessionRecovery.js";
 import {
   canUseFeature,
   ENTITLEMENT_STORAGE_KEY,
+  SHEEP_MODE_STORAGE_KEY,
   entitlementsForPlan,
   featureLabel,
   proRequiredMessage,
@@ -37,6 +38,7 @@ const runController = new RunController();
 let initializationPromise;
 let lifecycleRevision = 0;
 let controlOperation = null;
+const enqueueStateStorage = createStateStorageQueue();
 
 function beginControlOperation(kind) {
   if (controlOperation) {
@@ -53,7 +55,7 @@ function isCurrentControlOperation(operation) {
 
 function assertCurrentControlOperation(operation) {
   if (isCurrentControlOperation(operation)) return;
-  const error = new Error("已緊急暫停");
+  const error = new Error("本次會議已停止");
   error.code = "RUN_CANCELLED";
   throw error;
 }
@@ -94,6 +96,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         await notifyProviderAbortOperations({ tabIds: Object.values(runtimeState.providerTabs || {}) });
         assertCurrentControlOperation(operation);
         await chrome.storage.local.remove(ENTITLEMENT_STORAGE_KEY);
+        await chrome.storage.local.remove(SHEEP_MODE_STORAGE_KEY);
         cachedEntitlements = entitlementsForPlan();
         engine = new DebateEngine();
         runtimeState = createIdleState(undefined, cachedEntitlements);
@@ -104,7 +107,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .catch((error) => {
         const cancelled = !isCurrentControlOperation(operation) || isRunCancelledError(error);
         finishControlOperation(operation);
-        sendResponse({ ok: false, code: cancelled ? "RUN_CANCELLED" : error.code, error: cancelled ? "已緊急暫停" : error.message, state: runtimeState });
+        sendResponse({ ok: false, code: cancelled ? "RUN_CANCELLED" : error.code, error: cancelled ? "本次會議已停止" : error.message, state: runtimeState });
       });
     return true;
   }
@@ -123,7 +126,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         assertCurrentControlOperation(operation);
         engine = new DebateEngine();
         runtimeState = createIdleState(undefined, runtimeState.entitlements);
-        await chrome.storage.local.remove(STORAGE_KEY);
+        await enqueueStateStorage(() => chrome.storage.local.remove(STORAGE_KEY));
         assertCurrentControlOperation(operation);
         chrome.runtime.sendMessage({
           type: "aiDebate:stateChanged",
@@ -135,15 +138,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .catch((error) => {
         const cancelled = !isCurrentControlOperation(operation) || isRunCancelledError(error);
         finishControlOperation(operation);
-        sendResponse({ ok: false, code: cancelled ? "RUN_CANCELLED" : error.code, error: cancelled ? "已緊急暫停" : error.message, state: runtimeState });
+        sendResponse({ ok: false, code: cancelled ? "RUN_CANCELLED" : error.code, error: cancelled ? "本次會議已停止" : error.message, state: runtimeState });
       });
     return true;
   }
 
   if (message.type === "aiDebate:start") {
-    const { question, mode = "basic", activeProviders, summaryProvider, summaryStrategy, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode } = message;
+    const { question, mode = "fast", activeProviders, summaryProvider, summaryStrategy, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode } = message;
     const startAction = {
-      basic: startBasicDebate,
+      basic: startFastDebate, // Compatibility for older panels; new runs use Fast.
       fast: startFastDebate,
       summary: startSummaryDebate,
       chat: startChatDebate,
@@ -200,12 +203,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .then((state) => sendResponse({ ok: true, state }))
       .catch(async (error) => {
         if (reservationToken && !runToken && (!runController.isCurrent(reservationToken) || lifecycleRevision !== startRevision)) {
-          sendResponse({ ok: false, code: "RUN_CANCELLED", error: "已緊急暫停", state: runtimeState });
+          sendResponse({ ok: false, code: "RUN_CANCELLED", error: "本次會議已停止", state: runtimeState });
           return;
         }
         if (!runToken) {
           if (!reservationToken || !runController.isCurrent(reservationToken) || lifecycleRevision !== startRevision) {
-            sendResponse({ ok: false, code: "RUN_CANCELLED", error: "已緊急暫停", state: runtimeState });
+            sendResponse({ ok: false, code: "RUN_CANCELLED", error: "本次會議已停止", state: runtimeState });
             return;
           }
           runtimeState = {
@@ -227,14 +230,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           return;
         }
         if (isRunCancelledError(error) || (runToken && !runController.isCurrent(runToken))) {
-          sendResponse({ ok: false, code: "RUN_CANCELLED", error: "已緊急暫停", state: runtimeState });
+          sendResponse({ ok: false, code: "RUN_CANCELLED", error: "本次會議已停止", state: runtimeState });
           return;
         }
 
         const isProRequired = error.code === "PRO_REQUIRED";
         const entitlements = await getEntitlements();
         if (runToken && (!runController.isCurrent(runToken) || lifecycleRevision !== startRevision || controlOperation)) {
-          sendResponse({ ok: false, code: "RUN_CANCELLED", error: "已緊急暫停", state: runtimeState });
+          sendResponse({ ok: false, code: "RUN_CANCELLED", error: "本次會議已停止", state: runtimeState });
           return;
         }
         runtimeState = {
@@ -322,7 +325,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           controlOperation ||
           lifecycleRevision !== runRevision
         ) {
-          sendResponse({ ok: false, code: "RUN_CANCELLED", error: "已緊急暫停", state: runtimeState });
+          sendResponse({ ok: false, code: "RUN_CANCELLED", error: "本次會議已停止", state: runtimeState });
           return;
         }
         runtimeState = {
@@ -364,7 +367,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             busy: false,
             status: "idle",
             phase: "idle",
-            message: "已緊急暫停",
+      message: "本次會議已停止",
             errors: [...runtimeState.errors, { message: "使用者手動取消操作" }],
           };
           await publishState(undefined, operation);
@@ -375,7 +378,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .catch((error) => {
         const cancelled = !isCurrentControlOperation(operation) || isRunCancelledError(error);
         finishControlOperation(operation);
-        sendResponse({ ok: false, code: cancelled ? "RUN_CANCELLED" : error.code, error: cancelled ? "已緊急暫停" : error.message, state: runtimeState });
+        sendResponse({ ok: false, code: cancelled ? "RUN_CANCELLED" : error.code, error: cancelled ? "本次會議已停止" : error.message, state: runtimeState });
       });
     return true;
   }
@@ -403,6 +406,7 @@ function createIdleState(providerIds = DEFAULT_ACTIVE_PROVIDER_IDS, entitlements
     activeProviders,
     summaryProvider: "chatgpt",
     summaryStrategy: "standard",
+    summaries: {},
     debateRounds: 1,
     currentCritiqueRound: 0,
     entitlements,
@@ -510,7 +514,12 @@ async function preflightStartRequest(message = {}, runToken) {
     hookedTabs[sourceProvider] = sourceTab.id;
   }
 
-  return preflightProviderTabs([...new Set(providerIds)], hookedTabs, runToken);
+  return preflightProviderTabs(
+    [...new Set(providerIds)],
+    hookedTabs,
+    runToken,
+    { forceNewTabs: true },
+  );
 }
 
 async function validateStartRequestBeforePreflight(message = {}) {
@@ -529,6 +538,7 @@ async function validateStartRequestBeforePreflight(message = {}) {
   }
   if (
     message.mode !== "summary" &&
+    message.summaryStrategy !== "allAnonymous" &&
     !message.skipSummary &&
     isProviderId(message.summaryProvider) &&
     Array.isArray(message.activeProviders) &&
@@ -555,9 +565,9 @@ function requiredProviderIdsForMessage(message = {}, requireTwo = false) {
   return [...new Set(selected)];
 }
 
-async function preflightProviderTabs(providerIds, hookedTabs = {}, runToken) {
+async function preflightProviderTabs(providerIds, hookedTabs = {}, runToken, options = {}) {
   const uniqueProviderIds = [...new Set(providerIds.filter((providerId) => isProviderId(providerId)))];
-  const results = await checkProviderTabsSequentially(uniqueProviderIds, hookedTabs, runToken);
+  const results = await checkProviderTabsSequentially(uniqueProviderIds, hookedTabs, runToken, options);
 
   if (runToken) runController.assertCurrent(runToken);
   const failed = results.find((result) => !result.ready);
@@ -575,7 +585,7 @@ async function preflightProviderTabs(providerIds, hookedTabs = {}, runToken) {
   };
 }
 
-async function checkProviderTabsSequentially(providerIds, seededTabs = {}, runToken) {
+async function checkProviderTabsSequentially(providerIds, seededTabs = {}, runToken, options = {}) {
   const originalTab = await getCurrentActiveTab();
   const results = [];
   try {
@@ -586,6 +596,7 @@ async function checkProviderTabsSequentially(providerIds, seededTabs = {}, runTo
         const seededTabId = Number(seededTabs?.[providerId]);
         tab = await getOrCreateProviderTab(providerId, {
           preferredTabId: Number.isInteger(seededTabId) ? seededTabId : undefined,
+          forceNewTab: options.forceNewTabs === true && !Number.isInteger(seededTabId),
         });
         await activateProviderTabForReadiness(tab);
         results.push(await checkProviderTabReadiness(tab.id, providerId));
@@ -654,6 +665,9 @@ async function checkProviderTabReadiness(tabId, providerId) {
   if (!tab) {
     return readinessResult(providerId, effectiveTabId, "TAB_NOT_FOUND", "找不到 provider 分頁");
   }
+  if (provider && isProviderLoginTab(tab, provider)) {
+    return { ...readinessResult(providerId, effectiveTabId, "LOGIN_REQUIRED", "請先在該模型分頁登入，再重新檢查"), url: tab.url || "" };
+  }
   if (!provider || !isProviderTabReady(tab, provider)) {
     const url = tab.url || tab.pendingUrl || "";
     const urlMatches = provider?.matchPatterns?.some((pattern) => urlMatchesPatternForReadiness(url, pattern));
@@ -666,7 +680,7 @@ async function checkProviderTabReadiness(tabId, providerId) {
   let response;
   try {
     response = await withReadinessTimeout(
-      sendProviderMessage(effectiveTabId, {
+      sendProviderReadinessMessage(effectiveTabId, {
         provider: providerId,
         phase: "readiness",
         round: 0,
@@ -678,7 +692,7 @@ async function checkProviderTabReadiness(tabId, providerId) {
     return readinessResult(
       providerId,
       effectiveTabId,
-      error.code === "READINESS_TIMEOUT" ? "TIMEOUT" : "CONTENT_SCRIPT_UNAVAILABLE",
+      ["READINESS_TIMEOUT", "PROVIDER_RPC_TIMEOUT"].includes(error.code) ? "TIMEOUT" : ["WRONG_URL", "LOGIN_REQUIRED"].includes(error.code) ? error.code : "CONTENT_SCRIPT_UNAVAILABLE",
       error.message,
     );
   }
@@ -758,17 +772,6 @@ async function withReadinessTimeout(promise, timeoutMs) {
   }
 }
 
-async function startBasicDebate(question, options = {}) {
-  return startQuestionDebate(question, {
-    ...options,
-    mode: "basic",
-    scheduler: "sequential",
-    openingMessage: "基礎辯論：準備逐家送出原始問題",
-    hookedTabs: options.hookedTabs,
-    interactionStyle: options.interactionStyle,
-  });
-}
-
 async function startFastDebate(question, options = {}) {
   await requireProFeature("fastDebate");
   runController.assertCurrent(options.runToken);
@@ -813,7 +816,7 @@ async function startInteractiveDebate(question, options = {}) {
   runController.assertCurrent(runToken);
   const trimmedQuestion = String(question || "").trim();
   if (!trimmedQuestion) throw new Error("請先輸入問題");
-  if (runtimeState.busy) throw new Error("目前已有辯論正在進行");
+  if (runtimeState.busy && runtimeState.phase !== "preflight-complete") throw new Error("目前已有辯論正在進行");
 
   const requestedProviders = normalizeProviderIds(options.activeProviders);
   const summarySetup = await prepareSummarySetup(requestedProviders, options);
@@ -846,7 +849,7 @@ async function startInteractiveDebate(question, options = {}) {
     activeProviders,
     summaryProvider,
     summaryStrategy: summarySetup.summaryStrategy,
-    debateRounds: debateRounds,
+    debateRounds: engine.debateRounds,
     currentCritiqueRound: 0,
     entitlements,
     skipSummary: options.skipSummary || false,
@@ -875,7 +878,7 @@ async function startInteractiveDebate(question, options = {}) {
     return runtimeState;
   }
 
-  for (let round = 1; round <= debateRounds; round += 1) {
+  for (let round = 1; round <= engine.debateRounds; round += 1) {
     const jobs = engine.buildCritiqueJobs(round);
     runtimeState = {
       ...runtimeState,
@@ -922,12 +925,12 @@ async function startInteractiveDebate(question, options = {}) {
   runtimeState = {
     ...runtimeState,
     phase: "summary",
-    message: `最終回合：請 ${providerLabel(runtimeState.summaryProvider)} 總結`,
+    message: runtimeState.summaryStrategy === "allAnonymous" ? "最終回合：全員匿名裁判各自總結" : `最終回合：請 ${providerLabel(runtimeState.summaryProvider)} 總結`,
     transcript: engine.snapshot(),
   };
   await publishState(runToken);
 
-  const finalResult = await sendJob(buildRuntimeFinalJob(), runToken);
+  const finalResult = await runFinalSummary(runToken);
   if (!finalResult.ok) {
     return finishWithError(finalResult, runToken);
   }
@@ -946,7 +949,7 @@ async function startInteractiveDebate(question, options = {}) {
 }
 
 function normalizeSummaryStrategy(value = "standard") {
-  return ["standard", "observerChair", "anonymousReview"].includes(value) ? value : "standard";
+  return ["standard", "observerChair", "anonymousReview", "allAnonymous"].includes(value) ? value : "standard";
 }
 
 async function requireSummaryStrategyFeature(summaryStrategy) {
@@ -984,7 +987,7 @@ async function prepareSummarySetup(requestedProviders, options = {}) {
     await requireSummaryStrategyFeature(summaryStrategy);
   }
 
-  const resolvedSummaryProvider = options.skipSummary
+  const resolvedSummaryProvider = options.skipSummary || summaryStrategy === "allAnonymous"
     ? requestedProviders[0]
     : resolveSummaryProvider(options.summaryProvider, requestedProviders);
   let debateProviders = [...requestedProviders];
@@ -1010,6 +1013,25 @@ function buildRuntimeFinalJob() {
     ...engine.buildFinalJob(),
     forceNewTab: runtimeState.summaryStrategy === "anonymousReview",
   };
+}
+
+async function runFinalSummary(runToken) {
+  if (runtimeState.summaryStrategy !== "allAnonymous") {
+    return sendJob(buildRuntimeFinalJob(), runToken);
+  }
+  runtimeState = { ...runtimeState, summaries: {} };
+  const jobs = engine.buildFinalJobs();
+  const results = await runFastProviderJobs(jobs, "summary", runToken);
+  runController.assertCurrent(runToken);
+  if (!results.some((result) => result.ok)) {
+    return results[0] || { ok: false, error: "全員匿名總結沒有可用的裁判結果" };
+  }
+  const summaries = runtimeState.summaries;
+  const names = engine.snapshot().anonymousNames || {};
+  const content = jobs.map(({ provider }) =>
+    `${names[provider] || "匿名參與者（暱稱未取得）"}：\n${summaries[provider] || ""}`,
+  ).join("\n\n");
+  return { ok: true, content };
 }
 
 async function finishImposterReveal(runToken) {
@@ -1063,8 +1085,8 @@ async function startQuestionDebate(question, options = {}) {
   const summaryProvider = summarySetup.resolvedSummaryProvider;
   const entitlements = await getEntitlements();
   runController.assertCurrent(runToken);
-  const mode = options.mode || "basic";
-  const scheduler = options.scheduler || "sequential";
+  const mode = options.mode || "fast";
+  const scheduler = options.scheduler || "fast";
   const preflight = options.preflight || await preflightProviderTabs(
     [...activeProviders, ...(!options.skipSummary ? [summaryProvider] : [])],
     options.hookedTabs,
@@ -1085,7 +1107,7 @@ async function startQuestionDebate(question, options = {}) {
     status: "running",
     mode,
     phase: "first-round",
-    message: options.openingMessage || "基礎辯論：準備送出原始問題",
+    message: options.openingMessage || "快速鬥技場：準備送出原始問題",
     question: trimmedQuestion,
     activeProviders,
     summaryProvider,
@@ -1243,12 +1265,12 @@ async function runDebateRounds(originalQuestion, options = {}) {
   runtimeState = {
     ...runtimeState,
     phase: "summary",
-    message: `最終回合：請 ${providerLabel(runtimeState.summaryProvider)} 總結`,
+    message: runtimeState.summaryStrategy === "allAnonymous" ? "最終回合：全員匿名裁判各自總結" : `最終回合：請 ${providerLabel(runtimeState.summaryProvider)} 總結`,
     transcript: engine.snapshot(),
   };
   await publishState(runToken);
 
-  const finalResult = await sendJob(buildRuntimeFinalJob(), runToken);
+  const finalResult = await runFinalSummary(runToken);
   if (!finalResult.ok) {
     return finishWithError(finalResult, runToken);
   }
@@ -1308,11 +1330,11 @@ async function handleNextRound(action, text, runToken) {
     runtimeState = {
       ...runtimeState,
       phase: "summary",
-      message: `請 ${providerLabel(runtimeState.summaryProvider)} 總結`,
+      message: runtimeState.summaryStrategy === "allAnonymous" ? "全員匿名裁判各自總結" : `請 ${providerLabel(runtimeState.summaryProvider)} 總結`,
       transcript: engine.snapshot(),
     };
     await publishState(runToken);
-    const finalResult = await sendJob(buildRuntimeFinalJob(), runToken);
+    const finalResult = await runFinalSummary(runToken);
     if (!finalResult.ok) return finishWithError(finalResult, runToken);
 
     runtimeState = {
@@ -1355,12 +1377,14 @@ async function runSequentialProviderJobs(jobs, target, runToken) {
 
 async function runFastProviderJobs(jobs, target, runToken) {
   const submittedJobs = [];
+  const results = [];
   for (const job of jobs) {
     runController.assertCurrent(runToken);
     const submitted = await submitProviderJob(job, runToken);
     if (submitted.ok) {
       submittedJobs.push(submitted);
     } else {
+      results.push(submitted);
       recordProviderResult(submitted, target, runToken);
     }
     runtimeState = {
@@ -1373,6 +1397,7 @@ async function runFastProviderJobs(jobs, target, runToken) {
   for (const submitted of submittedJobs) {
     runController.assertCurrent(runToken);
     const result = await collectProviderJob(submitted, runToken);
+    results.push(result);
     recordProviderResult(result, target, runToken);
     runtimeState = {
       ...runtimeState,
@@ -1380,6 +1405,7 @@ async function runFastProviderJobs(jobs, target, runToken) {
     };
     await publishState(runToken);
   }
+  return results;
 }
 
 function recordProviderResult(result, target, runToken) {
@@ -1390,6 +1416,8 @@ function recordProviderResult(result, target, runToken) {
     engine.recordCritique(result.provider, result.content, result.round);
   } else if (result.ok && target === "reveal") {
     engine.recordReveal(result.provider, result.content);
+  } else if (result.ok && target === "summary") {
+    runtimeState.summaries = { ...runtimeState.summaries, [result.provider]: result.content };
   } else {
     engine.markProviderError(
       result.provider,
@@ -1402,6 +1430,12 @@ function recordProviderResult(result, target, runToken) {
         result.provider,
         `[服務狀態：${result.error || "unknown error"}] 揭曉反應無法取得。`,
       );
+    }
+    if (target === "summary") {
+      runtimeState.summaries = {
+        ...runtimeState.summaries,
+        [result.provider]: `[服務狀態：${result.error || "unknown error"}] 這位裁判未能完成總結。`,
+      };
     }
     runtimeState.errors = [...runtimeState.errors, result];
   }
@@ -1759,6 +1793,23 @@ async function getOrCreateProviderTab(providerId, options = {}) {
     }
   }
 
+  // Readiness may have created the tab before the in-memory binding was
+  // restored. Reuse any matching open tab before creating another one.
+  if (!options.forceNewTab) {
+    try {
+      const existingTabs = [];
+      for (const pattern of provider.matchPatterns) {
+        existingTabs.push(...await chrome.tabs.query({ url: pattern }));
+      }
+      const existingTab = existingTabs.find((tab) => isProviderTabReady(tab, provider));
+      if (existingTab) {
+        return existingTab;
+      }
+    } catch (_error) {
+      // Tab search is best effort; creation below remains the safe fallback.
+    }
+  }
+
   const createdTab = await chrome.tabs.create({ url: provider.startUrl, active: true });
   return waitForProviderTab(createdTab.id, provider);
 }
@@ -1837,34 +1888,122 @@ async function refreshMetaInputProvider(tabId, job, runToken) {
   runController.assertCurrent(runToken);
 }
 
-const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.0-readiness.4";
+const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.0-driver.5";
+const PROVIDER_DRIVER_CONTRACT_VERSION = 1;
 
-async function ensureProviderContentScript(tabId) {
-  let capabilities = null;
+function isProviderLoginTab(tab, provider) {
+  const url = tab?.url || tab?.pendingUrl || "";
+  if (!provider.matchPatterns.some((pattern) => urlMatchesPatternForReadiness(url, pattern))) return false;
   try {
-    capabilities = await chrome.tabs.sendMessage(tabId, { type: "aiDebate:getCapabilities" });
+    return /\/(?:login|signin|sign-in)(?:\/|$)/i.test(new URL(url).pathname);
   } catch (_error) {
-    // A missing or invalidated listener is repaired by the local injection below.
+    return false;
   }
-  if (capabilities?.contentScriptVersion === PROVIDER_CONTENT_SCRIPT_VERSION) return;
+}
 
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files: [
-      "src/content/automation-core.js",
-      "src/content/provider-adapters.js",
-      "src/content/provider-page.js",
-    ],
-  });
-  capabilities = await chrome.tabs.sendMessage(tabId, { type: "aiDebate:getCapabilities" });
-  if (capabilities?.contentScriptVersion !== PROVIDER_CONTENT_SCRIPT_VERSION) {
-    const error = new Error("Provider content script 版本不一致，請重新整理該分頁後再試一次");
-    error.code = "CONTENT_SCRIPT_VERSION_MISMATCH";
+async function providerRpc(promise, stage, timeoutMs = PROVIDER_CONTROL_TIMEOUT_MS) {
+  try {
+    return await withReadinessTimeout(promise, timeoutMs);
+  } catch (error) {
+    if (error.code === "READINESS_TIMEOUT") error.code = "PROVIDER_RPC_TIMEOUT";
+    error.rpcStage = stage;
+    error.message = `${stage}: ${error.message}`;
     throw error;
   }
 }
 
-async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", extra = {}) {
+function isTransientProviderChannelError(error) {
+  // Chrome cannot cancel an executeScript already accepted by the browser.
+  // Never launch a second injection while the first has an unknown outcome.
+  if (error?.rpcStage === "content injection") return false;
+  return error?.code === "PROVIDER_RPC_TIMEOUT" ||
+    /(?:message (?:port|channel) closed|channel closed before|receiving end does not exist|could not establish connection|extension context invalidated|frame was removed)/i.test(error?.message || "");
+}
+
+// Read-only checks can be retried after a document transition. Never use this
+// wrapper for submitPrompt/sendAndRead: a lost reply is not proof of no send.
+async function sendProviderReadinessMessage(tabId, job, type = "aiDebate:checkReadiness") {
+  if (type !== "aiDebate:checkReadiness") throw new Error("Readiness recovery only accepts read-only checks");
+  const deadline = Date.now() + READINESS_TIMEOUT_MS - 100;
+  let repair = false;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const provider = PROVIDERS.find((item) => item.id === job.provider);
+      const loadingDeadline = Math.min(deadline, Date.now() + 2000);
+      let tab = await chrome.tabs.get(tabId);
+      while (tab.status !== "complete" && Date.now() < loadingDeadline) {
+        await delay(100);
+        tab = await chrome.tabs.get(tabId);
+      }
+      if (provider && isProviderLoginTab(tab, provider)) {
+        const error = new Error("請先在該模型分頁登入，再重新檢查");
+        error.code = "LOGIN_REQUIRED";
+        throw error;
+      }
+      if (!provider || !isProviderTabReady(tab, provider)) {
+        const error = new Error(`分頁尚未就緒或網址已改變：${tab.url || tab.pendingUrl || "unknown"}`);
+        error.code = tab.status === "complete" ? "WRONG_URL" : "PROVIDER_RPC_TIMEOUT";
+        throw error;
+      }
+      return await sendProviderMessage(tabId, job, type, {}, { deadline, repair });
+    } catch (error) {
+      if (attempt === 1 || Date.now() + 200 >= deadline || !isTransientProviderChannelError(error)) throw error;
+      repair = error.code !== "PROVIDER_RPC_TIMEOUT" || /^capabilities/.test(error.rpcStage || "");
+      await delay(200);
+    }
+  }
+}
+
+async function ensureProviderContentScript(tabId, { deadline = Infinity, repair = false } = {}) {
+  const budget = (limit) => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      const error = new Error("Provider 檢查期限已到");
+      error.code = "PROVIDER_RPC_TIMEOUT";
+      throw error;
+    }
+    return Math.min(limit, remaining);
+  };
+  let capabilities = null;
+  if (!repair) {
+    try {
+      const timeoutMs = budget(1500);
+      capabilities = await providerRpc(chrome.tabs.sendMessage(tabId, { type: "aiDebate:getCapabilities" }), "capabilities", timeoutMs);
+    } catch (error) {
+      if (!/(?:receiving end does not exist|could not establish connection|extension context invalidated)/i.test(error.message)) throw error;
+      // A missing or invalidated listener is repaired by the local injection below.
+    }
+  }
+  if (
+    capabilities?.contentScriptVersion === PROVIDER_CONTENT_SCRIPT_VERSION &&
+    capabilities?.driverContractVersion === PROVIDER_DRIVER_CONTRACT_VERSION
+  ) return;
+
+  const injectionTimeoutMs = budget(PROVIDER_CONTROL_TIMEOUT_MS);
+  await providerRpc(chrome.scripting.executeScript({
+    target: { tabId },
+    files: [
+      "src/content/automation-core.js",
+      "src/content/provider-driver.js",
+      "src/content/provider-adapters.js",
+      "src/content/provider-page.js",
+    ],
+  }), "content injection", injectionTimeoutMs);
+  const handshakeTimeoutMs = budget(1500);
+  capabilities = await providerRpc(chrome.tabs.sendMessage(tabId, { type: "aiDebate:getCapabilities" }), "capabilities after injection", handshakeTimeoutMs);
+  if (
+    capabilities?.contentScriptVersion !== PROVIDER_CONTENT_SCRIPT_VERSION ||
+    capabilities?.driverContractVersion !== PROVIDER_DRIVER_CONTRACT_VERSION
+  ) {
+    const error = new Error("Provider Driver 契約版本不一致，請重新整理該分頁後再試一次");
+    error.code = capabilities?.contentScriptVersion !== PROVIDER_CONTENT_SCRIPT_VERSION
+      ? "CONTENT_SCRIPT_VERSION_MISMATCH"
+      : "CONTENT_SCRIPT_DRIVER_MISMATCH";
+    throw error;
+  }
+}
+
+async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", extra = {}, options = {}) {
   const payload = {
     type,
     provider: job.provider,
@@ -1877,11 +2016,21 @@ async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", ex
 
   const tab = await chrome.tabs.get(tabId);
   try {
-    await ensureProviderContentScript(tabId);
+    await ensureProviderContentScript(tabId, options);
+    if (type === "aiDebate:checkReadiness") {
+      const remaining = (options.deadline ?? Infinity) - Date.now();
+      if (remaining <= 0) {
+        const error = new Error("readiness: Provider 檢查期限已到");
+        error.code = "PROVIDER_RPC_TIMEOUT";
+        throw error;
+      }
+      return await providerRpc(chrome.tabs.sendMessage(tabId, payload), "readiness DOM", Math.min(5000, remaining));
+    }
     return await chrome.tabs.sendMessage(tabId, payload);
   } catch (error) {
     const wrapped = new Error(`${error.message}（目前網址：${tab.url || tab.pendingUrl || "unknown"}）`);
     wrapped.code = error.code || "CONTENT_SCRIPT_UNAVAILABLE";
+    wrapped.rpcStage = error.rpcStage;
     throw wrapped;
   }
 }
@@ -1966,7 +2115,7 @@ async function finishWithError(result, runToken) {
     phase: "done",
     message: result.error || result.message || "辯論失敗",
     transcript: engine.snapshot(),
-    errors: [...runtimeState.errors, result],
+    errors: runtimeState.errors.includes(result) ? runtimeState.errors : [...runtimeState.errors, result],
   };
   await publishState(runToken);
   return runtimeState;
@@ -1986,11 +2135,18 @@ async function publishState(runToken, operation) {
   }
   const stateToPublish = JSON.parse(JSON.stringify(runtimeState));
   const persistedState = createBoundedPersistedState(stateToPublish);
+  const persistenceRevision = lifecycleRevision;
   try {
-    await safePersistState(chrome.storage, persistedState, STORAGE_KEY);
+    await enqueueStateStorage(() => safePersistState(chrome.storage, persistedState, STORAGE_KEY, {
+      isCurrent: () => persistenceRevision === lifecycleRevision
+        && (runToken === undefined || runController.isCurrent(runToken))
+        && (!operation || isCurrentControlOperation(operation)),
+    }));
   } catch (_error) {
     // Quota or storage availability must not make the active in-memory run fail.
   }
+
+  if (persistenceRevision !== lifecycleRevision) return;
 
   if (runToken !== undefined) {
     runController.assertCurrent(runToken);
@@ -1999,7 +2155,7 @@ async function publishState(runToken, operation) {
   chrome.runtime.sendMessage({ type: "aiDebate:stateChanged", state: stateToPublish }).catch(() => {});
 }
 
-function createBoundedPersistedState(state) {
+export function createBoundedPersistedState(state) {
   const bounded = JSON.parse(JSON.stringify(state));
   if (!bounded.transcript) {
     return bounded;
@@ -2017,7 +2173,17 @@ function createBoundedPersistedState(state) {
 
   const transcript = bounded.transcript;
   const providerIds = Array.isArray(transcript.activeProviders) ? transcript.activeProviders : [];
-  const emptyMap = Object.fromEntries(providerIds.map((providerId) => [providerId, "[內容已截斷]" ]));
+  const oldRounds = Array.isArray(transcript.critiqueRounds) ? transcript.critiqueRounds : [];
+  const lastRoundIndex = oldRounds.length - 1;
+  const lastCompleteIndex = oldRounds.findLastIndex((round) =>
+    providerIds.length > 0 && providerIds.every((providerId) => String(round?.[providerId] || "").trim()),
+  );
+  const recentRounds = oldRounds.map((round, index) => {
+    if (index !== lastRoundIndex && index !== lastCompleteIndex) return {};
+    return Object.fromEntries(Object.entries(round || {}).map(([speaker, value]) => [
+      speaker, boundText(value, 1000),
+    ]));
+  });
   bounded.transcript = {
     phase: transcript.phase || "idle",
     originalQuestion: boundText(transcript.originalQuestion, 2000),
@@ -2028,14 +2194,17 @@ function createBoundedPersistedState(state) {
     interactionStyle: transcript.interactionStyle,
     openEnded: transcript.openEnded === true,
     isTheaterMode: transcript.isTheaterMode === true,
-    customPersonas: {},
+    customPersonas: transcript.customPersonas || {},
+    anonymousNames: transcript.anonymousNames || {},
     debateRounds: transcript.debateRounds,
     currentCritiqueRound: transcript.currentCritiqueRound,
     imposterProvider: transcript.imposterProvider || null,
     reveal: null,
-    answers: { ...emptyMap },
-    critiques: { ...emptyMap },
-    critiqueRounds: Array.from({ length: Math.max(1, Number(transcript.debateRounds) || 1) }, () => ({ ...emptyMap })),
+    answers: Object.fromEntries(providerIds.map((providerId) => [
+      providerId, boundText(transcript.answers?.[providerId], 1000),
+    ])),
+    critiques: recentRounds[0] || {},
+    critiqueRounds: recentRounds.length ? recentRounds : [{}],
     errors: [],
   };
   return bounded;
@@ -2119,11 +2288,18 @@ async function ensureRuntimeInitialized() {
 async function getEntitlements() {
   try {
     const stored = await chrome.storage.local.get(ENTITLEMENT_STORAGE_KEY);
-    const entitlements = entitlementsForPlan(stored?.[ENTITLEMENT_STORAGE_KEY]);
+    const sheep = await chrome.storage.local.get(SHEEP_MODE_STORAGE_KEY);
+    const entitlements = entitlementsForPlan(
+      stored?.[ENTITLEMENT_STORAGE_KEY],
+      typeof sheep?.[SHEEP_MODE_STORAGE_KEY] === "boolean"
+        ? sheep[SHEEP_MODE_STORAGE_KEY]
+        : stored?.[ENTITLEMENT_STORAGE_KEY] === "pro",
+    );
     cachedEntitlements = entitlements;
     return entitlements;
   } catch (_error) {
-    return runtimeState.entitlements || cachedEntitlements || entitlementsForPlan();
+    const previous = runtimeState.entitlements || cachedEntitlements;
+    return entitlementsForPlan(previous?.plan, previous?.sheepMode ?? previous?.isPro);
   }
 }
 
@@ -2203,7 +2379,7 @@ function providerResponseError(response, fallbackMessage) {
 }
 
 function createRunCancelledError() {
-  const error = new Error("已緊急暫停");
+  const error = new Error("本次會議已停止");
   error.code = "RUN_CANCELLED";
   return error;
 }

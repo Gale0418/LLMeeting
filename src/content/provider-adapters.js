@@ -45,6 +45,7 @@
       errorSelectors: commonErrorSelectors,
       loginSelectors: commonLoginSelectors,
       responseSelectors: [
+        "[data-chatgpt-search-unit-key$=':assistant'] [data-chatgpt-selection-message-id]",
         "[data-message-author-role='assistant']",
         "article .markdown",
         "main .markdown",
@@ -52,6 +53,7 @@
         "div[data-message-role='assistant']",
       ],
       userMessageSelectors: [
+        "[data-chatgpt-search-unit-key$=':user']",
         "[data-message-author-role='user']",
         "[data-message-role='user']",
         "[data-message-author='user']",

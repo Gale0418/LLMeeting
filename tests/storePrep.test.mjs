@@ -34,10 +34,10 @@ test("store listing prep documents privacy, permissions, and screenshots", async
   assert.match(privacy, /Meta AI/);
   assert.match(privacy, /24 hours|24 小時/);
   assert.match(listing, /Meta AI Beta/);
-  assert.match(listing, /Pro chat and theater modes/);
-  assert.doesNotMatch(listing, /Free chat and theater modes/);
+  assert.match(listing, /all modes are available without an upgrade/);
+  assert.doesNotMatch(listing, /Pro chat and theater modes/);
   assert.match(listing, /initial prompt and two critique prompts/);
-  assert.match(listing, /only the chair provider receives the final summary prompt/);
+  assert.match(listing, /全員匿名 sends it to every participant independently/);
   assert.match(listing, /🐑 mode easter egg/);
   assert.match(listing, /清除紀錄/);
   assert.match(privacy, /Last updated: 2026-07-17/);

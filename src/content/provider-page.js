@@ -1,12 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = "0.5.0-readiness.4";
-  if (globalThis.__aiDebateContentVersion === CONTENT_SCRIPT_VERSION) {
-    return;
-  }
-  if (globalThis.__aiDebateContentMessageListener) {
-    chrome.runtime.onMessage.removeListener(globalThis.__aiDebateContentMessageListener);
-  }
-  globalThis.__aiDebateContentVersion = CONTENT_SCRIPT_VERSION;
+  const CONTENT_SCRIPT_VERSION = "0.5.0-driver.5";
   const {
     assistantSnapshot,
     classifyProviderResponseError,
@@ -20,6 +13,14 @@
     providerErrorFingerprint,
     createAutomationAbortError,
   } = globalThis.aiDebateAutomationCore;
+  const {
+    DRIVER_CONTRACT_VERSION,
+    DRIVER_VERSION,
+    confidenceForResolution,
+    createCapabilityContract,
+    elementFingerprint,
+    selectCandidate,
+  } = globalThis.aiDebateProviderDriver;
   const makeAutomationAbortError = createAutomationAbortError || (() => {
     const error = new Error("Provider automation aborted");
     error.code = "PROVIDER_AUTOMATION_ABORTED";
@@ -35,6 +36,8 @@
   const INPUT_CANDIDATE_SELECTOR = "textarea, input:not([type]), input[type='text'], div[contenteditable='true'], [role='textbox']";
   const INPUT_SCORE_THRESHOLD = 75;
   const INPUT_AMBIGUITY_MARGIN = 12;
+  const SEND_SCORE_THRESHOLD = 70;
+  const SEND_AMBIGUITY_MARGIN = 12;
   const SHADOW_ROOT_CACHE_MS = 2000;
   let automationEpoch = 0;
   const submittedRuns = loadSubmittedRuns();
@@ -92,8 +95,18 @@
 
     return true;
   };
-  globalThis.__aiDebateContentMessageListener = contentMessageListener;
+  // Injection is a repair operation, even when the build version is unchanged.
+  // Do not leave a success marker behind if dependency initialization failed.
+  if (globalThis.__aiDebateContentMessageListener) {
+    try {
+      chrome.runtime.onMessage.removeListener(globalThis.__aiDebateContentMessageListener);
+    } catch (_error) {
+      // The previous extension context may already be invalidated.
+    }
+  }
   chrome.runtime.onMessage.addListener(contentMessageListener);
+  globalThis.__aiDebateContentMessageListener = contentMessageListener;
+  globalThis.__aiDebateContentVersion = CONTENT_SCRIPT_VERSION;
 
   async function sendAndRead(message) {
     const submitted = await submitPrompt(message);
@@ -104,6 +117,9 @@
     return {
       ok: true,
       contentScriptVersion: CONTENT_SCRIPT_VERSION,
+      driverContractVersion: DRIVER_CONTRACT_VERSION,
+      driverVersion: DRIVER_VERSION,
+      modelPolicy: "site-default",
       readiness: true,
       scoredInputFallback: true,
       openShadowDom: true,
@@ -130,7 +146,7 @@
     const expectedProvider = String(message.provider || "");
     const config = PROVIDERS[expectedProvider];
     const urlMatches = Boolean(config && matchesProviderLocation(location, config));
-    const url = {
+    let url = {
       ok: urlMatches,
       hostname: String(location?.hostname || ""),
       pathname: String(location?.pathname || "/"),
@@ -147,7 +163,7 @@
       }, "PROVIDER_WRONG_PAGE");
     }
 
-    const login = readLoginWall(config);
+    let login = readLoginWall(config);
     const providerErrorBaseline = readProviderErrorFingerprintBaseline(config, expectedProvider);
     const controls = await waitForReadinessControls(
       config,
@@ -186,9 +202,22 @@
       ? { detected: true, code: providerError.code, message: providerError.message }
       : { detected: false, code: null, message: "" };
 
+    // A provider can change its SPA route or show a login wall while the
+    // read-only control wait is pending. The result must describe this page
+    // snapshot, not the route that happened to be open when polling began.
+    url = {
+      ok: matchesProviderLocation(location, config),
+      hostname: String(location?.hostname || ""),
+      pathname: String(location?.pathname || "/"),
+    };
+    login = readLoginWall(config);
+
     let status = "ready";
     let code = null;
-    if (login.detected) {
+    if (!url.ok) {
+      status = "wrong-page";
+      code = "PROVIDER_WRONG_PAGE";
+    } else if (login.detected) {
       status = "login-required";
       code = "PROVIDER_LOGIN_REQUIRED";
     } else if (error.detected) {
@@ -205,6 +234,21 @@
       code = "PROVIDER_SEND_NOT_READY";
     }
 
+    const driver = createCapabilityContract(expectedProvider, {
+      surfaces: {
+        input: {
+          available: Boolean(input),
+          confidence: confidenceForResolution(controls.inputResolution),
+          evidence: controls.inputResolution?.evidence || null,
+        },
+        send: {
+          available: Boolean(sendButton || sendCandidate || sendCheck.deferred),
+          confidence: sendButton || sendCandidate ? "high" : sendCheck.deferred ? "medium" : "none",
+          deferred: sendCheck.deferred,
+        },
+      },
+    });
+
     return createReadinessResult(expectedProvider, status === "ready", status, {
       url,
       input: inputCheck,
@@ -212,6 +256,7 @@
       generating,
       error,
       login,
+      driver,
     }, code);
   }
 
@@ -322,31 +367,36 @@
     try {
       assertAutomationEpoch(epoch);
       const { providerId, config } = requireProviderPage(message.provider);
+      const assertCurrentPage = () => {
+        assertAutomationEpoch(epoch);
+        assertProviderLocation(providerId, config);
+      };
 
       const baseline = readAssistantSnapshot(config, providerId);
       stage = "尋找輸入框";
-      const input = await waitFor(() => findInput(config), 30000, `找不到 ${message.provider} 的輸入框，請確認已登入並開啟聊天頁面。`, () => assertAutomationEpoch(epoch));
+      const input = await waitFor(() => findInput(config), 30000, `找不到 ${message.provider} 的輸入框，請確認已登入並開啟聊天頁面。`, assertCurrentPage);
       stage = "填入提示";
-      await writeInput(input, message.prompt, config.inputWriteStrategy, () => assertAutomationEpoch(epoch));
+      await writeInput(input, message.prompt, config.inputWriteStrategy, assertCurrentPage);
 
       stage = "送出提示";
       const sendButton = providerId === "gemini"
-        ? await waitForGeminiSubmissionReady(config, input, message.prompt, SUBMISSION_READY_TIMEOUT_MS, () => assertAutomationEpoch(epoch))
-        : await waitForOptional(() => findSendButton(config, input), 3000, () => assertAutomationEpoch(epoch));
-      assertAutomationEpoch(epoch);
+        ? await waitForGeminiSubmissionReady(config, input, message.prompt, SUBMISSION_READY_TIMEOUT_MS, assertCurrentPage)
+        : await waitForOptional(() => findSendButton(config, input), 3000, assertCurrentPage);
+      assertCurrentPage();
       const errorBaseline = readProviderErrorFingerprintBaseline(config, providerId);
       const userMessageCount = countUserMessages(config, message.prompt);
+      const userTurnCount = countUserMessages(config);
       const promptWasPresent = isPromptStillPresent(input, message.prompt);
       const initiallyGenerating = isGenerating(config);
       const submission = await ensurePromptSubmitted({
         clickButton: () => {
-          assertAutomationEpoch(epoch);
+          assertCurrentPage();
           if (!sendButton) return false;
           sendButton.click();
           return true;
         },
         pressEnter: () => {
-          assertAutomationEpoch(epoch);
+          assertCurrentPage();
           dispatchEnter(input);
         },
         promptStillPresent: () => isPromptStillPresent(input, message.prompt),
@@ -356,7 +406,7 @@
           message.prompt,
           userMessageCount,
           promptWasPresent,
-          () => assertAutomationEpoch(epoch),
+          assertCurrentPage,
           4000,
           initiallyGenerating,
         ),
@@ -373,6 +423,7 @@
         errorBaseline,
         prompt: message.prompt,
         submittedAt: Date.now(),
+        userTurnCount,
       });
       persistSubmittedRuns();
 
@@ -397,7 +448,7 @@
 
       stage = "等待新回覆";
       const runEpoch = Number.isInteger(run.epoch) ? run.epoch : automationEpoch;
-      const responseCandidate = await waitForCompletion(config, providerId, message.timeoutMs || 120000, run.baseline, run.prompt, run.errorBaseline, () => assertAutomationEpoch(runEpoch));
+      const responseCandidate = await waitForCompletion(config, providerId, message.timeoutMs || 120000, run.baseline, run.prompt, run.errorBaseline, () => assertAutomationEpoch(runEpoch), run.userTurnCount);
       assertAutomationEpoch(runEpoch);
       stage = "讀取新回覆";
       const content = responseCandidate || readLastAssistantMessage(config, providerId);
@@ -430,6 +481,16 @@
     }
 
     return { providerId, config };
+  }
+
+  function assertProviderLocation(providerId, config) {
+    // Unit-level helpers may exercise the completion loop with an isolated
+    // synthetic config. Runtime calls always use a registered provider.
+    if (!PROVIDERS[providerId]) return;
+    if (config && matchesProviderLocation(location, config) && detectProviderId() === providerId) return;
+    const error = new Error(`Provider 分頁已離開 ${providerId} 的聊天路徑`);
+    error.code = "PROVIDER_WRONG_PAGE";
+    throw error;
   }
 
   function createRunId(providerId, phase) {
@@ -502,41 +563,43 @@
   }
 
   function resolveInput(config = {}) {
-    const preferredInput = config.preferredInputSelector
-      ? findLastAvailableInput([config.preferredInputSelector])
-      : null;
-    if (preferredInput) {
-      return inputResolution(preferredInput, preferredInput, "preferred", 100, false, 1);
+    const configuredCandidates = [];
+    if (config.preferredInputSelector) {
+      configuredCandidates.push(...collectInputCandidates(
+        [config.preferredInputSelector], config, "preferred", 200,
+      ));
+    }
+    configuredCandidates.push(...collectInputCandidates(
+      config.inputSelectors || [], config, "configured", 160,
+    ));
+    if (configuredCandidates.length > 0) {
+      const configured = selectCandidate(configuredCandidates, {
+        threshold: 150,
+        ambiguityMargin: INPUT_AMBIGUITY_MARGIN,
+      });
+      if (configured.accepted || configured.ambiguous) return configured;
     }
 
-    const configuredInput = findLastAvailableInput(config.inputSelectors || []);
-    if (configuredInput) {
-      return inputResolution(configuredInput, configuredInput, "configured", 90, false, 1);
-    }
-
-    const fallback = findLikelyInput(config);
-    return inputResolution(
-      fallback.accepted ? fallback.element : null,
-      fallback.element,
-      fallback.element ? "scored-fallback" : "none",
-      fallback.score,
-      fallback.ambiguous,
-      fallback.candidateCount,
-    );
+    return findLikelyInput(config);
   }
 
-  function inputResolution(element, candidate, strategy, score, ambiguous, candidateCount) {
-    return { element, candidate, strategy, score, ambiguous, candidateCount };
-  }
-
-  function findLastAvailableInput(selectors) {
+  function collectInputCandidates(selectors, config, strategy, baseScore) {
+    const candidates = [];
     for (const selector of selectors || []) {
-      const candidates = collectElements([selector])
+      const matches = collectElements([selector])
         .filter(isVisible)
         .filter(isEditableInput);
-      if (candidates.length > 0) return candidates[candidates.length - 1];
+      for (const element of matches) {
+        candidates.push({
+          element,
+          strategy,
+          score: baseScore + Math.max(-100, scoreInputCandidate(element, config)),
+          signals: [`selector:${strategy}`, `selector:${selector.slice(0, 120)}`],
+          fingerprint: elementFingerprint(element),
+        });
+      }
     }
-    return null;
+    return candidates;
   }
 
   function findLastVisibleInput(config) {
@@ -569,21 +632,42 @@
   }
 
   function findLikelyInput(config = {}) {
-    const ranked = collectElements([INPUT_CANDIDATE_SELECTOR])
+    const candidates = collectElements([INPUT_CANDIDATE_SELECTOR])
       .filter(isVisible)
       .filter(isEditableInput)
-      .map((element) => ({ element, score: scoreInputCandidate(element, config) }))
-      .sort((a, b) => b.score - a.score);
-    const best = ranked[0] || { element: null, score: 0 };
-    const second = ranked[1];
-    const ambiguous = Boolean(second && best.score - second.score < INPUT_AMBIGUITY_MARGIN);
-    return {
-      element: best.element,
-      score: best.score,
-      candidateCount: ranked.length,
-      ambiguous,
-      accepted: Boolean(best.element && best.score >= INPUT_SCORE_THRESHOLD && !ambiguous),
-    };
+      .map((element) => ({
+        element,
+        strategy: "scored-fallback",
+        score: scoreInputCandidate(element, config),
+        signals: inputCandidateSignals(element, config),
+        fingerprint: elementFingerprint(element),
+      }));
+    return selectCandidate(candidates, {
+      threshold: INPUT_SCORE_THRESHOLD,
+      ambiguityMargin: INPUT_AMBIGUITY_MARGIN,
+    });
+  }
+
+  function inputCandidateSignals(element, config = {}) {
+    const signals = [];
+    const role = String(element.getAttribute?.("role") || "").toLowerCase();
+    const identity = [
+      element.id,
+      element.getAttribute?.("data-testid"),
+      element.getAttribute?.("aria-label"),
+      element.getAttribute?.("placeholder"),
+      element.className,
+    ].map((value) => String(value || "").toLowerCase()).join(" ");
+    if (role === "textbox") signals.push("role:textbox");
+    if (element.getAttribute?.("contenteditable") === "true" || element.isContentEditable === true) {
+      signals.push("editable:true");
+    }
+    if (/(?:prompt|composer|chat.?input|message|editor|prosemirror|ql-editor|lexical|query-bar)/.test(identity)) {
+      signals.push("identity:composer");
+    }
+    if (matchesClosestSelector(element, config.composerRootSelectors || [])) signals.push("scope:composer");
+    if (element.closest?.("nav, aside, header")) signals.push("negative:navigation");
+    return signals;
   }
 
   function scoreInputCandidate(element, config = {}) {
@@ -667,8 +751,34 @@
   }
 
   function findConfiguredSendButton(root, config) {
-    const candidates = findVisibleConfiguredSendButtons(root, config);
-    return candidates.find(isSendButtonEnabled) || null;
+    return resolveConfiguredSendButton(root, config, true).element;
+  }
+
+  function resolveConfiguredSendButton(root, config, enabledOnly = true) {
+    const candidates = [];
+    for (const [index, selector] of (config.sendSelectors || []).entries()) {
+      let matches = [];
+      try {
+        matches = Array.from(root.querySelectorAll(selector));
+      } catch (_error) {
+        continue;
+      }
+      for (const element of matches) {
+        const isButton = element instanceof HTMLButtonElement || element.getAttribute("role") === "button";
+        if (!isButton || !isVisible(element) || (enabledOnly && !isSendButtonEnabled(element))) continue;
+        candidates.push({
+          element,
+          strategy: "configured-send",
+          score: 220 - Math.min(index * 4, 40) + Math.max(-100, scoreSendCandidate(element)),
+          signals: [`selector:configured-send`, `selector:${selector.slice(0, 120)}`, ...sendCandidateSignals(element)],
+          fingerprint: elementFingerprint(element),
+        });
+      }
+    }
+    return selectCandidate(candidates, {
+      threshold: 150,
+      ambiguityMargin: SEND_AMBIGUITY_MARGIN,
+    });
   }
 
   function isSendButtonEnabled(element) {
@@ -719,15 +829,66 @@
   }
 
   function findLikelySendButton(root) {
-    if (!root) return null;
-    const labels = ["send", "submit", "arrow", "送出", "傳送", "傳送訊息", "發送"];
-    return Array.from(root.querySelectorAll("button, [role='button']"))
+    return resolveLikelySendButton(root).element;
+  }
+
+  function resolveLikelySendButton(root) {
+    if (!root) {
+      return selectCandidate([], {
+        threshold: SEND_SCORE_THRESHOLD,
+        ambiguityMargin: SEND_AMBIGUITY_MARGIN,
+      });
+    }
+    const candidates = Array.from(root.querySelectorAll("button, [role='button']"))
       .filter(isVisible)
       .filter((button) => !button.disabled && button.getAttribute("aria-disabled") !== "true")
-      .find((button) => {
-        const label = `${button.getAttribute("aria-label") || ""} ${button.title || ""} ${button.textContent || ""}`.toLowerCase();
-        return labels.some((item) => label.includes(item));
-      }) || null;
+      .map((element) => ({
+        element,
+        strategy: "semantic-send-fallback",
+        score: scoreSendCandidate(element),
+        signals: sendCandidateSignals(element),
+        fingerprint: elementFingerprint(element),
+      }));
+    return selectCandidate(candidates, {
+      threshold: SEND_SCORE_THRESHOLD,
+      ambiguityMargin: SEND_AMBIGUITY_MARGIN,
+    });
+  }
+
+  function scoreSendCandidate(element) {
+    const label = sendCandidateIdentity(element);
+    let score = 0;
+    if (/(?:send|submit|傳送|送出|發送)/i.test(label)) score += 90;
+    if (/(?:chat.?submit|send.?button|composer.?send)/i.test(label)) score += 45;
+    if (String(element.type || element.getAttribute?.("type") || "").toLowerCase() === "submit") score += 75;
+    if (/(?:arrow.?up|up.?arrow|paper.?plane)/i.test(label)) score += 35;
+    if (/(?:stop|cancel|upload|attach|microphone|voice|record|停止|取消|上傳|附件|語音|錄音)/i.test(label)) score -= 140;
+    return score;
+  }
+
+  function sendCandidateSignals(element) {
+    const signals = [];
+    const label = sendCandidateIdentity(element);
+    if (/(?:send|submit|傳送|送出|發送)/i.test(label)) signals.push("name:send");
+    if (String(element.type || element.getAttribute?.("type") || "").toLowerCase() === "submit") {
+      signals.push("type:submit");
+    }
+    if (/(?:arrow.?up|up.?arrow|paper.?plane)/i.test(label)) signals.push("icon:send-like");
+    if (/(?:stop|cancel|upload|attach|microphone|voice|record|停止|取消|上傳|附件|語音|錄音)/i.test(label)) {
+      signals.push("negative:unsafe-action");
+    }
+    return signals;
+  }
+
+  function sendCandidateIdentity(element) {
+    return [
+      element.getAttribute?.("aria-label"),
+      element.getAttribute?.("data-testid"),
+      element.getAttribute?.("data-icon"),
+      element.getAttribute?.("name"),
+      element.title,
+      element.textContent,
+    ].map((value) => String(value || "")).join(" ").toLowerCase();
   }
 
   async function writeInput(element, text, writeStrategy, abortCheck = () => {}) {
@@ -775,7 +936,7 @@
     const deadline = Date.now() + timeoutMs;
     while (true) {
       abortCheck();
-      if (normalizeInputText(readInputText(element)) === expected) {
+      if (isPromptStillPresent(element, expected)) {
         return;
       }
       const remainingMs = deadline - Date.now();
@@ -806,7 +967,32 @@
   }
 
   function isPromptStillPresent(input, prompt) {
-    return normalizeInputText(readInputText(input)) === normalizeInputText(prompt);
+    const expected = normalizeInputText(prompt);
+    if (normalizeInputText(readInputText(input)) === expected) return true;
+    // Gemini asynchronously converts Markdown into Quill formatting after input.
+    // Reconstruct only known formatting, without dropping arbitrary source characters.
+    if (!input.matches?.(".ql-editor.rich-query-formatting-enabled")) return false;
+    return normalizeInputText(readFormattedEditorSource(input)) === expected;
+  }
+
+  function readFormattedEditorSource(element) {
+    const serialize = (node) => {
+      if (node.nodeType === 3) return node.textContent || "";
+      const tag = String(node.tagName || "").toLowerCase();
+      if (tag === "br") return "\n";
+      // Quill represents one empty paragraph with a placeholder BR. Counting
+      // both that BR and the paragraph boundary inserts an extra source newline.
+      if (tag === "p" && node.childNodes?.length === 1 &&
+          String(node.childNodes[0].tagName || "").toLowerCase() === "br") {
+        return node.nextSibling ? "\n" : "";
+      }
+      const content = Array.from(node.childNodes || []).map(serialize).join("");
+      if (tag === "strong" || tag === "b") return `**${content}**`;
+      if (tag === "em" || tag === "i") return `*${content}*`;
+      if (tag === "p" && node.nextSibling) return `${content}\n`;
+      return content;
+    };
+    return serialize(element);
   }
 
   function setNativeValue(element, text) {
@@ -830,7 +1016,7 @@
     }
   }
 
-  async function waitForCompletion(config, providerId, timeoutMs, baseline, prompt, errorBaseline = [], abortCheck = () => {}) {
+  async function waitForCompletion(config, providerId, timeoutMs, baseline, prompt, errorBaseline = [], abortCheck = () => {}, userTurnCount) {
     const startedAt = Date.now();
     let completionWindow = createCompletionWindow(timeoutMs, startedAt);
     let lastVisibleText = readAssistantSnapshot(config, providerId).lastText;
@@ -838,6 +1024,12 @@
 
     while (true) {
       abortCheck();
+      if (Number.isInteger(userTurnCount) && countUserMessages(config) > userTurnCount + 1) {
+        const error = new Error("此分頁出現另一則使用者訊息，已停止擷取以免混入其他回答。");
+        error.code = "PROVIDER_CONVERSATION_CHANGED";
+        throw error;
+      }
+      assertProviderLocation(providerId, config);
       const now = Date.now();
       if (now >= Math.min(completionWindow.inactivityDeadline, completionWindow.hardDeadline)) {
         break;
@@ -977,8 +1169,6 @@
     return null;
   }
 
-  const observeGeminiSubmission = observeProviderSubmission;
-
   function readInputText(input) {
     if (input instanceof HTMLTextAreaElement || input instanceof HTMLInputElement) {
       return input.value.trim();
@@ -997,8 +1187,9 @@
   }
 
   function readUserMessageTexts(config) {
-    return collectElements(config.userMessageSelectors)
-      .filter(isVisible)
+    const elements = collectElements(config.userMessageSelectors).filter(isVisible);
+    return elements
+      .filter((element) => !elements.some((other) => other !== element && other.contains?.(element)))
       .map((element) => element.innerText || element.textContent || "")
       .map((text) => String(text).trim())
       .filter(Boolean);
@@ -1018,6 +1209,16 @@
       userElement.contains?.(element) ||
       element.contains?.(userElement),
     ));
+    if (!elements.some((element) => isVisible(element) &&
+      String(element.innerText || element.textContent || "").trim())) {
+      elements = findSemanticAssistantResponses().filter((element) =>
+        !userElements.some((userElement) =>
+          userElement === element ||
+          userElement.contains?.(element) ||
+          element.contains?.(userElement),
+        ),
+      );
+    }
 
     // Filter out elements that are descendants of any other element in the list
     // This ensures we capture the outermost message container and don't overwrite
@@ -1039,8 +1240,46 @@
     return assistantSnapshot(messages);
   }
 
+  function findSemanticAssistantResponses() {
+    const candidates = collectElements([
+      "article[aria-label]",
+      "[role='article'][aria-label]",
+      "[data-message-author]",
+      "[data-author]",
+      "[data-role]",
+      "[data-testid*='message']",
+    ]);
+    return candidates.filter((element) => {
+      const author = ["data-message-author", "data-author", "data-role"]
+        .map((name) => String(element.getAttribute?.(name) || "").toLowerCase());
+      const label = String(element.getAttribute?.("aria-label") || "").toLowerCase();
+      const testId = String(element.getAttribute?.("data-testid") || "").toLowerCase();
+      const article = String(element.tagName || "").toLowerCase() === "article" ||
+        element.getAttribute?.("role") === "article";
+      const messageShape = article || /(?:message|response|turn)/.test(testId);
+      const explicitlyUser = author.some((value) => /^(user|human)$/.test(value));
+      const explicitlyAssistant = !explicitlyUser && (
+        ["data-message-author", "data-author"].some((name) =>
+          /^(assistant|model|ai)$/.test(String(element.getAttribute?.(name) || "").toLowerCase()),
+        ) ||
+        (messageShape && /^(assistant|model|ai)$/.test(author[2])) ||
+        /(?:^|[-_])assistant(?:[-_]|$)/.test(testId) ||
+        (article && /\b(assistant|model|ai)\b/.test(label))
+      );
+      if (!explicitlyAssistant) return false;
+
+      for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+        const parentAuthor = ["data-message-author", "data-author", "data-role"]
+          .map((name) => String(parent.getAttribute?.(name) || "").toLowerCase());
+        if (parentAuthor.some((value) => /^(user|human)$/.test(value))) return false;
+      }
+      return true;
+    });
+  }
+
   function readElementIdentity(element) {
     const explicitIdentity = [
+      "data-chatgpt-selection-message-id",
       "data-message-id",
       "data-conversation-message-id",
       "data-turn-id",

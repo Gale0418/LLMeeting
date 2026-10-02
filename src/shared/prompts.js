@@ -25,6 +25,7 @@ const ANONYMOUS_FALLBACK_NAMES = Object.freeze({
   gemini: "星星果凍",
   grok: "閃電麻糬",
   claude: "月光布丁",
+  meta: "神秘小幫手",
 });
 
 export function buildAnonymousFirstRoundPrompt(originalQuestion) {
@@ -280,7 +281,7 @@ export function buildInteractionPrompt({
         getLabel(provider),
         prepareSpeakerContent(
           sourceMap[provider.id] || (usesPreviousCritiques ? "[沒有取得上一輪發言]" : "[沒有取得回答]"),
-          { anonymizeSpeakers, speakerLabels },
+          { anonymizeSpeakers, speakerLabels: resolvedLabels },
         ),
         { maxChars: blockLimit },
       ))
@@ -350,7 +351,7 @@ export function buildFinalSummaryPrompt({
     const answerBlocks = providersList.map((provider) =>
       formatSpeakerBlock(
         labelFor(provider),
-        prepareSpeakerContent(answers[provider.id] || "[沒有取得回答]", { anonymizeSpeakers, speakerLabels }),
+        prepareSpeakerContent(answers[provider.id] || "[沒有取得回答]", { anonymizeSpeakers, speakerLabels: resolvedLabels }),
         { maxChars: blockLimit },
       ),
     ).join("\n\n");
@@ -360,12 +361,12 @@ export function buildFinalSummaryPrompt({
   const critiqueSections = rounds.map((roundCritiques, index) => {
     let text = `${zhRoundLabel((critiqueRoundNumber ?? index + 1) + 1)}互評:\n`;
     if (roundCritiques.USER) {
-      text += "[人類補充發言]:\n" + clipText(prepareSpeakerContent(roundCritiques.USER, { anonymizeSpeakers, speakerLabels }), blockLimit) + "\n\n";
+      text += "[人類補充發言]:\n" + clipText(prepareSpeakerContent(roundCritiques.USER, { anonymizeSpeakers, speakerLabels: resolvedLabels }), blockLimit) + "\n\n";
     }
     const critiqueBlocks = providersList.map((provider) =>
       formatSpeakerBlock(
         labelFor(provider),
-        prepareSpeakerContent(roundCritiques[provider.id] || "[沒有取得互評]", { anonymizeSpeakers, speakerLabels }),
+        prepareSpeakerContent(roundCritiques[provider.id] || "[沒有取得互評]", { anonymizeSpeakers, speakerLabels: resolvedLabels }),
         { maxChars: blockLimit },
       ),
     ).join("\n\n");

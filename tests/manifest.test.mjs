@@ -20,6 +20,7 @@ test("manifest declares the side-panel MV3 extension shell", async () => {
     manifest.content_scripts[0].js,
     [
       "src/content/automation-core.js",
+      "src/content/provider-driver.js",
       "src/content/provider-adapters.js",
       "src/content/provider-page.js",
     ],

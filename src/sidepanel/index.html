@@ -14,7 +14,7 @@
           <div>
           <div class="brand-row">
             <h1>LLMeeting</h1>
-            <span id="planBadge" class="plan-badge" role="button" tabindex="0" aria-label="方案徽章：Free">Free</span>
+            <span id="planBadge" class="plan-badge" role="button" tabindex="0" aria-label="Free，所有功能已開放">Free</span>
             <span class="version-badge">v0.5.0</span>
           </div>
           <p id="statusText" role="status" aria-live="polite" aria-atomic="true">等待開始</p>
@@ -100,8 +100,8 @@
             </article>
           </div>
           <div class="provider-actions">
-            <button type="button" id="checkReadinessButton" class="secondary-action" aria-describedby="readinessHint">重新檢查連線</button>
-            <span id="readinessHint" role="status">啟航前會再次確認</span>
+            <button type="button" id="checkReadinessButton" class="secondary-action" aria-describedby="readinessHint">檢查連線</button>
+            <span id="readinessHint" role="status">可選診斷；正式會議通常建立新對話，總結辯論則沿用目前來源分頁</span>
           </div>
         </section>
 
@@ -113,25 +113,21 @@
             <fieldset class="mode-fieldset">
               <legend>辯論模式</legend>
               <div class="mode-options">
-                <label id="basicModeOption" class="mode-option">
-                  <input type="radio" class="debate-mode-select" name="debateMode" value="basic" checked>
-                  <span>基礎辯論</span>
-                </label>
                 <label class="mode-option" data-pro-feature="fastDebate">
-                  <input type="radio" class="debate-mode-select" name="debateMode" value="fast">
-                  <span>快速鬥技場 ⚡ <span class="pro-pill">PRO</span></span>
+                  <input type="radio" class="debate-mode-select" name="debateMode" value="fast" checked>
+                  <span>快速鬥技場 ⚡</span>
                 </label>
                 <label class="mode-option" data-pro-feature="chatMode">
                   <input type="radio" class="debate-mode-select" name="debateMode" value="chat">
-                  <span>自由群聊 💬 <span class="pro-pill">PRO</span></span>
+                  <span>自由群聊 💬</span>
                 </label>
                 <label class="mode-option" data-pro-feature="chatMode">
                   <input type="radio" class="debate-mode-select" name="debateMode" value="theater">
-                  <span>劇場大亂鬥 🎭 <span class="pro-pill">PRO</span></span>
+                  <span>劇場大亂鬥 🎭</span>
                 </label>
                 <label class="mode-option" data-pro-feature="summaryDebate">
                   <input type="radio" class="debate-mode-select" name="debateMode" value="summary">
-                  <span>總結辯論 ✦ <span class="pro-pill">PRO</span></span>
+                  <span>總結辯論 ✦</span>
                 </label>
               </div>
             </fieldset>
@@ -141,15 +137,19 @@
               <div class="mode-options">
                 <label class="mode-option">
                   <input type="radio" name="summaryStrategy" class="summary-strategy-select" value="standard" checked>
-                  <span>一般裁判總結</span>
+                  <span>裁判總結</span>
                 </label>
                 <label class="mode-option summary-strategy-option" data-pro-feature="observerChair">
                   <input type="radio" name="summaryStrategy" class="summary-strategy-select" value="observerChair">
-                  <span>圍觀主席制 <span class="pro-pill">PRO</span></span>
+                  <span>圍觀主席</span>
                 </label>
                 <label class="mode-option summary-strategy-option" data-pro-feature="anonymousReview">
                   <input type="radio" name="summaryStrategy" class="summary-strategy-select" value="anonymousReview">
-                  <span>匿名評論制 <span class="pro-pill">PRO</span></span>
+                  <span>匿名評論</span>
+                </label>
+                <label class="mode-option summary-strategy-option" data-pro-feature="allAnonymous">
+                  <input type="radio" name="summaryStrategy" class="summary-strategy-select" value="allAnonymous">
+                  <span>全員匿名</span>
                 </label>
               </div>
             </fieldset>
@@ -270,15 +270,15 @@
 
         <div class="action-row">
           <button id="basicDebateButton" class="primary-action launch-action" type="submit"><span>啟動多 AI 會議</span></button>
-          <button type="button" id="stopDebateBtn" class="danger-action" hidden>緊急暫停</button>
+          <button type="button" id="stopDebateBtn" class="danger-action" hidden title="停止目前流程；無法從中斷處續跑">停止本次會議</button>
         </div>
       </form>
 
       <section class="output glass-surface">
         <div class="section-heading"><div><h2>即時會議紀錄</h2><p>每一輪輸出與人類補充都保留在本機。</p></div><span class="signal-chip">LIVE</span></div>
         <!-- 氣泡對話框 Transcript -->
-         <div id="chatTranscript" class="chat-transcript" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false">
-          <div class="empty-state">輸入問題跑基礎辯論。</div>
+         <div id="chatTranscript" class="chat-transcript" role="region" aria-label="即時會議紀錄" aria-live="off">
+          <div class="empty-state">輸入問題，開始快速鬥技場。</div>
         </div>
         <pre id="transcriptOutput" style="display: none;">尚未開始</pre>
       </section>

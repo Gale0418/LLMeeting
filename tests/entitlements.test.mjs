@@ -8,7 +8,7 @@ import {
 } from "../src/shared/entitlements.js";
 import { PROVIDER_IDS } from "../src/shared/providers.js";
 
-test("free entitlement includes opt-in Meta AI beta and locks pro workflows", () => {
+test("every feature is available without a Pro plan or sheep easter egg", () => {
   const free = entitlementsForPlan("free");
 
   assert.equal(free.plan, "free");
@@ -16,13 +16,9 @@ test("free entitlement includes opt-in Meta AI beta and locks pro workflows", ()
   assert.deepEqual(free.includedProviders, PROVIDER_IDS);
   assert.ok(free.includedProviders.includes("meta"));
   assert.equal(canUseFeature(free, "basicDebate"), true);
-  assert.equal(canUseFeature(free, "fastDebate"), false);
-  assert.equal(canUseFeature(free, "summaryDebate"), false);
-  assert.equal(canUseFeature(free, "observerChair"), false);
-  assert.equal(canUseFeature(free, "anonymousReview"), false);
-  assert.equal(canUseFeature(free, "chatMode"), false);
-  assert.equal(canUseFeature(free, "history"), false);
-  assert.equal(canUseFeature(free, "export"), false);
+  assert.equal(free.sheepMode, false);
+  for (const feature of Object.keys(free.features)) assert.equal(canUseFeature(free, feature), true);
+  assert.equal(canUseFeature(free, "unknownFeature"), false);
 });
 
 test("pro entitlement unlocks every advanced debate mode without changing provider access", () => {
@@ -30,6 +26,7 @@ test("pro entitlement unlocks every advanced debate mode without changing provid
 
   assert.equal(pro.plan, "pro");
   assert.equal(pro.isPro, true);
+  assert.equal(pro.sheepMode, true);
   assert.deepEqual(pro.includedProviders, PROVIDER_IDS);
   assert.equal(canUseFeature(pro, "basicDebate"), true);
   assert.equal(canUseFeature(pro, "fastDebate"), true);
@@ -39,6 +36,14 @@ test("pro entitlement unlocks every advanced debate mode without changing provid
   assert.equal(canUseFeature(pro, "chatMode"), true);
   assert.equal(canUseFeature(pro, "history"), true);
   assert.equal(canUseFeature(pro, "export"), true);
+});
+
+test("sheep mode is cosmetic and does not change available features", () => {
+  const normal = entitlementsForPlan();
+  const sheep = entitlementsForPlan("free", true);
+  assert.equal(sheep.isPro, false);
+  assert.equal(sheep.sheepMode, true);
+  assert.deepEqual(sheep.features, normal.features);
 });
 
 test("feature labels stay user-facing for locked action messages", () => {

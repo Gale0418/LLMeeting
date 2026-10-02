@@ -18,7 +18,7 @@ export class RunController {
 
   claim(reservation) {
     if (this.#reservation !== reservation || !this.isCurrent(reservation)) {
-      const error = new Error("已緊急暫停");
+      const error = new Error("本次會議已停止");
       error.code = "RUN_CANCELLED";
       throw error;
     }
@@ -55,7 +55,7 @@ export class RunController {
       return;
     }
 
-    const error = new Error("已緊急暫停");
+    const error = new Error("本次會議已停止");
     error.code = "RUN_CANCELLED";
     throw error;
   }
