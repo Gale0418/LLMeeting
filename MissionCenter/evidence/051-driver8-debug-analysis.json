@@ -1,0 +1,25 @@
+{
+  "build": "0.5.1-driver.8",
+  "source": "D:/Downloads/llmeeting-debug-2026-10-13T16-40-59-050Z.json",
+  "manualRepairCount": 9,
+  "faultCounts": {
+    "metaInputWriteFailed": 3,
+    "collectionReadinessTimeout": 3,
+    "geminiSubmissionUnconfirmed": 1,
+    "grokChannelClosed": 1,
+    "grokConversationChanged": 1
+  },
+  "implemented": [
+    "Only retry confirmed undispatched capability failures, same runId, bounded attempts and original deadline",
+    "Preserve original RPC stage and never retry unknown dispatched reads or injection timeouts",
+    "Redact URLs within exported error text",
+    "Add focus, selection and user-turn count diagnostics without conversation text"
+  ],
+  "unresolved": [
+    "Old run has no structured input details; Meta and Gemini exact cause remains unproven",
+    "Old channel closure and conversation-change causes remain unproven",
+    "Driver .8 real extension run not yet verified"
+  ],
+  "tests": { "passed": 385, "failed": 0, "log": "output/051-driver8-tests.txt" },
+  "package": { "bytes": 2375907, "sha256": "E3AF759009377D44B683DD3B55A8F3AE2C438A003017D4F494B6D6B040E11B28" }
+}

@@ -1,0 +1,65 @@
+{
+  "timestamp": "2026-10-13T15:23:29+08:00",
+  "version": "0.5.1",
+  "releaseStatus": "local-candidate-not-published",
+  "scope": [
+    "ChatGPT/Grok 送出確認偽陰性",
+    "接續連結分頁最後發言與使用者補充",
+    "指定故障格的手動補回覆"
+  ],
+  "browserEvidence": {
+    "chatgpt": "原場次最後提示及完整回答均存在；目前 composer 無 prompt-textarea ID、送出鈕 aria-label=傳送",
+    "grok": "原場次最後提示及回答均存在；composer 為 ProseMirror、chat-submit aria-label=提交",
+    "newExtensionLiveRun": "未執行五家整場實機"
+  },
+  "verification": {
+    "tests": {
+      "passed": 327,
+      "failed": 0,
+      "log": "output/test-051-final.log"
+    },
+    "syntax": "所有 src/**/*.js 通過 node --check",
+    "diff": "git diff --check 通過；CRLF 提示另存",
+    "ui": "Chrome 本機 fixture 使用真實 app.js 與 service-worker.js 驗證擷取草稿、指定格補入、標記與失敗提示；320/480 無水平溢位；固定測試資料，未呼叫外部 AI",
+    "package": "ZIP CRC、30 檔、版本、共用新增模組、僅 manifest/src/assets 已驗證"
+  },
+  "codeRabbit": {
+    "firstIssues": 1,
+    "disposition": "rejected-with-counterevidence: buildContinuationDraft 已過濾 ok=false，混合回覆回歸通過；首輪未覆蓋新增檔案",
+    "finalIssues": 0,
+    "finalLog": "output/coderabbit-051-final.ndjson",
+    "newFilesCovered": true
+  },
+  "antigravity": {
+    "requestId": "llmeeting-051-provider-review-20261013",
+    "cascadeId": "2902f867-6576-45a4-b163-2498b35ce6c3",
+    "scope": "唯讀、不修改檔案",
+    "state": "報告完成；有限覆蓋，非獨立全量驗收",
+    "intervention": "同一 cascade 已送停止工具探測並立即結束報告的訊息；未新增替代 Gemini 請求",
+    "completionMarker": "ANTIGRAVITY_BRIDGE_MARKER_86defc6f0dd649389a7571830e650cc8",
+    "assessment": "支持 live composer／15 秒等待／喚醒再檢查且不重送；無新可驗證缺陷。原程式部分未完整讀取，報告引用部分行號不符，沒有當成已完整逐行檢查。",
+    "coverage": "provider-page observe 舊實作與 x.com 路徑未完整比對，長提示折疊結構未實測"
+  },
+  "criticCouncil": {
+    "route": "critic_full",
+    "dispatch": "not dispatched: approval/budget missing",
+    "outcome": "limited",
+    "note": "使用者要求的是模擬跨領域分析；沒有冒充真實独立 critic 或自行新增預算。維持 Review，未發布。"
+  },
+  "limitations": [
+    "五家新版擴充套件整場實機與商店发布待驗",
+    "長文沿用既有 prompt 預算與 storage 配額降級",
+    "補入舊輪次不會回算已生成的後續回答"
+  ],
+  "sha256": "852a999a2fc3e7e244f3ec20daa27f1943c89882ecf127d3f6659adc4567d51c",
+  "bytes": 2341083,
+  "artifactHashes": {
+    "manifest.json": "e12882f9bec44d8cf821629ce83adbbe3832faea85385135ed3c8326f92d9940",
+    "src/content/provider-page.js": "0acb846e806d1833eb3b931e008c010b27952addc17b113c34c3b252732ce312",
+    "src/background/debateEngine.js": "06d586e774535b060150efcb04add9bc32d10598d4854d7662e71c7eb92a2b99",
+    "src/background/service-worker.js": "2008afbc77187bea1d90cd3451ef315bfb4b256d7db1ef9b3395b90431986545",
+    "src/sidepanel/app.js": "d2459edcd183abc69e2888439444cd3300b7f54d37ea3a22bf073f048bbb0e0a",
+    "src/shared/meetingRecovery.js": "b8972dfb8a0e00be988c34f830a2338946fe494b43fcd6f193842aecffd74146",
+    "tests/meetingRecovery.test.mjs": "261f3520c3088c04ec3c0531adebc098e65efdfbec1fd655d95be02bf09a2df1"
+  }
+}

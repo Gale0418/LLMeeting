@@ -1,4 +1,5 @@
 import { SHEEP_MODE_STORAGE_KEY } from "../shared/entitlements.js";
+import { uiText } from "../shared/i18n.js";
 
 const CLICK_WINDOW_MS = 1800;
 const AUTHOR_YOUTUBE_URL = "https://www.youtube.com/@gale0418";
@@ -57,7 +58,7 @@ export function attachDevUnlock({
   const updateBadge = (text, isUnlocked = false) => {
     planBadge.textContent = text;
     planBadge.className = "plan-badge " + (isUnlocked ? "is-pro" : "is-free");
-    planBadge.setAttribute?.("aria-label", isUnlocked ? "🐑模式，已解鎖" : "方案徽章：" + text);
+    planBadge.setAttribute?.("aria-label", uiText(isUnlocked ? "🐑模式，已解鎖" : "方案徽章：" + text));
   };
 
   const handleUnlockAttempt = async () => {
@@ -72,10 +73,10 @@ export function attachDevUnlock({
     updateBadge(UNLOCK_STEPS[Math.min(unlockClicks - 1, UNLOCK_STEPS.length - 1)]);
 
     if (displayedPlan !== "pro" && unlockClicks === 1) {
-      dialogs.alert?.("想做什麼呢！按再多次都沒用的唷");
+      dialogs.alert?.(uiText("想做什麼呢！按再多次都沒用的唷"));
     } else if (displayedPlan !== "pro" && unlockClicks === 3) {
       const index = Math.min(THIRD_CLICK_TAUNTS.length - 1, Math.floor(random() * THIRD_CLICK_TAUNTS.length));
-      dialogs.alert?.(THIRD_CLICK_TAUNTS[index]);
+      dialogs.alert?.(uiText(THIRD_CLICK_TAUNTS[index]));
     }
 
     if (unlockClicks >= 5) {
@@ -95,10 +96,10 @@ export function attachDevUnlock({
 
         await storage.set({ [SHEEP_MODE_STORAGE_KEY]: true });
         updateBadge("🐑", true);
-        renderMessage?.("彩蛋：🐑已啟用！歡迎大家訂閱分享按讚((被拖走");
+        renderMessage?.(uiText("彩蛋：🐑已啟用！歡迎大家訂閱分享按讚((被拖走"));
 
-        const message = "恭喜解鎖🐑模式~\n\n覺得這個擴充功能好用嗎？\n歡迎訂閱作者的 YouTube 頻道、按讚並分享：\n" +
-          AUTHOR_YOUTUBE_URL + "\n\n要去看看嗎？ (被拖走)";
+        const message = uiText("恭喜解鎖🐑模式~\n\n覺得這個擴充功能好用嗎？\n歡迎訂閱作者的 YouTube 頻道、按讚並分享：\n" +
+          AUTHOR_YOUTUBE_URL + "\n\n要去看看嗎？ (被拖走)");
         if (dialogs.confirm?.(message)) {
           try {
             if (tabs?.create) {

@@ -1,0 +1,52 @@
+{
+  "timestamp": "2026-10-13T15:42:32+08:00",
+  "version": "0.5.1",
+  "reload": {
+    "result": "user-confirmed",
+    "evidence": "使用者回覆：已重新載入，側欄是 v0.5.1"
+  },
+  "controlBoundary": {
+    "blocked": "chrome://extensions/ 由 browser URL policy 拒絕，禁止 workaround",
+    "sidepanel": "一般分頁 AX／截圖沒有 LLMeeting 側欄控制項；不使用 raw CDP 或其他介面繞過"
+  },
+  "readiness": {
+    "chatgpt": "已有登入頁可讀；未發送新測試",
+    "grok": "已有登入頁可讀；未發送新測試",
+    "claude": "新對話 composer 已載入，未要求登入",
+    "meta": "Lexical composer 與傳送控制已載入，未要求登入",
+    "gemini": "可用分頁存在，完整新測試待開始"
+  },
+  "cases": [
+    {
+      "id": "F01",
+      "name": "五家首輪、互評一輪、ChatGPT 裁判總結",
+      "status": "waiting_for_user_launch",
+      "question": "這是 LLMeeting 0.5.1 實機驗收。請用繁體中文、三句以內，討論番茄鐘是否適合寫程式；每句前加 LLM051。這只是功能測試，請勿搜尋網路。",
+      "acceptance": "五家各有首輪與互評提示及相應回答；總結提示含五家最近有效發言；單次送出、無漏回覆"
+    },
+    {
+      "id": "C01",
+      "name": "接續目前五家連結發言並加入補充",
+      "status": "not_started",
+      "acceptance": "預覽每家最後 AI 發言一次；補充完整；真正啟動後五家收到這份資料"
+    },
+    {
+      "id": "R01",
+      "name": "真實失敗格手動貼上 AI 回覆後繼續",
+      "status": "not_started",
+      "acceptance": "已確認是真實故障格；貼上對應輪次完整回答；有手動來源、原錯誤保留、下一輪提示包含補入文字；不偽造錯誤或通過證據"
+    }
+  ],
+  "externalPromptsSubmittedByAgent": 0,
+  "results": [
+    {
+      "id": "F02",
+      "name": "使用者實際啟動的互噴多輪壓力測試",
+      "source": "user_screenshot",
+      "file": "D:/Downloads/2026-10-13 15 50 15.png",
+      "status": "failed",
+      "observed": "v0.5.1；多家互評寫入驗證失敗，Gemini 仍回覆；ChatGPT 長提示留在輸入區。與 F01 的短題一輪測例不同。",
+      "followup": "llmeeting-051-driver2-handoff.json；Driver .2 本機 330/330 通過，五家現場讀取受連線故障阻擋，未宣告實機通過。"
+    }
+  ]
+}

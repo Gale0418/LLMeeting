@@ -1,5 +1,12 @@
 # Smoke Tests
 
+## 2026-10-04 商店套件上傳（LLM-T36／LLM-T47）
+
+- 動作：以 stat、shasum 與 unzip 檢查既有候選 ZIP，再透過 macOS Chrome accessibility 的「上傳新套件」選取 dist/llmeeting-0.5.0.zip，完成後重新開啟套件頁。
+- 預期：後台草稿為 0.5.0，公開版維持 0.4.7。
+- 觀察：ZIP 2317446 bytes、manifest version 0.5.0、SHA256 cca5514ed6864dbe6182b51d970bf6c6909a44509796bf14314bef41b1c0a70b；上傳進度出現後返回商店資訊，套件草稿表顯示 0.5.0、已發布表顯示 0.4.7。
+- 結果：上傳通過；人工 UI 回執 evidence/webstore-upload-20261004.json。未送審／發布，不代表完整五家／全員匿名 E2E 通過；本次未修改程式或重跑程式測試、CodeRabbit。
+
 ## 2026-10-02 免費體驗第一批（LLM-T49/T50）
 
 - 執行：`npm test`、末次修改後 `node --test tests/experienceRules.test.mjs tests/diagnostics.test.mjs`、3 個變更 JS/MJS 語法與 `git diff --check`。預期安全重置與修復指引不影響既有行為；實際全套 296/296、末次 focused 25/25；通過程式驗證。
@@ -96,3 +103,58 @@
 | 2026-10-03 | LLM-T47 | Chrome Web Store 更新入口 | 官方文件入口直接導覽；改以官方頁面「前往資訊主頁」連結確認 | 能進入既有商店項目並上傳 ZIP | 前者 Not allowed、後者 extensions gallery cannot be scripted；未進入項目、未上傳／送審／發布，保留手動接手 | 受阻 | external |
 | 2026-10-03 | LLM-T50 | CodeRabbit 歷史核心與修後複查 | 隔離副本 `coderabbit review --agent --base main --uncommitted -c .coderabbit.yaml`，2 次 | 確認有證據才修正，修後不留下已確認 findings | 59 檔首查 major／minor 各一，失敗回歸證實；修後 22 檔含相關上下文，0 issues；本輪 2/3，均未超過 150 檔 | 通過 | external+automated |
 | 2026-10-03 | LLM-T36, LLM-T47, LLM-T50 | 更新候選終局驗證 | `npm test`、48 檔 `node --check`、`git diff --check`、`npm run package`、ZIP 清單／SHA256 | 群聊內鬼首輪結案、恢復末輪與第 6 輪以上顯示正常，一般限制與證據保護不退步 | 317/317、48/48 語法、diff 通過；文件補寫後相關 7/7；ZIP 29 檔、2317446 bytes、SHA256 CCA5514ED6864DBE6182B51D970BF6C6909A44509796BF14314BEF41B1C0A70B；不是完整 extension E2E | 通過 | automated |
+
+## 2026-10-13 · LLM-T51–54 · 0.5.1
+
+- 指令：npm test；預期全部通過；觀察 327/327、0 fail；結果 PASS。
+- 指令：所有 src JS 的 node --check、git diff --check；結果 PASS（只有 CRLF 提示）。
+- 動作：Chrome 本機 fixture，320/480px 擷取最後發言＋修改補充、指定故障格貼上兩段完整文字；觀察預覽無重複、保存後原故障格替換及手動標記、無水平溢位；結果 PASS。這是固定測試資料，不是五家 AI 實機。
+- 指令：npm run package＋Python zipfile CRC／內容／版本驗證；觀察 0.5.1 ZIP、30 檔、新共用模組存在、僅 manifest/src/assets；結果 PASS。
+- 外部審查：CodeRabbit 首輪 1 minor 有反證、包含新增檔案的複查 0 issues；此為 advisory，與 smoke 證據分開。
+- 未執行：新版 extension 五家整場、真實 critic_full；狀態 Review。
+
+## 2026-10-13 · Driver .2 實機失敗後修補
+
+- 現場：使用者截圖顯示 v0.5.1、多輪互評的 ChatGPT/Grok/Claude/Meta 寫入驗證失敗，Gemini 仍回覆；本場 FAIL。工具分頁連線失敗，未讀到五家完整內容。
+- 修補：Meta U+2028/LF 全文比對、原生欄位寫入等待、ChatGPT composer 範圍內的「停止」控制。其餘現場根因待查，不宣稱全部已修復。
+- 程式：330/330 pass；Meta 完整 submitPrompt 回歸證明原始多行提示可驗證、只點一次、清空確認；缺少換行與框架回寫仍拒絕。變更 JS 語法及 diff check 通過。
+- 封裝：0.5.1 ZIP 2341262 bytes；SHA256 6CB2684A2DB3B1C6B04B2DE81872F0A003814C33FE6EA41B2BAAFED98441428B。
+- 未完成：Driver .2 真正重載、五家整場、接續討論與手動修復實機。T51–T54 維持 Review；本次差異未另跑 CodeRabbit。交接：evidence/llmeeting-051-driver2-handoff.json。
+
+## 2026-10-13 · Driver .4 故障暫停候選（Review）
+
+- 依使用者要求，送出／讀取故障停止後續新提示，已送出的結果收回保存。人工補齊後必須按「繼續原流程」，僅處理未送佇列及原計畫；涵蓋首輪、互評、來源總結、裁判總結及揭曉。
+- 修正多行提示寫入、Meta 非同步選取、ChatGPT composer 範圍停止鈕及整句載入故障辨識；下游缺席引用保持中性，揭曉資料不足時不捏造證據。
+- npm test：357/357 PASS；src/scripts 22 個 JS/MJS 語法 PASS；最後 service-worker 小修再次語法 PASS；diff PASS（僅 CRLF 提示）。
+- Chrome 固定資料 HTTP fixture：真實側欄與 service-worker，320/480px 無水平溢位。補回前 resume 禁用，補回後僅 resume 可用，按下後完成原流程；沒有發送外部 AI 提示，不能當成 extension 整場實機。
+- 五家真實編輯器長文／換行寫入與原草稿恢復比對全通過（Driver .3 同一寫入修正）；Gemini 單次 UI 送出已完成，停止鈕為「停止回覆」，不據此推定先前缺段根因。
+- CodeRabbit .3：2 issues 已修；.4 首查 2 issues、複查 1 issue，均核對有效、修正並補測；最後小修未另送遠端複查，沒有宣稱零 issues。
+- ZIP：30 檔，僅 manifest/src/assets，CRC／版本／雙端 Driver .4 握手 PASS；2360247 bytes，SHA256 1F4019CF209B1E327EB767B1362F52BC8BBD72F169E264A00175673510A62910。
+- 證據：evidence/llmeeting-051-driver4-20261013.json、evidence/051-driver3/live-long-write-probes.json、evidence/051-driver4/pause-ui.json。HTTP worker 與自建測試分頁已回收；使用者五家原對話保留。
+- 未完成：新候選重載後真實 extension 故障補回／接續／五家整場。先前 OK 重載回報不代表本次 .4 已載入；工具不能操作 Chrome 內部 extensions 頁面，已請使用者手動重載。
+- LLM-E7／T51–54 維持 Review，未上傳／送審／發布。較早 v0.5.0 失落地球截圖與本次 511 O^O 分開記錄。
+
+## 2026-10-13 · Driver .5 補齊自動續跑（Review）
+
+- 使用者明確修正需求：故障時等待人工補回，最後一段補齊即自動接回原流程，不必再按繼續。已由後端持有執行 token，先回覆保存結果再持續執行；多缺段未齊仍停住。
+- 舊版已補齊暫停在重載恢復時自動接續；單純讀取狀態保持無發送副作用。補上停止／清空保護及狀態讀取的非同步覆寫回歸。
+- 362/362 PASS、22 JS/MJS 語法 PASS、最後 prompt 修正另驗語法及29/29測試、diff PASS。CodeRabbit 首查2 issues、複查1 issue均核實修正補測；最後暱稱邊角未再遠端複查。
+- Chrome 固定資料 fixture 使用正式側欄樣式與 worker，人工補入後自動完成，沒有點繼續、没有外部 AI 呼叫；原始真實側欄截圖可證前候選補回成功，但不能當作 .5 自動續跑實機通過。
+- ZIP 30檔、CRC／版本／雙端 Driver .5 PASS；2362744 bytes，SHA256 FA90141889159660EF066A263DC648AC096C7C923E3594CFFB57C390FF8B43BC。
+- 證據 evidence/051-driver5/verification.json；本次HTTP worker及自建分頁已回收。新版需要使用者再次重載才會套用；五家整場与extension實機仍待驗，LLM-E7/T51–54維持Review，未發布。
+
+## 2026-10-13 · Meta 原故障追查（未定因）
+
+- 現場唯讀確認三連OWO/ Meta 首輪及2輪互評均有回答；最新critique-2已完整，assistant-message標记DONE／streaming-complete=true，輸入框空。不能據此推定當時錯誤碼。
+- 使用者忘記原故障；手動修補紀錄有 originalError，但介面未提供查看入口。已在手動補回標記旁新增「查看原故障」，將原錯誤安全跳脫呈現，方便從這場回查。没有憑候選原因改 Meta driver。
+- 受影響側欄14/14、app.js語法、diff PASS；最後整套362/362是前一步Driver .5證據，不把本次14項冒充全套重跑。候選ZIP重建：2362907 bytes，SHA256 E8684A352BF4D51C673C4DDBFAD166EB452C1E2F98FD1958457699566445CD62。
+- 待使用者重載側欄後代讀 Meta 的原故障文字，再重現送出／讀取錯誤并修復；真實側欄工具仍不可讀，原分頁與會議保留。證據 evidence/051-driver5/meta-root-cause-pending.json。維持Review，未宣稱Meta故障已修好。
+
+## 2026-10-13 · Driver .6 長訊息通道修復（Review）
+
+- 新截圖為另一場會議：Chrome回報async listener回傳true但channel在response前關閉，側欄ChatGPT critique-2 submitting；不能等同先前Meta原故障。程式確認start/nextRound直到整場跑完才sendResponse，與Chrome單請求5分鐘限制有風險；未直接觀測worker真正終止原因。
+- 修正：啟動／下一輪先accepted單次回執，實際結果stateChanged推送；readSubmittedResponse約12秒pending輪詢，同runId、候選穩定時間及總hard deadline跨poll保留；逐家、單裁判與來源摘要也拆submit/collect。
+- 側欄斷線只getState核對、不重送操作。支援首輪／互評中斷快照保留已記錄回答，可能已送的空格等待人工補入，確定未送者才排佇列；chat首輪補齊仍等待人類，內鬼首輪及不支援checkpoint安全停止。
+- 378/378、22 src/scripts JS/MJS語法、diff、文件測試1/1通過；CodeRabbit 1個minor文件版本issue已修，沒有宣稱遠端零issues。ZIP30檔、CRC／版本／雙端Driver .6／poll／ack PASS：2367467 bytes，SHA256 1A7DE8B975BD1816BAF957F26DA5D929D9C25081E46220CE121360971AE4DB51。
+- 本機fixture建立／啟動命令被自動批准審查拒絕，僅給blocked by policy，無詳述理由；沒有重試該命令或假裝UI已驗。瀏覽器僅清點原分頁，沒有發提示；真實extension待使用者重載及人工補回驗收。
+- 證據 evidence/llmeeting-051-driver6-20261013.json，平台依據 https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle 。LLM-E7／T51–54維持Review，未發布；先前Meta根因仍待原錯誤文字。

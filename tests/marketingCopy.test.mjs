@@ -11,7 +11,7 @@ test("recommendation material distinguishes candidate availability and third-par
     assert.match(copy, /候選/);
     assert.match(copy, /實機驗收|端到端測試/);
     assert.match(copy, /訂閱/);
-    assert.match(copy, /用量/);
+    assert.match(copy, /用量|額度/);
   }
   assert.match(readme, /0\.4\.7/);
   assert.match(listing, /Anonymous modes use aliases.*not anonymous accounts/);
@@ -21,7 +21,7 @@ test("public-facing pitch avoids unsupported accuracy guarantees", async () => {
   for (const file of ["README.md", "store/listing.md"]) {
     const copy = await readFile(file, "utf8");
     assert.doesNotMatch(copy, /徹底過濾幻覺|確保產出最優解|穩定支援/);
-    assert.match(copy, /查證/);
+    assert.match(copy, /查證|事實查核/);
   }
 });
 

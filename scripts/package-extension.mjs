@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const INCLUDED_PATHS = ["manifest.json", "assets", "src"];
+const INCLUDED_PATHS = ["manifest.json", "assets", "src", "_locales"];
 
 const crcTable = Array.from({ length: 256 }, (_, index) => {
   let value = index;

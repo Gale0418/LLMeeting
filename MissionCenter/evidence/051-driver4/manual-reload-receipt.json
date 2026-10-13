@@ -1,0 +1,13 @@
+{
+  "date": "2026-10-13",
+  "timezone": "Asia/Taipei",
+  "candidate": "0.5.1-driver.4",
+  "userReportedReload": true,
+  "userReply": "已重載",
+  "originalProviderTabsPresent": ["chatgpt", "gemini", "grok", "claude", "meta"],
+  "sidepanelObservedByTool": false,
+  "loadedDriverIndependentlyVerified": false,
+  "reason": "Browser tools expose provider tabs but not the native extension sidepanel; Chrome internal extensions tab remains unsupported.",
+  "nextEvidence": "User-visible sidepanel status and repair control labels; live fault-paste-resume still pending.",
+  "meetingModified": false
+}

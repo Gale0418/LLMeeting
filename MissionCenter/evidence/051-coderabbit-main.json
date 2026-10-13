@@ -1,0 +1,179 @@
+{
+  "timestamp": "2026-10-14T03:29:38+08:00",
+  "task": "LLM-T59",
+  "status": "review-completed-upload-pending",
+  "branch": "main",
+  "review": {
+    "tool": "CodeRabbit CLI",
+    "version": "0.7.6",
+    "runs": 2,
+    "hourlyLimit": 3,
+    "fileLimitPerRun": 150,
+    "initial": {
+      "files": [
+        ".coderabbit.yaml",
+        ".gitignore",
+        "DESIGN.md",
+        "LICENSE",
+        "PRODUCT.md",
+        "README.md",
+        "coderabbit-instructions.md",
+        "docs/play-loop.md",
+        "docs/provider-smoke-matrix.md",
+        "docs/superpowers/plans/2026-05-21-ai-debate-extension-mvp.md",
+        "docs/superpowers/plans/2026-06-18-core-regression-repairs.md",
+        "docs/superpowers/plans/2026-06-18-free-badge-easter-egg.md",
+        "docs/superpowers/plans/2026-06-18-gemini-reliable-submit.md",
+        "docs/superpowers/plans/2026-06-18-regression-repair-and-easter-egg.md",
+        "docs/superpowers/plans/2026-06-19-regression-repair-and-easter-egg.md",
+        "docs/superpowers/plans/2026-07-06-chair-anonymous-summary-hotfix.md",
+        "docs/superpowers/specs/2026-05-21-ai-debate-extension-mvp-design.md",
+        "docs/superpowers/specs/2026-06-11-llmeeting-free-pro-gate-design.md",
+        "docs/superpowers/specs/2026-06-18-regression-repair-and-easter-egg-design.md",
+        "docs/superpowers/specs/2026-07-01-chair-and-anonymous-summary-design.md",
+        "manifest.json",
+        "package.json",
+        "scripts/extract-ui-copy.mjs",
+        "scripts/package-extension.mjs",
+        "src/background/chromeCompat.js",
+        "src/background/debateEngine.js",
+        "src/background/diagnostics.js",
+        "src/background/runController.js",
+        "src/background/service-worker.js",
+        "src/background/sessionRecovery.js",
+        "src/background/statePersistence.js",
+        "src/content/automation-core.js",
+        "src/content/provider-adapters.js",
+        "src/content/provider-driver.js",
+        "src/content/provider-page.js",
+        "src/shared/debugReport.js",
+        "src/shared/entitlements.js",
+        "src/shared/i18n-catalog.js",
+        "src/shared/i18n.js",
+        "src/shared/meetingRecovery.js",
+        "src/shared/prompts.js",
+        "src/shared/providers.js",
+        "src/shared/text.js",
+        "src/sidepanel/app.js",
+        "src/sidepanel/challengeDeck.js",
+        "src/sidepanel/dev-unlock.js",
+        "src/sidepanel/experienceRules.js",
+        "src/sidepanel/index.html",
+        "src/sidepanel/localeControls.js",
+        "src/sidepanel/modeRules.js",
+        "src/sidepanel/playChallenges.js",
+        "src/sidepanel/playIdeas.js",
+        "src/sidepanel/playScenes.js",
+        "src/sidepanel/recommendation.js",
+        "src/sidepanel/styles.css",
+        "src/sidepanel/transcriptReader.js",
+        "store/listing.md",
+        "store/privacy-policy.md",
+        "store/recommendation-kit.md",
+        "store/screenshot-checklist.md",
+        "tests/allAnonymousWorkflow.test.mjs",
+        "tests/assets.test.mjs",
+        "tests/challengeDeck.test.mjs",
+        "tests/chromeCompat.test.mjs",
+        "tests/contentSafety.test.mjs",
+        "tests/debateEngine.test.mjs",
+        "tests/debugReport.test.mjs",
+        "tests/devUnlock.test.mjs",
+        "tests/diagnostics.test.mjs",
+        "tests/entitlements.test.mjs",
+        "tests/experienceRules.test.mjs",
+        "tests/finalSummaryOrder.test.mjs",
+        "tests/i18n.test.mjs",
+        "tests/localeControls.test.mjs",
+        "tests/manifest.test.mjs",
+        "tests/marketingCopy.test.mjs",
+        "tests/meetingRecovery.test.mjs",
+        "tests/pageAutomation.test.mjs",
+        "tests/playIdeas.test.mjs",
+        "tests/playScenes.test.mjs",
+        "tests/prompts.test.mjs",
+        "tests/providerDriver.test.mjs",
+        "tests/providerMessaging.test.mjs",
+        "tests/providers.test.mjs",
+        "tests/recommendation.test.mjs",
+        "tests/runController.test.mjs",
+        "tests/runtimeRounds.test.mjs",
+        "tests/serviceWorkerSafety.test.mjs",
+        "tests/sessionRecovery.test.mjs",
+        "tests/sidepanelRequests.test.mjs",
+        "tests/statePersistence.test.mjs",
+        "tests/storePrep.test.mjs",
+        "tests/text.test.mjs",
+        "tests/transcriptReader.test.mjs",
+        "tests/userFacingCopy.test.mjs"
+      ],
+      "issues": 6,
+      "major": 2,
+      "minor": 4
+    },
+    "focused": {
+      "files": [
+        "PRODUCT.md",
+        "docs/provider-smoke-matrix.md",
+        "src/background/service-worker.js",
+        "src/sidepanel/app.js",
+        "store/privacy-policy.md",
+        "tests/allAnonymousWorkflow.test.mjs",
+        "tests/runtimeRounds.test.mjs",
+        "tests/serviceWorkerSafety.test.mjs",
+        "tests/storePrep.test.mjs"
+      ],
+      "issues": 0
+    },
+    "fixed": [
+      {
+        "file": "src/background/service-worker.js",
+        "issue": "quota降級遺失離席名單與紀錄",
+        "regression": "新增測試修補前失敗、修補後通過"
+      },
+      {
+        "file": "src/background/service-worker.js",
+        "issue": "旁觀裁判不在辯論名單，故障時被拒絕離席",
+        "regression": "新增測試修補前失敗、修補後通過"
+      },
+      {
+        "file": "src/sidepanel/app.js",
+        "issue": "進度誤讀repairPause.phase，改為pausedPhase",
+        "regression": "真實pausedPhase測試修補前失敗、修補後通過"
+      },
+      {
+        "file": "store/privacy-policy.md",
+        "issue": "未列模型選擇與語言偏好本機保存"
+      },
+      {
+        "file": "docs/provider-smoke-matrix.md / PRODUCT.md",
+        "issue": "舊自動重送說明與現行人工補回流程不符"
+      }
+    ],
+    "rejected": [
+      {
+        "file": "tests/userFacingCopy.test.mjs",
+        "issue": "忽略不存在的掃描根ENOENT",
+        "reason": "實際專案所有掃描根均存在；僅審查快照刻意排除MissionCenter。測試應在必要根缺失時報錯，避免默默漏查。"
+      }
+    ],
+    "excluded": "二進位圖片、MissionCenter歷史、生成locale metadata及大型UI_COPY表；本機已驗證參數、語法與封裝，未宣稱兔子語意審查覆蓋這些排除項"
+  },
+  "verification": {
+    "tests": 438,
+    "passed": 438,
+    "syntax": "pass",
+    "diffCheck": "pass",
+    "zipCrc": "pass"
+  },
+  "package": {
+    "bytes": 2631742,
+    "sha256": "DAF26DCDC62B9515782B778755375E5FD489AFA6DBE6D8293B008785BC5ED140"
+  },
+  "privacy": "原始私人對話DOM探測、私人對話URL及未稽核新截圖只留本機，已加入gitignore",
+  "pending": [
+    "原生側欄320/480三語及完整會議實機",
+    "GitHub main提交與遠端核對"
+  ],
+  "storePublished": false
+}

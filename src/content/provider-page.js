@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = "0.5.0-driver.6";
+  const CONTENT_SCRIPT_VERSION = "0.5.1-driver.10";
   const {
     assistantSnapshot,
     classifyProviderResponseError,
@@ -30,6 +30,7 @@
   const RESPONSE_HARD_CAP_MS = 12 * 60 * 1000;
   const INPUT_WRITE_TIMEOUT_MS = 2000;
   const SUBMISSION_READY_TIMEOUT_MS = 3000;
+  const SUBMISSION_CONFIRM_TIMEOUT_MS = 15000;
   const READINESS_DOM_TIMEOUT_MS = 3500;
   const READINESS_POLL_MS = 100;
   const READINESS_GENERATING_SETTLE_MS = 200;
@@ -77,6 +78,7 @@
       "aiDebate:abort": abortAutomation,
       "aiDebate:abortAutomation": abortAutomation,
       "aiDebate:checkReadiness": checkReadiness,
+      "aiDebate:readCurrentReply": readCurrentReply,
     };
     const handler = handlers[message?.type];
     if (!handler) {
@@ -91,6 +93,7 @@
         code: error.code || "PROVIDER_AUTOMATION_FAILED",
         error: error.message,
         providerContent: error.providerContent || "",
+        debugDetails: error.debugDetails,
       }));
 
     return true;
@@ -111,6 +114,15 @@
   async function sendAndRead(message) {
     const submitted = await submitPrompt(message);
     return readSubmittedResponse({ ...message, runId: submitted.runId, epoch: submitted.epoch });
+  }
+
+  function readCurrentReply(message) {
+    const { providerId, config } = requireProviderPage(message.provider);
+    if (isGenerating(config)) throw new Error("AI 還在生成，請等回覆完成再擷取。");
+    const content = readLastAssistantMessage(config, providerId);
+    if (!content) throw new Error("目前分頁沒有可擷取的 AI 回覆。");
+    if (classifyProviderResponseError(providerId, content)) throw new Error("目前顯示的是服務錯誤，請先處理 AI 網頁狀態。");
+    return { ok: true, provider: providerId, content };
   }
 
   async function getCapabilities() {
@@ -197,7 +209,8 @@
       deferred: Boolean(input && config.sendControlDeferredWhenEmpty && !sendButton && !sendCandidate),
     };
     const generating = { active: await isGeneratingStable(config) };
-    const providerError = readCurrentProviderError(config, expectedProvider, input, providerErrorBaseline);
+    const providerError = readBlockingServiceStatus(config, expectedProvider)?.classification ||
+      readCurrentProviderError(config, expectedProvider, input, providerErrorBaseline);
     const error = providerError
       ? { detected: true, code: providerError.code, message: providerError.message }
       : { detected: false, code: null, message: "" };
@@ -375,6 +388,8 @@
       const baseline = readAssistantSnapshot(config, providerId);
       stage = "尋找輸入框";
       const input = await waitFor(() => findInput(config), 30000, `找不到 ${message.provider} 的輸入框，請確認已登入並開啟聊天頁面。`, assertCurrentPage);
+      const blockingStatus = readBlockingServiceStatus(config, providerId);
+      if (blockingStatus) throw createProviderResponseError(blockingStatus.classification, blockingStatus.content);
       stage = "填入提示";
       await writeInput(input, message.prompt, config.inputWriteStrategy, assertCurrentPage);
 
@@ -391,13 +406,27 @@
       const submission = await ensurePromptSubmitted({
         clickButton: () => {
           assertCurrentPage();
-          if (!sendButton) return false;
-          sendButton.click();
+          const actionInput = findInput(config);
+          if (!actionInput || actionInput.isConnected === false || !isPromptStillPresent(actionInput, message.prompt)) {
+            throw createInputWriteError();
+          }
+          // React may replace the control between readiness and this action.
+          const currentButton = findSendButton(config, actionInput);
+          if (!currentButton && !sendButton) return false;
+          if (!currentButton || currentButton.isConnected === false || !isSendButtonEnabled(currentButton)) {
+            throw createSubmissionReadinessError(providerId === "chatgpt" ? "ChatGPT" : providerId);
+          }
+          currentButton.click();
           return true;
         },
         pressEnter: () => {
           assertCurrentPage();
-          dispatchEnter(input);
+          const actionInput = findInput(config);
+          if (!actionInput || actionInput.isConnected === false || !isPromptStillPresent(actionInput, message.prompt)) {
+            throw createInputWriteError();
+          }
+          actionInput.focus();
+          dispatchEnter(actionInput);
         },
         promptStillPresent: () => isPromptStillPresent(input, message.prompt),
         confirmSubmission: () => observeProviderSubmission(
@@ -407,8 +436,9 @@
           userMessageCount,
           promptWasPresent,
           assertCurrentPage,
-          4000,
+          SUBMISSION_CONFIRM_TIMEOUT_MS,
           initiallyGenerating,
+          { resolveInput: () => findInput(config), baseline, providerId },
         ),
         providerName: providerId === "meta" ? "Meta AI" : providerId[0].toUpperCase() + providerId.slice(1),
       });
@@ -448,8 +478,14 @@
 
       stage = "等待新回覆";
       const runEpoch = Number.isInteger(run.epoch) ? run.epoch : automationEpoch;
-      const responseCandidate = await waitForCompletion(config, providerId, message.timeoutMs || 120000, run.baseline, run.prompt, run.errorBaseline, () => assertAutomationEpoch(runEpoch), run.userTurnCount);
+      run.responseState ||= {};
+      const responseCandidate = await waitForCompletion(config, providerId, message.timeoutMs || 120000, run.baseline, run.prompt, run.errorBaseline, () => assertAutomationEpoch(runEpoch), run.userTurnCount,
+        { pollBudgetMs: message.pollBudgetMs, state: run.responseState });
       assertAutomationEpoch(runEpoch);
+      if (responseCandidate === null && message.pollBudgetMs) {
+        persistSubmittedRuns();
+        return { ok: true, pending: true, provider: providerId, runId: message.runId };
+      }
       stage = "讀取新回覆";
       const content = responseCandidate || readLastAssistantMessage(config, providerId);
       if (!content) {
@@ -555,6 +591,7 @@
     };
     wrapped.code = error?.code || codes[stage] || "PROVIDER_AUTOMATION_FAILED";
     wrapped.providerContent = error?.providerContent || "";
+    wrapped.debugDetails = error?.debugDetails;
     return wrapped;
   }
 
@@ -901,6 +938,7 @@
       setNativeValue(element, text);
       element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
       element.dispatchEvent(new Event("change", { bubbles: true }));
+      await waitForInputWritten(element, text, INPUT_WRITE_TIMEOUT_MS, abortCheck);
       return;
     }
 
@@ -910,23 +948,31 @@
         .replace(/\n/g, "\u2028");
       const selection = document.getSelection();
       if (!selection || typeof document.execCommand !== "function") {
-        throw createInputWriteError();
+        throw createInputWriteError("selection-unavailable");
       }
       selection.selectAllChildren(element);
+      // Lexical consumes selectionchange asynchronously. Let it observe the
+      // replacement range before execCommand; otherwise it can restore the
+      // previous document even though the browser reports a successful edit.
+      await delay(50);
+      abortCheck();
       if (document.execCommand("insertText", false, serializedText) === false) {
-        throw createInputWriteError();
+        throw createInputWriteError("native-edit-rejected");
       }
       await waitForInputWritten(element, serializedText, INPUT_WRITE_TIMEOUT_MS, abortCheck);
       return;
     }
 
-    document.getSelection()?.selectAllChildren(element);
-    document.execCommand("insertText", false, text);
-    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
-
-    if (!element.textContent?.includes(text.slice(0, 20))) {
-      element.textContent = text;
-      element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+    const selection = document.getSelection();
+    if (!selection || typeof document.execCommand !== "function") {
+      throw createInputWriteError("selection-unavailable");
+    }
+    selection.selectAllChildren(element);
+    // Native editing lets ProseMirror/Quill update their own document state.
+    // textContent omits paragraph boundaries: using it for a prefix fallback
+    // destroyed valid paragraphs and let the editor collapse LF into spaces.
+    if (document.execCommand("insertText", false, text) === false) {
+      throw createInputWriteError("native-edit-rejected");
     }
     await waitForInputWritten(element, text, INPUT_WRITE_TIMEOUT_MS, abortCheck);
   }
@@ -941,7 +987,18 @@
       }
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) {
-        throw createInputWriteError();
+        const actual = normalizeInputText(readInputText(element));
+        let firstMismatch = 0;
+        while (firstMismatch < Math.min(expected.length, actual.length) && expected[firstMismatch] === actual[firstMismatch]) firstMismatch++;
+        const error = createInputWriteError("verification-timeout");
+        error.debugDetails = {
+          ...error.debugDetails, expectedLength: expected.length, actualLength: actual.length,
+          expectedLines: expected.split("\n").length, actualLines: actual.split("\n").length,
+          firstMismatch, editorTag: String(element.tagName || ""), connected: element.isConnected !== false,
+          focused: globalThis.document?.activeElement === element,
+          selectionInside: Boolean(element.contains?.(globalThis.document?.getSelection?.()?.anchorNode)),
+        };
+        throw error;
       }
       await delay(Math.min(50, remainingMs));
     }
@@ -951,17 +1008,19 @@
     return String(text || "")
       .replace(/\u00a0/g, " ")
       .replace(/\r\n?/g, "\n")
+      .replace(/\u2028/g, "\n")
       .trim();
   }
 
-  function createInputWriteError() {
+  function createInputWriteError(reason = "input-not-verified") {
     const error = new Error("AI 輸入框寫入驗證失敗");
     error.code = "PROVIDER_INPUT_WRITE_FAILED";
+    error.debugDetails = { reason };
     return error;
   }
 
-  function createSubmissionReadinessError() {
-    const error = new Error("Gemini 輸入框尚未達到可送出狀態");
+  function createSubmissionReadinessError(providerName = "Gemini") {
+    const error = new Error(`${providerName} 輸入框尚未達到可送出狀態`);
     error.code = "PROVIDER_SUBMISSION_NOT_READY";
     return error;
   }
@@ -969,6 +1028,13 @@
   function isPromptStillPresent(input, prompt) {
     const expected = normalizeInputText(prompt);
     if (normalizeInputText(readInputText(input)) === expected) return true;
+    // Meta Lexical converts a plain lightning glyph into emoji presentation.
+    // Live probe: U+26A1 becomes U+26A1 U+FE0F. Only this observed pair is
+    // equivalent; never discard arbitrary invisible characters or source text.
+    if (input.matches?.("[data-lexical-editor='true']")) {
+      const presentationText = (text) => normalizeInputText(text).replace(/⚡\uFE0F/g, "⚡");
+      return presentationText(readInputText(input)) === presentationText(expected);
+    }
     // ProseMirror stores pasted lines as paragraphs. innerText adds visual
     // paragraph spacing; reconstruct only the observed plain-text structure.
     if (input.matches?.(".ProseMirror[contenteditable='true']")) {
@@ -1047,17 +1113,25 @@
     }
   }
 
-  async function waitForCompletion(config, providerId, timeoutMs, baseline, prompt, errorBaseline = [], abortCheck = () => {}, userTurnCount) {
-    const startedAt = Date.now();
-    let completionWindow = createCompletionWindow(timeoutMs, startedAt);
-    let lastVisibleText = readAssistantSnapshot(config, providerId).lastText;
-    let candidateBuffer = createResponseCandidateBuffer();
+  async function waitForCompletion(config, providerId, timeoutMs, baseline, prompt, errorBaseline = [], abortCheck = () => {}, userTurnCount, options = {}) {
+    const state = options.state || {};
+    const startedAt = Number.isFinite(state.startedAt) ? state.startedAt : Date.now();
+    state.startedAt = startedAt;
+    let completionWindow = state.completionWindow || createCompletionWindow(timeoutMs, startedAt);
+    let lastVisibleText = state.lastVisibleText ?? readAssistantSnapshot(config, providerId).lastText;
+    let candidateBuffer = state.candidateBuffer || createResponseCandidateBuffer();
+    const pollBudgetMs = Number(options.pollBudgetMs);
+    const pollDeadline = Number.isFinite(pollBudgetMs) && pollBudgetMs > 0
+      ? Date.now() + Math.min(pollBudgetMs, 15000) : Infinity;
+    const saveProgress = () => Object.assign(state, { completionWindow, lastVisibleText, candidateBuffer });
 
     while (true) {
       abortCheck();
-      if (Number.isInteger(userTurnCount) && countUserMessages(config) > userTurnCount + 1) {
+      const actualUserTurns = Number.isInteger(userTurnCount) ? countUserMessages(config) : 0;
+      if (Number.isInteger(userTurnCount) && actualUserTurns > userTurnCount + 1) {
         const error = new Error("此分頁出現另一則使用者訊息，已停止擷取以免混入其他回答。");
         error.code = "PROVIDER_CONVERSATION_CHANGED";
+        error.debugDetails = { expectedUserTurns: userTurnCount + 1, actualUserTurns };
         throw error;
       }
       assertProviderLocation(providerId, config);
@@ -1065,8 +1139,12 @@
       if (now >= Math.min(completionWindow.inactivityDeadline, completionWindow.hardDeadline)) {
         break;
       }
+      if (now >= pollDeadline) {
+        saveProgress();
+        return null;
+      }
 
-      const pageError = readKnownProviderPageError(config, providerId, errorBaseline);
+      const pageError = readBlockingServiceStatus(config, providerId) || readKnownProviderPageError(config, providerId, errorBaseline);
       if (pageError) {
         throw createProviderResponseError(pageError.classification, pageError.content);
       }
@@ -1095,10 +1173,12 @@
         ) &&
         timeStable > 2000
       ) {
+        saveProgress();
         return candidateBuffer.text;
       }
 
-      await delay(500);
+      saveProgress();
+      await delay(Math.min(500, Math.max(1, pollDeadline - Date.now())));
     }
 
     const error = new Error("等待 AI 回覆逾時");
@@ -1175,6 +1255,20 @@
       }));
   }
 
+  function readBlockingServiceStatus(config, providerId) {
+    const excluded = "[contenteditable='true'], [data-testid='user-message'], [data-testid='assistant-message'], .font-claude-response, .response-content-markdown, [data-message-author='user'], [data-message-author-role='user'], [data-message-author='assistant'], [data-message-author-role='assistant']";
+    for (const element of collectElements(config.serviceStatusSelectors || []).filter(isVisible)) {
+      if (element.closest?.(excluded)) continue;
+      const content = String(element.innerText || element.textContent || "").trim();
+      if (!content || content.length > 600) continue;
+      const classification = classifyProviderResponseError(providerId, content);
+      if (["PROVIDER_QUOTA_EXCEEDED", "PROVIDER_OVERLOADED"].includes(classification?.code)) {
+        return { classification, content };
+      }
+    }
+    return null;
+  }
+
   function createProviderResponseError(classification, content) {
     const error = new Error(classification.message);
     error.code = classification.code;
@@ -1182,11 +1276,15 @@
     return error;
   }
 
-  async function observeProviderSubmission(config, input, prompt, initialUserMessageCount, promptWasPresent, abortCheck = () => {}, timeoutMs = 4000, initiallyGenerating = false) {
+  async function observeProviderSubmission(config, input, prompt, initialUserMessageCount, promptWasPresent, abortCheck = () => {}, timeoutMs = 4000, initiallyGenerating = false, options = {}) {
     const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
+    while (true) {
       abortCheck();
-      if (promptWasPresent && !readInputText(input)) {
+      // Read the live editor after SPA rendering; never trust a detached node.
+      const blockingStatus = readBlockingServiceStatus(config, options.providerId);
+      if (blockingStatus) throw createProviderResponseError(blockingStatus.classification, blockingStatus.content);
+      const currentInput = options.resolveInput ? options.resolveInput() : input;
+      if (promptWasPresent && currentInput && currentInput.isConnected !== false && !readInputText(currentInput)) {
         return "input-cleared";
       }
       if (!initiallyGenerating && isGenerating(config)) {
@@ -1195,7 +1293,17 @@
       if (countUserMessages(config, prompt) > initialUserMessageCount) {
         return "user-message-added";
       }
-      await delay(100);
+      // A fast answer can finish before the stop control is observed.
+      if (options.baseline && promptWasPresent && currentInput &&
+          !isPromptStillPresent(currentInput, prompt)) {
+        const current = readAssistantSnapshot(config, options.providerId);
+        if (current.count > options.baseline.count && current.lastText && !isPromptEcho(prompt, current.lastText)) {
+          return "assistant-message-added";
+        }
+      }
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) break;
+      await delay(Math.min(100, remainingMs));
     }
     return null;
   }

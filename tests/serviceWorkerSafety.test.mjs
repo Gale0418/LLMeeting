@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 
 import { entitlementsForPlan } from "../src/shared/entitlements.js";
 test("fast provider jobs submit prompts before collecting replies", async () => {
@@ -40,7 +41,7 @@ test("provider readiness has a stable service-worker boundary and status mapping
 test("provider messaging repairs stale content scripts through a version handshake", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
-  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.0-driver\.6"/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.10"/);
   assert.match(script, /PROVIDER_DRIVER_CONTRACT_VERSION = 1/);
   assert.match(script, /"src\/content\/provider-driver\.js"/);
   assert.match(script, /type: "aiDebate:getCapabilities"/);
@@ -123,14 +124,14 @@ test("free chat interactive mode waits after answers before the first critique",
     script.indexOf("function normalizeSummaryStrategy"),
   );
   const pauseBranch = interactiveDebate.indexOf('if (options.mode === "chat" && options.interactiveMode)');
-  const critiqueLoop = interactiveDebate.indexOf("for (let round = 1; round <= engine.debateRounds; round += 1)");
+  const critiqueLoop = interactiveDebate.indexOf("return continuePlannedDebate(1,");
 
   assert.ok(pauseBranch >= 0);
   assert.ok(critiqueLoop > pauseBranch);
   assert.match(interactiveDebate.slice(pauseBranch, critiqueLoop), /status: "waiting_for_user"/);
   assert.match(interactiveDebate.slice(pauseBranch, critiqueLoop), /return runtimeState;/);
   assert.doesNotMatch(interactiveDebate.slice(pauseBranch, critiqueLoop), /buildCritiqueJobs/);
-  assert.match(interactiveDebate.slice(critiqueLoop), /buildCritiqueJobs/);
+  assert.match(interactiveDebate.slice(critiqueLoop), /continuePlannedDebate/);
 });
 
 test("imposter debates finish with deterministic reveal instead of the summary job", async () => {
@@ -139,14 +140,14 @@ test("imposter debates finish with deterministic reveal instead of the summary j
   const revealEnd = script.indexOf("async function startQuestionDebate", revealStart);
   const revealHelper = script.slice(revealStart, revealEnd);
   const interactive = script.slice(
-    script.indexOf("async function startInteractiveDebate"),
-    script.indexOf("function normalizeSummaryStrategy"),
+    script.indexOf("async function continuePlannedDebate"),
+    script.indexOf("async function handleNextRound"),
   );
 
   assert.match(revealHelper, /engine\.buildRevealJobs\(\)/);
-  assert.match(revealHelper, /runFastProviderJobs\(revealJobs, "reveal", runToken\)/);
+  assert.match(revealHelper, /runFastProviderJobs\(revealJobs, "reveal", runToken, \{ type: "reveal" \}\)/);
   const imposterBranch = interactive.indexOf('if (engine.interactionStyle === "imposter")');
-  const skipSummaryBranch = interactive.indexOf("if (options.skipSummary)");
+  const skipSummaryBranch = interactive.indexOf("if (runtimeState.skipSummary)");
   assert.ok(imposterBranch >= 0 && imposterBranch < skipSummaryBranch);
   assert.match(interactive.slice(imposterBranch, skipSummaryBranch), /finishImposterReveal\(runToken\)/);
   assert.doesNotMatch(interactive.slice(imposterBranch, skipSummaryBranch), /buildRuntimeFinalJob/);
@@ -157,7 +158,7 @@ test("all imposter completion paths broadcast reveal jobs before summary handlin
   const rounds = script.slice(script.indexOf("async function runDebateRounds"), script.indexOf("async function handleNextRound"));
   const nextRound = script.slice(script.indexOf("async function handleNextRound"), script.indexOf("async function runSequentialProviderJobs"));
 
-  assert.match(interactive, /finishImposterReveal\(runToken\)/);
+  assert.match(interactive, /continuePlannedDebate\(1,/);
   assert.match(rounds, /finishImposterReveal\(runToken\)/);
   assert.match(nextRound, /engine\.interactionStyle === "imposter"/);
   assert.match(nextRound, /finishImposterReveal\(runToken\)/);
@@ -174,7 +175,7 @@ test("service worker forwards selected debate round count into the engine", asyn
   assert.match(script, /debateRounds/);
   assert.match(script, /normalizeDebateRounds/);
   assert.match(script, /new DebateEngine\(activeProviders, summaryProvider, debateRounds, \{/);
-  assert.match(script, /for \(let roundNumber = 1; roundNumber <= engine\.debateRounds; roundNumber \+= 1\)/);
+  assert.match(script, /for \(let roundNumber = startRound; engine\.participatingProviders\.length >= 2 && roundNumber <= engine\.debateRounds; roundNumber \+= 1\)/);
 });
 
 test("new provider tabs open as active pages instead of dormant background tabs", async () => {
@@ -196,7 +197,7 @@ test("runtime state refreshes entitlements even after a completed debate", async
   const script = await readFile("src/background/service-worker.js", "utf8");
 
   assert.doesNotMatch(script, /if \(runtimeState\.status !== "idle" \|\| runtimeState\.busy\) \{\s+return runtimeState;\s+\}/);
-  assert.match(script, /entitlements: await getEntitlements\(\)/);
+  assert.match(script, /const entitlements = await getEntitlements\(\);\s*runtimeState = \{\s*\.\.\.runtimeState,\s*entitlements,/);
 });
 
 test("service worker restores stored state once before handling messages", async () => {
@@ -236,16 +237,135 @@ test("provider overload and quota error codes survive the service-worker boundar
   assert.match(script, /error\.providerContent = response\?\.providerContent/);
   assert.match(script, /errorContent: error\.providerContent/);
   assert.match(script, /result\.errorContent \|\| ""/);
-  assert.match(script, /OVERLOAD_REFRESH_RETRIES = 3/);
+  assert.match(script, /OVERLOAD_REFRESH_RETRIES = 0/);
   assert.match(script, /error\.code === "PROVIDER_OVERLOADED"/);
   assert.match(script, /chrome\.tabs\.reload\(tabId\)/);
   assert.match(script, /overload-refresh/);
 });
 
-test("Meta input write failures refresh once and preserve retry counters", async () => {
+test("provider debug history is bounded, persisted, and keeps only approved diagnostic details", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
-  assert.match(script, /META_INPUT_REFRESH_RETRIES = 1/);
+  assert.match(script, /MAX_DEBUG_EVENTS = 100/);
+  assert.match(script, /debugEvents: \[\]/);
+  assert.match(script, /debugEvents: \[\.\.\.previousEvents,[\s\S]*?\]\.slice\(-MAX_DEBUG_EVENTS\)/);
+  assert.match(script, /bounded\.debugEvents = .*?slice\(-MAX_DEBUG_EVENTS\)/s);
+  assert.match(script, /timestamp: Date\.now\(\),[\s\S]*?provider: providerId,[\s\S]*?phase: patch\.phase[\s\S]*?stage: patch\.debugStage[\s\S]*?code: patch\.code[\s\S]*?message:/);
+  for (const key of ["reason", "editorTag", "expectedLength", "actualLength", "expectedLines", "actualLines", "firstMismatch", "connected", "focused", "selectionInside", "expectedUserTurns", "actualUserTurns"]) {
+    assert.match(script, new RegExp(`\\"${key}\\"`));
+  }
+  assert.match(script, /error\.debugDetails = sanitizeDebugDetails\(response\?\.debugDetails\)/);
+  assert.match(script, /debugDetails: sanitizeDebugDetails\(error\.debugDetails\)/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.10"/);
+});
+
+test("transient response read RPC failures retry the same run within the provider deadline", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const collectStart = script.indexOf("async function collectProviderJob");
+  const helperStart = script.indexOf("async function readSubmittedResponseWithRetry");
+  const helperEnd = script.indexOf("async function sendJob", helperStart);
+  const collect = script.slice(collectStart, helperStart);
+  const helper = script.slice(helperStart, helperEnd);
+
+  assert.match(collect, /readSubmittedResponseWithRetry\(submitted, tab\.id, deadline, runToken\)/);
+  assert.match(helper, /sendProviderMessage\(tabId, submitted, "aiDebate:readSubmittedResponse"/);
+  assert.match(helper, /runId: submitted\.runId/);
+  assert.match(helper, /isSafeUndispatchedReadTransientError\(error\)/);
+  assert.match(helper, /maxTransientRetries = 3/);
+  assert.match(helper, /rpcDeadline = Date\.now\(\) \+ rpcBudgetMs/);
+  assert.match(helper, /deadline - Date\.now\(\)/);
+  assert.match(helper, /runController\.assertCurrent\(runToken\)/);
+  assert.doesNotMatch(helper, /submitPrompt|sendJob\(|clearSubmittedRuns|refreshOverloadedProvider/);
+  assert.match(script, /error\.rpcStage \|\|= stage/);
+  assert.match(script, /wrapped\.providerReadDispatched = providerReadDispatched/);
+  assert.match(script, /error\.rpcStage === "capabilities"/);
+  assert.match(script, /error\?\.providerReadDispatched !== false/);
+});
+
+test("read retry only repeats after an undispatched capability failure", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const retryStart = script.indexOf("async function readSubmittedResponseWithRetry");
+  const retryEnd = script.indexOf("async function sendJob", retryStart);
+  const transientStart = script.indexOf("function isTransientProviderChannelError");
+  const readinessStart = script.indexOf("// Read-only checks can be retried", transientStart);
+  const source = `${script.slice(retryStart, retryEnd)}\n${script.slice(transientStart, readinessStart)}\nglobalThis.runRead = readSubmittedResponseWithRetry;`;
+
+  const execute = ({ sendProviderMessage, isCancelled = () => false, delay = async () => {} }) => {
+    const context = {
+      RESPONSE_POLL_BUDGET_MS: 12000,
+      runController: { assertCurrent() { if (isCancelled()) throw Object.assign(new Error("cancelled"), { code: "RUN_CANCELLED" }); } },
+      providerRpc: async (promise) => promise,
+      sendProviderMessage,
+      delay,
+      Date,
+    };
+    vm.runInNewContext(source, context);
+    return context.runRead;
+  };
+  const submitted = { runId: "grok:critique-6:123", provider: "grok", phase: "critique-6" };
+
+  const calls = [];
+  const readWithRecovery = execute({ sendProviderMessage(_tabId, job, type, extra) {
+    calls.push({ runId: extra.runId, type });
+    if (calls.length === 1) {
+      return Promise.reject(Object.assign(new Error("capabilities: provider readiness timeout"), {
+        code: "PROVIDER_RPC_TIMEOUT", rpcStage: "capabilities", providerReadDispatched: false,
+      }));
+    }
+    return Promise.resolve({ ok: true, pending: false, content: "saved reply" });
+  } });
+  const recovered = await readWithRecovery(submitted, 4, Date.now() + 2000, 1);
+  assert.equal(recovered.content, "saved reply");
+  assert.deepEqual(calls, [
+    { runId: submitted.runId, type: "aiDebate:readSubmittedResponse" },
+    { runId: submitted.runId, type: "aiDebate:readSubmittedResponse" },
+  ]);
+
+  for (const failure of [
+    { code: "PROVIDER_RPC_TIMEOUT", rpcStage: "collect", providerReadDispatched: undefined },
+    { code: "PROVIDER_RPC_TIMEOUT", rpcStage: "content injection", providerReadDispatched: false },
+    { code: "PROVIDER_RPC_TIMEOUT", rpcStage: "capabilities after injection", providerReadDispatched: false },
+    { code: "PROVIDER_RPC_TIMEOUT", rpcStage: "capabilities", providerReadDispatched: true },
+  ]) {
+    let attempts = 0;
+    const read = execute({ sendProviderMessage() {
+      attempts += 1;
+      return Promise.reject(Object.assign(new Error("provider readiness timeout"), failure));
+    } });
+    await assert.rejects(read(submitted, 4, Date.now() + 2000, 1), (error) => error.code === failure.code);
+    assert.equal(attempts, 1);
+  }
+
+  let deadlineAttempts = 0;
+  const deadlineRead = execute({ sendProviderMessage() {
+    deadlineAttempts += 1;
+    return Promise.reject(Object.assign(new Error("capabilities timeout"), {
+      code: "PROVIDER_RPC_TIMEOUT", rpcStage: "capabilities", providerReadDispatched: false,
+    }));
+  }, delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)) });
+  await assert.rejects(deadlineRead(submitted, 4, Date.now() + 20, 1), (error) => error.code === "PROVIDER_RESPONSE_TIMEOUT");
+  assert.equal(deadlineAttempts, 1);
+
+  let cancelled = false;
+  let cancelledAttempts = 0;
+  const cancelRead = execute({
+    sendProviderMessage() {
+      cancelledAttempts += 1;
+      return Promise.reject(Object.assign(new Error("capabilities timeout"), {
+        code: "PROVIDER_RPC_TIMEOUT", rpcStage: "capabilities", providerReadDispatched: false,
+      }));
+    },
+    isCancelled: () => cancelled,
+    delay: async () => { cancelled = true; },
+  });
+  await assert.rejects(cancelRead(submitted, 4, Date.now() + 2000, 1), (error) => error.code === "RUN_CANCELLED");
+  assert.equal(cancelledAttempts, 1);
+});
+
+test("Meta input write faults wait for manual repair rather than automatically resending", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+
+  assert.match(script, /META_INPUT_REFRESH_RETRIES = 0/);
   assert.match(script, /error\.code === "PROVIDER_INPUT_WRITE_FAILED"/);
   assert.match(script, /job\.provider === "meta"/);
   assert.match(script, /refreshMetaInputProvider/);
@@ -381,6 +501,38 @@ test("bounded persistence keeps open-ended round slots after a long conversation
   assert.deepEqual(bounded.transcript.critiqueRounds[0], {});
   assert.equal(bounded.transcript.critiqueRounds.at(-2).chatgpt.length, 1001);
   assert.equal(bounded.transcript.critiqueRounds.at(-1).chatgpt.length, 1001);
+});
+
+test("bounded quota fallback preserves departures so departed providers stay departed after reload", async () => {
+  globalThis.chrome = {
+    runtime: {
+      onInstalled: { addListener() {} },
+      onMessage: { addListener() {} },
+    },
+  };
+  const { createBoundedPersistedState } = await import("../src/background/service-worker.js?bounded-departures-regression");
+  const providers = ["chatgpt", "gemini", "grok", "claude", "meta"];
+  const rounds = Array.from({ length: 125 }, () =>
+    Object.fromEntries(providers.map((provider) => [provider, "x".repeat(2200)])));
+  const state = {
+    departedProviders: ["gemini"],
+    departures: [{ provider: "gemini", departedAt: 123 }],
+    transcript: {
+      sessionId: "quota-departure-session",
+      activeProviders: providers,
+      departedProviders: ["gemini"],
+      departures: [{ provider: "gemini", departedAt: 123 }],
+      openEnded: true,
+      debateRounds: 5,
+      currentCritiqueRound: rounds.length,
+      critiqueRounds: rounds,
+    },
+  };
+  const bounded = createBoundedPersistedState(state);
+  assert.deepEqual(bounded.departedProviders, ["gemini"]);
+  assert.deepEqual(bounded.departures, [{ provider: "gemini", departedAt: 123 }]);
+  assert.deepEqual(bounded.transcript.departedProviders, ["gemini"]);
+  assert.deepEqual(bounded.transcript.departures, [{ provider: "gemini", departedAt: 123 }]);
 });
 
 test("parallel starts are serialized before validation and preflight", async () => {
@@ -547,7 +699,7 @@ test("readiness falls back to a fresh provider tab when the requested tab is sta
       async update() {},
       async sendMessage(_tabId, message) {
         if (message.type === "aiDebate:getCapabilities") {
-          return { contentScriptVersion: "0.5.0-driver.6", driverContractVersion: 1 };
+          return { contentScriptVersion: "0.5.1-driver.10", driverContractVersion: 1 };
         }
         return { ready: true, status: "ready", checks: {} };
       },
@@ -593,7 +745,7 @@ test("provider abort and cleanup messages cannot block control operations foreve
 });
 
 test("overload recovery failures are converted to provider results", async () => {
-  const script = await readFile("src/background/service-worker.js", "utf8");
+  const script = (await readFile("src/background/service-worker.js", "utf8")).replace(/\r\n/g, "\n");
 
   assert.ok(script.includes("try {\n        await refreshOverloadedProvider"));
   assert.ok(script.includes("catch (retryError)"));

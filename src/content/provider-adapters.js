@@ -18,29 +18,34 @@
     "form[action*='login']",
     "form[action*='signin']",
   ];
+  const chatgptComposerStopRoot = ":is([data-chatgpt-composer], [data-composer-body], [data-type='unified-composer'], [data-composer-surface='true'])";
 
   globalThis.aiDebateProviderAdapters = Object.freeze({
     chatgpt: {
       hosts: ["chatgpt.com", "chat.openai.com"],
       requireGenerationEnd: true,
       sendControlDeferredWhenEmpty: true,
-      preferredInputSelector: "#prompt-textarea[contenteditable='true'][role='textbox']",
-      composerRootSelectors: ["[data-type='unified-composer']", "[data-composer-surface='true']", "form"],
+      preferredInputSelector: "[data-chatgpt-composer] [data-composer-markdown][contenteditable='true'][role='textbox'], #prompt-textarea[contenteditable='true'][role='textbox']",
+      composerRootSelectors: ["[data-chatgpt-composer]", "[data-composer-body]", "[data-type='unified-composer']", "[data-composer-surface='true']", "form"],
       generatingStableFallbackMs: 60000,
       inputSelectors: ["#prompt-textarea", "#prompt-textarea.ProseMirror"],
       sendSelectors: [
         "button[data-testid='send-button']",
         "button[aria-label*='Send']",
         "button[aria-label*='送出']",
+        "button[aria-label='傳送']",
         "button[aria-label*='Submit']",
       ],
       stopSelectors: [
-        "button[data-testid='stop-button']",
-        "button[aria-label^='Stop generating']",
-        "button[aria-label^='Stop response']",
-        "button[aria-label^='Stop streaming']",
-        "button[aria-label^='停止生成']",
-        "button[aria-label^='停止回覆']",
+        `${chatgptComposerStopRoot} button[aria-label='停止']`,
+        `${chatgptComposerStopRoot} button[data-testid='stop-button']`,
+        `${chatgptComposerStopRoot} button[aria-label^='Stop generating']`,
+        `${chatgptComposerStopRoot} button[aria-label^='Stop response']`,
+        `${chatgptComposerStopRoot} button[aria-label^='Stop streaming']`,
+        `${chatgptComposerStopRoot} button[aria-label^='停止生成']`,
+        `${chatgptComposerStopRoot} button[aria-label^='停止回覆']`,
+        `${chatgptComposerStopRoot} button[aria-label^='停止回應']`,
+        `${chatgptComposerStopRoot} button[aria-label^='停止串流']`,
       ],
       errorSelectors: commonErrorSelectors,
       loginSelectors: commonLoginSelectors,
@@ -107,6 +112,7 @@
       ],
     },
     grok: {
+      serviceStatusSelectors: ["[role='alert']"],
       locations: [
         { host: "grok.com" },
         { host: "x.com", pathPrefixes: ["/i/grok"] },
@@ -125,6 +131,7 @@
       sendSelectors: [
         "button[data-testid='chat-submit']",
         "button[aria-label='Submit']",
+        "button[aria-label='提交']",
         "button[data-testid='send-button']",
         "button[aria-label*='Send']",
         "button[aria-label*='送出']",
@@ -158,6 +165,7 @@
       ],
     },
     claude: {
+      serviceStatusSelectors: ["[data-emphasis='strong']"],
       hosts: ["claude.ai"],
       // The outer message also repeats the answer in an accessibility heading
       // and contains dynamic thought/status rows. Prefer the markdown body only.

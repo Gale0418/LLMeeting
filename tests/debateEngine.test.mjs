@@ -2,6 +2,38 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DebateEngine, normalizeDebateRounds } from "../src/background/debateEngine.js";
 
+test("departed providers keep history and never receive subsequent interaction or judgment jobs", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini", "meta"], "meta", 1, {summaryStrategy: "allAnonymous"});
+  engine.start("離席測試");
+  for (const id of engine.activeProviders) engine.recordAnswer(id, `暱稱：${id}\n先前發言`);
+  engine.buildCritiqueJobs(1);
+  engine.recordCritique("chatgpt", "甲的互評", 1);
+  engine.recordCritique("gemini", "乙的互評", 1);
+  engine.markProviderError("meta", "critique", "額度用完");
+  const previous = engine.snapshot().answers.meta;
+  engine.departProvider("meta");
+  assert.deepEqual(engine.participatingProviders, ["chatgpt", "gemini"]);
+  assert.equal(engine.snapshot().answers.meta, previous);
+  assert.match(engine.snapshot().critiqueRounds[0].meta, /額度用完/);
+  assert.equal(engine.resolvedSummaryProvider, "chatgpt");
+  assert.deepEqual(engine.buildFinalJobs().map(j => j.provider), ["chatgpt", "gemini"]);
+  const restored = DebateEngine.restore(engine.snapshot());
+  assert.deepEqual(restored.participatingProviders, ["chatgpt", "gemini"]);
+  assert.deepEqual(restored.buildUserMessageJobs("繼續", 1).map(j => j.provider), ["chatgpt", "gemini"]);
+  assert.throws(() => restored.departProvider("meta"), /已離席/);
+});
+
+test("all providers departing produces no final jobs and a fresh meeting resets departures", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"]);
+  engine.start("首場");
+  engine.departProvider("chatgpt");
+  engine.departProvider("gemini");
+  assert.deepEqual(engine.buildFinalJobs(), []);
+  engine.start("新場");
+  assert.deepEqual(engine.participatingProviders, ["chatgpt", "gemini"]);
+  assert.deepEqual(engine.snapshot().departures, []);
+});
+
 test("all-anonymous assigns every participant an independent anonymous final judgment", () => {
   const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 2, { summaryStrategy: "allAnonymous" });
   const openings = engine.start("測試全員裁判");
@@ -302,7 +334,7 @@ test("engine rejects a critique write outside the existing round range", () => {
   );
 });
 
-test("engine records provider errors without blocking the next phase", () => {
+test("engine preserves provider errors for repair UI but excludes them from critique context", () => {
   const engine = new DebateEngine();
   engine.start("天為什麼是藍的？");
   engine.recordAnswer("chatgpt", "是散射。");
@@ -313,10 +345,14 @@ test("engine records provider errors without blocking the next phase", () => {
   const jobs = engine.buildCritiqueJobs();
 
   assert.equal(jobs.length, 4);
-  assert.match(jobs.find((job) => job.provider === "chatgpt").prompt, /Gemini:\n\[錯誤：timeout\]/);
+  const prompt = jobs.find((job) => job.provider === "chatgpt").prompt;
+  assert.match(prompt, /Gemini:\n\[該 AI 本輪未能提供有效發言/);
+  assert.doesNotMatch(prompt, /錯誤：timeout/);
+  assert.match(prompt, /請勿推測缺席原因、要求其補答或攻擊缺席者/);
+  assert.match(engine.snapshot().answers.gemini, /^\[錯誤：timeout\]/);
 });
 
-test("engine shares provider service notices with the other AIs without treating them as formal answers", () => {
+test("engine keeps provider service details in the transcript but excludes them from downstream quotes", () => {
   const engine = new DebateEngine(["chatgpt", "gemini"]);
   engine.start("測試服務狀態轉述");
   engine.recordAnswer("chatgpt", "正常回答");
@@ -329,9 +365,54 @@ test("engine shares provider service notices with the other AIs without treating
 
   const [job] = engine.buildCritiqueJobs();
 
-  assert.match(job.prompt, /\[服務狀態：Gemini 額度已用完\]/);
-  assert.match(job.prompt, /不是這位 AI 對題目的正式回答/);
-  assert.match(job.prompt, /You've reached your limit/);
+  assert.match(job.prompt, /Gemini:\n\[該 AI 本輪未能提供有效發言/);
+  assert.doesNotMatch(job.prompt, /服務狀態|不是這位 AI 對題目的正式回答|You've reached your limit/);
+  assert.match(engine.snapshot().answers.gemini, /服務狀態：Gemini 額度已用完/);
+  assert.match(engine.snapshot().errors[0].message, /You've reached your limit/);
+});
+
+test("manual repair makes a previously missing first-round reply available to later rounds and summary", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 2, { openEnded: true });
+  engine.start("補回覆後可引用");
+  engine.recordAnswer("chatgpt", "ChatGPT 首輪回答");
+  engine.markProviderError("gemini", "first-round", "timeout");
+  const failedAnswer = engine.snapshot().answers.gemini;
+
+  const beforeRepair = engine.buildCritiqueJobs().find((job) => job.provider === "chatgpt").prompt;
+  assert.match(beforeRepair, /Gemini:\n\[該 AI 本輪未能提供有效發言/);
+  assert.doesNotMatch(beforeRepair, /timeout/);
+
+  engine.repairProviderReply({
+    provider: "gemini", phase: "first-round", content: "Gemini 手動補回的回答",
+    expectedContent: failedAnswer, sessionId: engine.snapshot().sessionId,
+  });
+  const afterRepair = engine.buildCritiqueJobs().find((job) => job.provider === "chatgpt").prompt;
+  assert.match(afterRepair, /Gemini:\nGemini 手動補回的回答/);
+  assert.doesNotMatch(afterRepair, /Gemini:\n\[該 AI 本輪未能提供有效發言|timeout/);
+
+  const summary = engine.buildFinalJob().prompt;
+  assert.match(summary, /Gemini 手動補回的回答/);
+  assert.doesNotMatch(summary, /Gemini:\n\[該 AI 本輪未能提供有效發言|timeout/);
+});
+
+test("failed critique replies are omitted from later-round and final-summary quotes", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 2);
+  engine.start("互評失敗不外流");
+  engine.recordAnswer("chatgpt", "A");
+  engine.recordAnswer("gemini", "B");
+  engine.buildCritiqueJobs();
+  engine.markProviderError("gemini", "critique", "AI 輸入框寫入驗證失敗");
+  engine.recordCritique("chatgpt", "正常互評", 1);
+
+  const nextRound = engine.buildCritiqueJobs(2).find((job) => job.provider === "chatgpt").prompt;
+  assert.match(nextRound, /Gemini:\n\[該 AI 本輪未能提供有效發言/);
+  assert.doesNotMatch(nextRound, /輸入框寫入驗證失敗/);
+
+  engine.recordCritique("chatgpt", "正常第二輪", 2);
+  engine.recordCritique("gemini", "Gemini 第二輪", 2);
+  const summary = engine.buildFinalJob().prompt;
+  assert.doesNotMatch(summary, /輸入框寫入驗證失敗/);
+  assert.match(summary, /沒有可供評估的立場/);
 });
 
 test("engine supports optional Claude as a participant", () => {
@@ -500,6 +581,41 @@ test("imposter reveal broadcasts one reaction job per active provider", () => {
     engine.buildReveal();
     assert.equal(engine.snapshot().reveal.reactions.chatgpt, "我早就猜到了");
   });
+});
+
+test("imposter reveal asks for evidence only when the first answer is usable", () => {
+  const makeEngine = () => {
+    const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 1, {
+      interactionStyle: "imposter",
+    });
+    engine.start("首輪原文證據檢查");
+    engine.state.reveal = {
+      imposterProvider: "chatgpt",
+      content: "本次內鬼是「ChatGPT」！",
+      reactions: {},
+    };
+    return engine;
+  };
+
+  const missingEngine = makeEngine();
+  const missingPrompt = missingEngine.buildRevealJobs()[0].prompt;
+  assert.match(missingPrompt, /內鬼第一輪未能提供有效原文；資料不足/);
+  assert.match(missingPrompt, /請明確說明資料不足，不要推測其偏航手法或捏造證據/);
+  assert.doesNotMatch(missingPrompt, /依內鬼第一輪原文列出/);
+
+  const failedEngine = makeEngine();
+  failedEngine.markProviderError("chatgpt", "first-round", "timeout", "service detail");
+  const failedPrompt = failedEngine.buildRevealJobs()[0].prompt;
+  assert.match(failedPrompt, /該 AI 本輪未能提供有效發言/);
+  assert.match(failedPrompt, /請明確說明資料不足，不要推測其偏航手法或捏造證據/);
+  assert.doesNotMatch(failedPrompt, /timeout|service detail|依內鬼第一輪原文列出/);
+
+  const validEngine = makeEngine();
+  validEngine.recordAnswer("chatgpt", "第一輪偏航原文：把期限改成永久");
+  const validPrompt = validEngine.buildRevealJobs()[0].prompt;
+  assert.match(validPrompt, /第一輪偏航原文：把期限改成永久/);
+  assert.match(validPrompt, /依內鬼第一輪原文列出 1-3 個遊戲內偏航手法/);
+  assert.doesNotMatch(validPrompt, /第一輪沒有可用原文/);
 });
 
 test("anonymous reveal jobs use nickname truth without provider labels", () => {

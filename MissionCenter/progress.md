@@ -2,10 +2,10 @@
 # 進度
 
 - 專案: LLMeeting
-- 目標: 保存免費體驗與 Provider 修補，完成審查並準備商店更新
-- 目前狀態: 35/50 tasks
-- 里程碑: 317 tests / CodeRabbit follow-up 0 issues / manual Store handoff
-- 進度條: [#######---] 70%
+- 目標: 完成送出確認修復、接續討論與手動補回覆的本地候選，保留實機驗收與發布閘門
+- 目前狀態: 35/59 tasks
+- 里程碑: CodeRabbit 95檔首查5項有效已修；9檔複查0；438測試通過，準備main推送
+- 進度條: [######----] 59%
 - 進行中任務:
   - LLM-T27 揭曉證據板 (Review)
   - LLM-T28 荒謬但可辯護內鬼任務 (Review)

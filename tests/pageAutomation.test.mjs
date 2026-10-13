@@ -25,7 +25,7 @@ async function loadProviderPageTestContext(overrides = {}) {
   const instrumentedScript = script.replace(
     /\}\)\(\);\s*$/,
     "globalThis.aiDebateProviderPageTest = {\n      assertProviderLocation,\n      collectElements,\n      createResponseCandidateBuffer,\n      findInput,\n      readAssistantSnapshot,\n      resolveConfiguredSendButton,\n      resolveInput,\n      resolveLikelySendButton,\n      scoreInputCandidate,\n      scoreSendCandidate,\n      updateResponseCandidateBuffer,\n      userMessageContainsPrompt,\n      observeProviderSubmission,\n      waitForCompletion,\n      waitForGeminiSubmissionReady,\n      waitForInputWritten,\n      writeInput,\n    };\n})();",
-  );
+  ).replace("      writeInput,\n", "      writeInput,\n      readBlockingServiceStatus,\n      readSubmittedResponse,\n      submittedRuns,\n      submitPrompt,\n");
   assert.notEqual(instrumentedScript, script);
 
   const context = {
@@ -404,8 +404,16 @@ test("Claude readiness accepts its disabled empty composer send control", async 
 });
 
 test("provider adapters keep live Grok and Claude accessibility contracts first", () => {
+  const chatgpt = globalThis.aiDebateProviderAdapters.chatgpt;
   const grok = globalThis.aiDebateProviderAdapters.grok;
   const claude = globalThis.aiDebateProviderAdapters.claude;
+
+  assert.ok(chatgpt.stopSelectors.some((selector) => selector.includes("[data-chatgpt-composer]")
+    && selector.includes("[data-composer-body]")
+    && selector.includes("[data-type='unified-composer']")
+    && selector.includes("[data-composer-surface='true']")));
+  assert.ok(chatgpt.stopSelectors.every((selector) => /^:is\(.+\) button\[/.test(selector)));
+  assert.ok(chatgpt.stopSelectors.every((selector) => !/^button\[/.test(selector)));
 
   assert.equal(grok.preferredInputSelector, "[data-testid='chat-input'] div[contenteditable='true'][role='textbox']");
   assert.equal(grok.inputSelectors[0], "[data-testid='chat-input'] div[contenteditable='true']");
@@ -451,7 +459,7 @@ test("Grok readiness recognizes the localized live composer structure", async ()
 test("provider content script uses a replaceable versioned listener after extension reload", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
 
-  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.0-driver\.6"/);
+  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.10"/);
   assert.match(script, /"aiDebate:getCapabilities": getCapabilities/);
   assert.match(script, /__aiDebateContentVersion/);
   assert.match(script, /onMessage\.removeListener\(globalThis\.__aiDebateContentMessageListener\)/);
@@ -472,7 +480,7 @@ test("same-version content reinjection replaces the listener without duplicating
   assert.equal(listeners.size, 1);
   assert.notEqual(context.__aiDebateContentMessageListener, previous);
   const response = await new Promise(resolve => context.__aiDebateContentMessageListener({ type: "aiDebate:getCapabilities" }, {}, resolve));
-  assert.equal(response.contentScriptVersion, "0.5.0-driver.6");
+  assert.equal(response.contentScriptVersion, "0.5.1-driver.10");
 });
 
 test("failed content initialization cannot poison the next injection", async () => {
@@ -887,6 +895,28 @@ test("provider readiness reports explicit provider errors without treating them 
   assert.equal(result.checks.error.detected, true);
 });
 
+test("ChatGPT plain Chinese stop control blocks readiness only inside its composer", async () => {
+  const stopButton = { disabled: false, getAttribute: () => null,
+    getBoundingClientRect: () => ({ width: 40, height: 40 }) };
+  let insideComposer = true;
+  const composerStopSelector = globalThis.aiDebateProviderAdapters.chatgpt.stopSelectors[0];
+  const context = await loadProviderPageTestContext({
+    aiDebateProviderAdapters: globalThis.aiDebateProviderAdapters,
+    aiDebateAutomationCore: { ...globalThis.aiDebateAutomationCore, matchesProviderLocation },
+    location: { hostname: "chatgpt.com", pathname: "/" },
+    document: { querySelectorAll: (selector) =>
+      selector === composerStopSelector && insideComposer
+        ? [stopButton] : [] },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+  });
+  const generating = await context.aiDebateProviderPageReadiness({ provider: "chatgpt" });
+  assert.equal(generating.status, "generating");
+  assert.equal(generating.checks.generating.active, true);
+  insideComposer = false;
+  const idle = await context.aiDebateProviderPageReadiness({ provider: "chatgpt" });
+  assert.equal(idle.checks.generating.active, false);
+});
+
 test("provider readiness does not let a historical global error block a usable composer", async () => {
   const input = {
     tagName: "TEXTAREA",
@@ -995,6 +1025,35 @@ test("Meta AI contenteditable writing uses one serialized execCommand without ev
   assert.match(script, /PROVIDER_INPUT_WRITE_FAILED/);
 });
 
+test("submission observes the replacement composer rather than a populated detached editor", async () => {
+  const context = await loadProviderPageTestContext();
+  const result = await context.aiDebateProviderPageTest.observeProviderSubmission(
+    {}, { innerText: "prompt", isConnected: false }, "prompt", 0, true, () => {}, 20, false,
+    { resolveInput: () => ({ innerText: "", isConnected: true }) },
+  );
+  assert.equal(result, "input-cleared");
+});
+
+test("missing or detached empty composer is not proof of submission", async () => {
+  const context = await loadProviderPageTestContext({ document: { querySelectorAll: () => [] } });
+  for (const resolveInput of [() => null, () => ({ innerText: "", isConnected: false })]) {
+    assert.equal(await context.aiDebateProviderPageTest.observeProviderSubmission(
+      {}, { innerText: "" }, "prompt", 0, true, () => {}, 10, false, { resolveInput },
+    ), null);
+  }
+});
+
+test("submission rechecks evidence when a background timer wakes after the deadline", async () => {
+  let reads = 0;
+  const context = await loadProviderPageTestContext({ document: { querySelectorAll: () => [] },
+    setTimeout: (fn) => setTimeout(fn, 30) });
+  const result = await context.aiDebateProviderPageTest.observeProviderSubmission(
+    {}, {}, "prompt", 0, true, () => {}, 10, false,
+    { resolveInput: () => ({ innerText: ++reads === 1 ? "prompt" : "", isConnected: true }) },
+  );
+  assert.equal(result, "input-cleared");
+});
+
 test("Meta AI write serializes line breaks, selects all, emits no events, and waits for delayed Lexical sync", async () => {
   const calls = [];
   let selectedElement = null;
@@ -1029,6 +1088,12 @@ test("Meta AI write serializes line breaks, selects all, emits no events, and wa
   assert.deepEqual(calls, [["insertText", false, "第一行\u2028\u2028第三行"]]);
   assert.equal(eventCount, 0);
   assert.equal(editor.innerText, "第一行\u2028\u2028第三行");
+  // The send guard uses the original prompt, rather than execCommand's payload.
+  await context.aiDebateProviderPageTest.waitForInputWritten(editor, prompt, 0);
+  await assert.rejects(
+    context.aiDebateProviderPageTest.waitForInputWritten(editor, "第一行\n第三行", 0),
+    (error) => error.code === "PROVIDER_INPUT_WRITE_FAILED",
+  );
 });
 
 test("Meta AI write reports PROVIDER_INPUT_WRITE_FAILED when execCommand returns false", async () => {
@@ -1043,6 +1108,106 @@ test("Meta AI write reports PROVIDER_INPUT_WRITE_FAILED when execCommand returns
     context.aiDebateProviderPageTest.writeInput({ focus: () => {} }, "測試", "single-editor-replace"),
     (error) => error.code === "PROVIDER_INPUT_WRITE_FAILED",
   );
+});
+
+test("Meta replacement waits for Lexical selectionchange before editing the cached document", async () => {
+  const editor = { innerText: "原草稿", textContent: "原草稿", focus() {} };
+  let selected = false;
+  let writes = 0;
+  const context = await loadProviderPageTestContext({ document: {
+    getSelection: () => ({ selectAllChildren() { setTimeout(() => { selected = true; }, 10); } }),
+    execCommand(_command, _ui, value) {
+      writes += 1;
+      // Live Lexical silently restores the cached document if its selection
+      // has not caught up yet, despite execCommand returning true.
+      if (selected) editor.innerText = value;
+      return true;
+    },
+  } });
+  await context.aiDebateProviderPageTest.writeInput(editor, "第一行\n\n完整尾端", "single-editor-replace");
+  assert.equal(writes, 1);
+  await context.aiDebateProviderPageTest.waitForInputWritten(editor, "第一行\n\n完整尾端", 0);
+});
+
+test("Meta selection synchronization rechecks cancellation before changing the editor", async () => {
+  let writes = 0;
+  let checks = 0;
+  const context = await loadProviderPageTestContext({ document: {
+    getSelection: () => ({ selectAllChildren() {} }),
+    execCommand() { writes += 1; return true; },
+  } });
+  const abortCheck = () => { if (++checks === 3) throw new Error("已停止"); };
+  await assert.rejects(context.aiDebateProviderPageTest.writeInput({ focus() {} }, "新提示", "single-editor-replace", abortCheck),
+    /已停止/);
+  assert.equal(writes, 0);
+});
+
+test("Meta multi-line submission validates the original prompt and clicks exactly once", async () => {
+  const config = globalThis.aiDebateProviderAdapters.meta;
+  let value = "";
+  let clicks = 0;
+  const form = { querySelectorAll: (selector) => config.sendSelectors.includes(selector) ? [button] : [],
+    parentElement: null };
+  const editor = {
+    tagName: "DIV", className: "", isConnected: true, parentElement: form,
+    get innerText() { return value; }, get textContent() { return value; },
+    getAttribute: (name) => ({ contenteditable: "true", role: "textbox", "data-testid": "composer-input" })[name] || null,
+    getBoundingClientRect: () => ({ width: 320, height: 80 }),
+    closest: () => form, focus() {},
+  };
+  const button = {
+    disabled: false, isConnected: true, textContent: "傳送", className: "",
+    getAttribute: (name) => ({ role: "button", "aria-label": "傳送" })[name] || null,
+    getBoundingClientRect: () => ({ width: 40, height: 40 }),
+    click() { clicks += 1; value = ""; },
+  };
+  const context = await loadProviderPageTestContext({
+    aiDebateProviderAdapters: globalThis.aiDebateProviderAdapters,
+    aiDebateAutomationCore: globalThis.aiDebateAutomationCore,
+    location: { hostname: "www.meta.ai", pathname: "/prompt/test" },
+    document: {
+      querySelectorAll: (selector) => selector === config.preferredInputSelector || config.inputSelectors.includes(selector)
+        ? [editor] : config.sendSelectors.includes(selector) ? [button] : [],
+      getSelection: () => ({ selectAllChildren() {} }),
+      execCommand: (_command, _ui, text) => { value = text; return true; },
+    },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+  });
+  const result = await context.aiDebateProviderPageTest.submitPrompt({
+    provider: "meta", prompt: "原問題\n\n互評引用\n完整尾端", phase: "critique-1", runId: "meta-regression",
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.submission.method, "button");
+  assert.equal(result.submission.evidence, "input-cleared");
+  assert.equal(result.submission.retried, false);
+  assert.equal(clicks, 1);
+});
+
+test("controlled textarea writing waits for framework sync and rejects a reverted value", async () => {
+  class ControlledTextarea {
+    constructor() { this.current = ""; }
+    get value() { return this.current; }
+    set value(value) { this.current = value; }
+    focus() {}
+    dispatchEvent(event) {
+      if (event.type === "input") {
+        this.current = "舊內容";
+        if (!this.revert) setTimeout(() => { this.current = event.data; }, 20);
+      }
+    }
+  }
+  const context = await loadProviderPageTestContext({
+    HTMLTextAreaElement: ControlledTextarea,
+    InputEvent: class { constructor(type, properties) { this.type = type; Object.assign(this, properties); } },
+    Event: class { constructor(type) { this.type = type; } },
+  });
+  const editor = new ControlledTextarea();
+  const prompt = "第一行\n\n完整尾端";
+  await context.aiDebateProviderPageTest.writeInput(editor, prompt);
+  assert.equal(editor.value, prompt);
+  editor.revert = true;
+  await assert.rejects(context.aiDebateProviderPageTest.writeInput(editor, prompt),
+    (error) => error.code === "PROVIDER_INPUT_WRITE_FAILED");
 });
 
 test("Meta AI write reports PROVIDER_INPUT_WRITE_FAILED when selection is unavailable", async () => {
@@ -1144,6 +1309,51 @@ function paragraphEditorFixture(lines) {
   };
 }
 
+test("multiline native editing preserves paragraphs when textContent has no line boundaries", async () => {
+  const prompt = "第 5 輪對話。\n延續上一輪討論。\n\n**引用** 與完整尾端";
+  const input = paragraphEditorFixture(["舊草稿"]);
+  input.focus = () => {};
+  // A direct DOM replacement is exactly the live failure: the framework
+  // subsequently parses those raw newlines as spaces instead of paragraphs.
+  Object.defineProperty(input, "textContent", {
+    get: () => input.childNodes.map((p) => p.childNodes.map((n) => n.textContent || "").join("")).join(""),
+    set(value) {
+      Object.assign(input, paragraphEditorFixture([value.replace(/\n/g, " ")]));
+    },
+  });
+  input.dispatchEvent = () => {};
+  let selected;
+  let writes = 0;
+  const context = await loadProviderPageTestContext({
+    InputEvent: class {},
+    document: {
+      getSelection: () => ({ selectAllChildren: (element) => { selected = element; } }),
+      execCommand: (_command, _ui, value) => {
+        writes += 1;
+        Object.assign(input, paragraphEditorFixture(value.split("\n")));
+        return true;
+      },
+    },
+  });
+  await context.aiDebateProviderPageTest.writeInput(input, prompt);
+  assert.equal(selected, input);
+  assert.equal(writes, 1);
+  await context.aiDebateProviderPageTest.waitForInputWritten(input, prompt, 0);
+  await assert.rejects(context.aiDebateProviderPageTest.waitForInputWritten(input, prompt.replace(/\n/g, " "), 0),
+    (error) => error.code === "PROVIDER_INPUT_WRITE_FAILED");
+});
+
+test("generic native editing fails closed when selection or insertion is unavailable", async () => {
+  for (const document of [
+    { getSelection: () => null, execCommand: () => true },
+    { getSelection: () => ({ selectAllChildren() {} }), execCommand: () => false },
+  ]) {
+    const context = await loadProviderPageTestContext({ document });
+    await assert.rejects(context.aiDebateProviderPageTest.writeInput({ focus() {}, innerText: "測試" }, "測試"),
+      (error) => error.code === "PROVIDER_INPUT_WRITE_FAILED");
+  }
+});
+
 test("ChatGPT paragraph editor verifies exact source despite rendered paragraph spacing", async () => {
   const context = await loadProviderPageTestContext();
   const input = paragraphEditorFixture(["第一段", "", "第二段", "第三段"]);
@@ -1158,6 +1368,53 @@ test("ChatGPT paragraph verification rejects missing text, extra blank lines and
     await assert.rejects(context.aiDebateProviderPageTest.waitForInputWritten(input, prompt, 0),
       (error) => error.code === "PROVIDER_INPUT_WRITE_FAILED");
   }
+});
+
+test("failed input verification reports lengths and mismatch location without source text", async () => {
+  const context = await loadProviderPageTestContext();
+  const input = { innerText: "私密內容", tagName: "DIV", isConnected: false, matches: () => false };
+  await assert.rejects(context.aiDebateProviderPageTest.waitForInputWritten(input, "私密內容\n遺漏", 0), (error) => {
+    assert.equal(error.debugDetails.reason, "verification-timeout");
+    assert.equal(error.debugDetails.expectedLength, 7);
+    assert.equal(error.debugDetails.actualLength, 4);
+    assert.equal(error.debugDetails.firstMismatch, 4);
+    assert.equal(error.debugDetails.expectedLines, 2);
+    assert.equal(error.debugDetails.connected, false);
+    assert.doesNotMatch(JSON.stringify(error.debugDetails), /私密|遺漏/);
+    return true;
+  });
+});
+
+test("Meta Lexical accepts only the observed lightning emoji presentation conversion", async () => {
+  const context = await loadProviderPageTestContext();
+  const input = { innerText: "第一行\u2028⚡\uFE0F Grok", matches: s => s === "[data-lexical-editor='true']" };
+  await context.aiDebateProviderPageTest.waitForInputWritten(input, "第一行\n⚡ Grok", 0);
+  for (const actual of ["第一行\n⚡️ Gro", "第一行\n⚡️  Grok", "第一行\n⚡\u200b Grok", "第一行\n⚡ Grok\n新增"]) {
+    input.innerText = actual;
+    await assert.rejects(context.aiDebateProviderPageTest.waitForInputWritten(input, "第一行\n⚡ Grok", 0), e => e.code === "PROVIDER_INPUT_WRITE_FAILED");
+  }
+  input.innerText = "第一行\n⚡️ Grok";
+  input.matches = () => false;
+  await assert.rejects(context.aiDebateProviderPageTest.waitForInputWritten(input, "第一行\n⚡ Grok", 0), e => e.code === "PROVIDER_INPUT_WRITE_FAILED");
+});
+
+test("active service banners block submission confirmation and ignore quoted or editor text", async () => {
+  const banner = { innerText: "Your free messages return at 4:30 AM.", closest: () => null,
+    getBoundingClientRect: () => ({width: 300, height: 30}) };
+  const context = await loadProviderPageTestContext({
+    aiDebateAutomationCore: globalThis.aiDebateAutomationCore,
+    document: { querySelectorAll: s => s === ".service" ? [banner] : [] },
+    getComputedStyle: () => ({display: "block", visibility: "visible", opacity: "1"}),
+  });
+  const config = {serviceStatusSelectors: [".service"]};
+  assert.equal(context.aiDebateProviderPageTest.readBlockingServiceStatus(config, "claude").classification.code, "PROVIDER_QUOTA_EXCEEDED");
+  await assert.rejects(context.aiDebateProviderPageTest.observeProviderSubmission(config, {innerText: ""}, "prompt", 0, true,
+    () => {}, 0, false, {providerId: "claude"}), e=>e.code === "PROVIDER_QUOTA_EXCEEDED");
+  banner.closest = () => ({});
+  assert.equal(context.aiDebateProviderPageTest.readBlockingServiceStatus(config, "claude"), null);
+  banner.closest = () => null;
+  banner.innerText = "We discussed: Your free messages return at 4:30 AM. This was a quote.";
+  assert.equal(context.aiDebateProviderPageTest.readBlockingServiceStatus(config, "claude"), null);
 });
 
 test("ChatGPT paragraph reader preserves literal Markdown and inline breaks without ignoring unknown nodes", async () => {
@@ -1254,7 +1511,12 @@ test("response collection rejects a later manual user turn instead of attributin
   });
   await assert.rejects(context.aiDebateProviderPageTest.waitForCompletion(
     { userMessageSelectors: [".user"] }, "chatgpt", 100, {}, "original", [], () => {}, 0,
-  ), (error) => error.code === "PROVIDER_CONVERSATION_CHANGED");
+  ), (error) => {
+    assert.equal(error.code, "PROVIDER_CONVERSATION_CHANGED");
+    assert.equal(error.debugDetails.expectedUserTurns, 1);
+    assert.equal(error.debugDetails.actualUserTurns, 2);
+    return true;
+  });
 });
 
 test("response candidate buffer keeps a Meta answer across virtualized DOM gaps", async () => {
@@ -1359,6 +1621,7 @@ test("submission generation evidence requires a false-to-true transition", async
     getBoundingClientRect: () => ({ width: 40, height: 40 }),
   };
   const context = await loadProviderPageTestContext({
+    aiDebateAutomationCore: globalThis.aiDebateAutomationCore,
     Date: class extends Date { static now() { return now; } },
     setTimeout: (callback, milliseconds) => {
       now += milliseconds;
@@ -1576,8 +1839,23 @@ test("common usage and message quota variants remain non-retryable quota errors"
     "You've hit your limit for now.",
     "You have hit your usage limit for now.",
     "You have reached your message quota.",
+    "You've reached the maximum number of messages for now.",
+    "You have exceeded your daily usage limit.",
+    "Your free messages return at 4:30 AM.",
+    "今日使用量已達上限，請稍後再試。",
+    "你已達到訊息上限。",
   ]) {
     assert.equal(classifyProviderResponseError("claude", text)?.code, "PROVIDER_QUOTA_EXCEEDED");
+  }
+
+  for (const text of [
+    "I think you've reached your usage limit because the plan is shared.",
+    "The page says Your free messages return at 4:30 AM. and that may explain the pause.",
+    "The error means 'You have reached your usage limit.' This long explanation continues with context and advice.",
+    `The assistant explained: “You have reached your usage limit.” ${"Additional quoted context. ".repeat(12)}`,
+    "我們討論的是今日使用量已達上限這種提示，不代表目前服務額度用完。",
+  ]) {
+    assert.equal(classifyProviderResponseError("claude", text), null);
   }
 });
 
@@ -1590,6 +1868,20 @@ test("generic provider failures are classified and cannot become answers", () =>
     code: "PROVIDER_PAGE_ERROR",
     message: "claude 回覆失敗",
   });
+});
+
+test("ChatGPT standalone reply-load messages are classified without matching quoted reports", () => {
+  for (const text of ["無法載入這則回覆", "無法載入此則回覆。", "無法載入回覆"]) {
+    assert.equal(classifyProviderResponseError("chatgpt", text)?.code, "PROVIDER_PAGE_ERROR");
+  }
+
+  for (const text of [
+    "ChatGPT 顯示「無法載入這則回覆」，但我已經重新整理並取得完整答案。",
+    "錯誤訊息『無法載入此則回覆』是畫面上的文字；實際回答是 42。",
+    "我認為無法載入這則回覆是暫時的 UI 問題。",
+  ]) {
+    assert.equal(classifyProviderResponseError("chatgpt", text), null);
+  }
 });
 
 test("confirmed Gemini button submission does not press Enter", async () => {
@@ -1661,4 +1953,123 @@ test("provider page automation can submit first and read the reply later", async
   assert.match(script, /errorBaseline/);
   assert.match(script, /hasFreshProviderError\(errorBaseline, candidate\.content\)/);
   assert.match(script, /config\.errorSelectors/);
+});
+
+test("completion poll deadline returns pending and carries a growing candidate across polls", async () => {
+  let now = 0;
+  let generating = true;
+  const assistant = { innerText: "回答起點", contains: () => false,
+    getBoundingClientRect: () => ({ width: 400, height: 50 }) };
+  const stop = { disabled: false, getAttribute: () => null,
+    getBoundingClientRect: () => ({ width: 40, height: 40 }) };
+  const context = await loadProviderPageTestContext({
+    aiDebateAutomationCore: globalThis.aiDebateAutomationCore,
+    Date: class extends Date { static now() { return now; } },
+    setTimeout: (callback, milliseconds) => { now += milliseconds; callback(); return 0; },
+    document: { querySelectorAll: (selector) => selector === ".assistant" ? [assistant]
+      : selector === ".stop" && generating ? [stop] : [] },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+  });
+  const api = context.aiDebateProviderPageTest;
+  const config = { responseSelectors: [".assistant"], userMessageSelectors: [],
+    stopSelectors: [".stop"], errorSelectors: [] };
+  const state = {};
+
+  assert.equal(await api.waitForCompletion(config, "chatgpt", 120000, assistantSnapshot([]),
+    "這次提示", [], () => {}, undefined, { pollBudgetMs: 600, state }), null);
+  assert.equal(state.candidateBuffer.text, "回答起點");
+
+  assistant.innerText = "回答起點，持續生成中的完整段落";
+  const changedAt = now;
+  assert.equal(await api.waitForCompletion(config, "chatgpt", 120000, assistantSnapshot([]),
+    "這次提示", [], () => {}, undefined, { pollBudgetMs: 600, state }), null);
+  assert.equal(state.candidateBuffer.text, "回答起點，持續生成中的完整段落");
+  assert.equal(state.candidateBuffer.stableSince, changedAt);
+
+  generating = false;
+  assert.equal(await api.waitForCompletion(config, "chatgpt", 120000, assistantSnapshot([]),
+    "這次提示", [], () => {}, undefined, { pollBudgetMs: 3000, state }),
+  "回答起點，持續生成中的完整段落");
+});
+
+test("completion polls preserve the original hard deadline despite continued text changes", async () => {
+  let now = 0;
+  let generating = true;
+  const assistant = { innerText: "回答起點", contains: () => false,
+    getBoundingClientRect: () => ({ width: 400, height: 50 }) };
+  const stop = { disabled: false, getAttribute: () => null,
+    getBoundingClientRect: () => ({ width: 40, height: 40 }) };
+  const context = await loadProviderPageTestContext({
+    aiDebateAutomationCore: globalThis.aiDebateAutomationCore,
+    Date: class extends Date { static now() { return now; } },
+    setTimeout: (callback, milliseconds) => { now += milliseconds; callback(); return 0; },
+    document: { querySelectorAll: (selector) => selector === ".assistant" ? [assistant]
+      : selector === ".stop" && generating ? [stop] : [] },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+  });
+  const api = context.aiDebateProviderPageTest;
+  const config = { responseSelectors: [".assistant"], userMessageSelectors: [],
+    stopSelectors: [".stop"], errorSelectors: [] };
+  const state = {};
+  await api.waitForCompletion(config, "chatgpt", 900000, assistantSnapshot([]),
+    "這次提示", [], () => {}, undefined, { pollBudgetMs: 600, state });
+  const originalHardDeadline = state.completionWindow.hardDeadline;
+
+  now = originalHardDeadline - 600;
+  assistant.innerText = "回答起點，接近總期限仍持續生成";
+  await assert.rejects(api.waitForCompletion(config, "chatgpt", 900000, assistantSnapshot([]),
+    "這次提示", [], () => {}, undefined, { pollBudgetMs: 1000, state }),
+  (error) => error.code === "PROVIDER_RESPONSE_TIMEOUT");
+  assert.equal(state.completionWindow.hardDeadline, originalHardDeadline);
+  assert.equal(state.candidateBuffer.text, "回答起點，接近總期限仍持續生成");
+  generating = false;
+});
+
+test("readSubmittedResponse retains pending runs and removes them only after a complete read", async () => {
+  let now = 0;
+  let generating = true;
+  let sendClicks = 0;
+  const assistant = { innerText: "完整答案", contains: () => false,
+    getBoundingClientRect: () => ({ width: 400, height: 50 }) };
+  const stop = { disabled: false, getAttribute: () => null,
+    getBoundingClientRect: () => ({ width: 40, height: 40 }) };
+  const base = globalThis.aiDebateProviderAdapters.chatgpt;
+  const config = { ...base, responseSelectors: [".assistant"], userMessageSelectors: [],
+    stopSelectors: [".stop"], errorSelectors: [], sendSelectors: [".send"], inputSelectors: [".input"] };
+  const send = { click() { sendClicks += 1; }, disabled: false,
+    getBoundingClientRect: () => ({ width: 40, height: 40 }) };
+  const context = await loadProviderPageTestContext({
+    aiDebateAutomationCore: globalThis.aiDebateAutomationCore,
+    aiDebateProviderAdapters: { chatgpt: config },
+    location: { hostname: "chatgpt.com", pathname: "/" },
+    Date: class extends Date { static now() { return now; } },
+    setTimeout: (callback, milliseconds) => { now += milliseconds; callback(); return 0; },
+    document: { querySelectorAll: (selector) => selector === ".assistant" ? [assistant]
+      : selector === ".stop" && generating ? [stop]
+      : selector === ".send" ? [send] : [] },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+  });
+  const api = context.aiDebateProviderPageTest;
+  api.submittedRuns.set("run-poll", { providerId: "chatgpt", epoch: 0,
+    baseline: assistantSnapshot([]), errorBaseline: [], prompt: "這次提示", submittedAt: 0,
+    userTurnCount: undefined });
+
+  const pending = await api.readSubmittedResponse({ provider: "chatgpt", runId: "run-poll",
+    epoch: 0, timeoutMs: 120000, pollBudgetMs: 600 });
+  assert.equal(pending.ok, true);
+  assert.equal(pending.pending, true);
+  assert.equal(pending.provider, "chatgpt");
+  assert.equal(pending.runId, "run-poll");
+  assert.equal(api.submittedRuns.has("run-poll"), true);
+  assert.equal(api.submittedRuns.get("run-poll").responseState.candidateBuffer.text, "完整答案");
+
+  generating = false;
+  const completed = await api.readSubmittedResponse({ provider: "chatgpt", runId: "run-poll",
+    epoch: 0, timeoutMs: 120000, pollBudgetMs: 3000 });
+  assert.equal(completed.ok, true);
+  assert.equal(completed.pending, undefined);
+  assert.equal(completed.provider, "chatgpt");
+  assert.equal(completed.content, "完整答案");
+  assert.equal(api.submittedRuns.has("run-poll"), false);
+  assert.equal(sendClicks, 0);
 });

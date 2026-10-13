@@ -1,0 +1,18 @@
+{
+  "recordedAt": "2026-10-04T23:40:00+08:00",
+  "operationId": "llmeeting-webstore-050-upload-20261004",
+  "taskIds": ["LLM-T36", "LLM-T47"],
+  "operation": "upload-package",
+  "result": "confirmed",
+  "itemId": "cjombmcmgifhanenolhaeepbpnlchjdp",
+  "destination": "https://chrome.google.com/webstore/devconsole/2150e654-f5ed-4a22-9468-3eee6fd2b9b2/cjombmcmgifhanenolhaeepbpnlchjdp/edit/package",
+  "artifact": "dist/llmeeting-0.5.0.zip",
+  "bytes": 2317446,
+  "sha256": "cca5514ed6864dbe6182b51d970bf6c6909a44509796bf14314bef41b1c0a70b",
+  "verification": "macOS Chrome accessibility UI: selected llmeeting-0.5.0.zip; upload progress appeared; returned to listing; reopened package page; draft table showed 0.5.0 and published table showed 0.4.7.",
+  "draftVersion": "0.5.0",
+  "publishedVersion": "0.4.7",
+  "submittedForReview": false,
+  "runtimeReconciliation": "Not registered: bundled external-operation help did not expose flag schema; prepare returned argument_error. This is a manual evidence receipt, not a runtime external-operation record.",
+  "limitations": ["Full named five-provider and allAnonymous E2E matrix remains incomplete.", "No code tests or CodeRabbit rerun in this upload-only operation."]
+}

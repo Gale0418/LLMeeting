@@ -14,4 +14,4 @@ Record the browser version, test date, provider URL, observed error code, and a 
 
 Meta AI is opt-in and may be unavailable by account or region. Record `BETA_UNAVAILABLE` rather than treating regional unavailability as a regression in the stable four-provider flow.
 
-For overload testing, verify that LLMeeting refreshes and resends at most three times. For quota or usage-limit testing, verify that it does not refresh and that the visible provider notice is quoted to the remaining AIs as service status rather than a formal answer.
+For overload, quota or usage-limit testing, verify that LLMeeting shows the provider fault and pauses for manual repair without refreshing or resending. Already-submitted replies from other providers should still be collected. Verify that pasting the missing reply or departing the affected AI resumes only after all pending faults are handled; the original fault stays visible as diagnostic history and is not quoted as a formal AI answer.

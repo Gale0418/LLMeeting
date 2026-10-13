@@ -133,17 +133,30 @@
       return null;
     }
 
+    // Quota detection is deliberately limited to a compact, direct notice.
+    // Provider answers often discuss limits or quote an error message while
+    // explaining it; those must remain answer text rather than run failures.
+    const isCompactQuotaNotice = value.length <= 240
+      && !/[\"“”‘’「」『』]/.test(value)
+      && !/(?:^|\s)'[^']{1,240}'(?:$|[\s).,!?:;])/.test(value)
+      && !/^(?:i think|i believe|the message|this message|the error|錯誤訊息|我認為|我覺得|他說|她說)\b/.test(value);
+
     const patterns = [
       {
         code: "PROVIDER_QUOTA_EXCEEDED",
         message: `${providerId} 額度或使用上限已達`,
         tests: [
-          /(?:usage|message|rate)\s+(?:limit|quota)\b(?:\s+has been)?\s+(?:reached|exceeded)/,
-          /(?:you|you've|you have)\s+(?:have\s+)?(?:hit|reached)\s+your\s+(?:(?:usage|message)\s+)?(?:limit|quota)(?:\s+for\s+now)?/,
-          /(?:out of|no)\s+(?:credits?|messages?)/,
-          /(?:quota)\s+(?:reached|exceeded)/,
-          /^(?:抱歉[，,\s]*)?額度(?:已)?(?:用完|耗盡|不足|達到上限)/,
-          /^(?:抱歉[，,\s]*)?使用(?:量|次數)?(?:已)?達(?:到)?上限/,
+          /^(?:the\s+)?(?:usage|message|rate)\s+(?:limit|quota)\b(?:\s+has been)?\s+(?:reached|exceeded)[.!]?$/,
+          /^you(?:'ve| have)?\s+(?:have\s+)?(?:hit|reached|exceeded)\s+(?:your\s+)?(?:(?:usage|message|daily|weekly|rate)\s+)?(?:limit|quota)(?:\s+for\s+now)?[.!]?$/,
+          /^(?:out of|no)\s+(?:credits?|messages?)[.!]?$/,
+          /^(?:quota)\s+(?:reached|exceeded)[.!]?$/,
+          /^your free messages return at \d{1,2}(?::\d{2})?\s*(?:am|pm)[.!]?$/,
+          /^you(?:'ve| have)?\s+(?:reached|hit|exceeded)\s+(?:the\s+)?(?:maximum|max)\s+(?:number\s+of\s+)?(?:messages?|usage|requests?)(?:\s+(?:for now|today|this week))?[.!]?$/,
+          /^(?:sorry[,\s]+)?(?:you(?:'ve| have)?\s+)?(?:reached|hit|exceeded)\s+(?:your\s+)?(?:daily|weekly|monthly)\s+(?:usage\s+)?(?:limit|quota)[.!]?$/,
+          /^(?:抱歉[，,\s]*)?(?:你)?(?:的)?額度(?:已)?(?:用完|耗盡|不足|達到上限)[。.!]?$/,
+          /^(?:抱歉[，,\s]*)?(?:你)?(?:的)?使用(?:量|次數)?(?:已)?達(?:到)?上限[。.!]?$/,
+          /^(?:抱歉[，,\s]*)?(?:你)?(?:今天|今日|本日|本週|目前)?(?:的)?(?:訊息|對話|使用)量(?:已)?(?:用完|達(?:到)?上限)[，,。.!\s]*(?:請稍後再試)?[。.!]?$/,
+          /^(?:抱歉[，,\s]*)?(?:你)?(?:今天|本日|本週|目前)?已達(?:到)?(?:訊息|對話|使用)?上限[，,。.!\s]*(?:請稍後再試)?[。.!]?$/,
         ],
       },
       {
@@ -172,13 +185,15 @@
           /^(?:error|failed|failure)\s+(?:generating|to generate)\s+(?:response|reply|answer)\b/,
           /^(?:unable|cannot|can't|couldn't)\s+(?:to\s+)?(?:generate|load|process)\s+(?:a\s+)?(?:response|reply|answer)\b/,
           /^something went wrong[.!]?$/,
+          /^無法載入(?:這|此)則回覆[。.!]?$/,
           /^(?:發生錯誤|回覆失敗|無法(?:產生|生成|載入)回覆)[。.!]?$/,
         ],
       },
     ];
 
     for (const candidate of patterns) {
-      if (candidate.tests.some((pattern) => pattern.test(value))) {
+      if ((candidate.code !== "PROVIDER_QUOTA_EXCEEDED" || isCompactQuotaNotice)
+        && candidate.tests.some((pattern) => pattern.test(value))) {
         return { code: candidate.code, message: candidate.message };
       }
     }

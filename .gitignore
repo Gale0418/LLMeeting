@@ -5,3 +5,14 @@ output/
 .DS_Store
 Thumbs.db
 .worktrees/
+
+# Local browser probes may contain private conversations and account details.
+MissionCenter/evidence/**/*.png
+MissionCenter/evidence/**/*.jpg
+MissionCenter/evidence/051-driver3/live-long-write-probes.json
+MissionCenter/evidence/051-driver3/live-write-probes.json
+MissionCenter/evidence/051-driver3/meta-long-diagnostic.json
+MissionCenter/evidence/051-driver3/original-editors.json
+MissionCenter/evidence/llmeeting-051-driver2-handoff.json
+MissionCenter/evidence/051-driver4/gemini-send-probe.json
+MissionCenter/evidence/051-driver5/meta-root-cause-pending.json

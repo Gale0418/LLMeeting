@@ -1,0 +1,13 @@
+{
+  "method": "HTTP fixture with real service-worker and sidepanel code; no provider prompts sent",
+  "widths": [
+    320,
+    480
+  ],
+  "waitingResumeDisabled": true,
+  "pastedResumeEnabled": true,
+  "pastedSupplementDisabled": true,
+  "pastedSummaryDisabled": true,
+  "continuedToDone": true,
+  "horizontalOverflow": false
+}

@@ -1,0 +1,34 @@
+{
+  "timestamp": "2026-10-13T21:19:17+08:00",
+  "version": "0.5.1",
+  "driver": "0.5.1-driver.6",
+  "trigger": "User screenshot: asynchronous listener channel closed before a response; UI remained at ChatGPT critique-2 submitting",
+  "screenshot": "D:/Downloads/2026-10-13 20 59 42.png",
+  "diagnosis": {
+    "observedError": "A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received",
+    "confirmedCodeRisk": "start and nextRound awaited entire multi-provider execution before sendResponse; provider reply collection also held a long RPC",
+    "platformSource": "https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle",
+    "platformLimit": "Chrome documents termination when a single request/event/API call lasts more than five minutes",
+    "actualTerminationReason": "not independently observed; screenshot alone cannot distinguish worker termination, context closure, or another channel interruption",
+    "priorMetaFault": "still lacks exact original stage/code; do not conflate it with this new run"
+  },
+  "changes": [
+    "start and nextRound send one accepted acknowledgement before provider execution finishes; later results are pushed as stateChanged",
+    "provider reads use approximately 12-second polls on the same runId, retaining response candidate stability and total deadlines",
+    "single-provider, sequential and source-summary jobs also use separate submit and collect operations",
+    "sidepanel reconciles closed receipts with getState and never retries the action; accepted receipt refresh cannot overwrite newer completion",
+    "supported interrupted first-round/critique snapshots preserve recorded replies, mark possibly sent missing slots for manual repair and queue only known unsent prompts",
+    "chat first-round recovery returns to user; imposter first-round and unsupported checkpoints fail closed"
+  ],
+  "verification": {
+    "tests": { "passed": 378, "failed": 0, "log": "output/051-driver6-tests.txt" },
+    "ackTests": "ack precedes paused provider read, caller can leave, only one callback, stop cannot revive busy state",
+    "pollTests": "pending retains run and responseState; complete read deletes run; polls do not click send; hard deadline is not reset",
+    "recoveryTests": "submitting critique-2 queues unsent peers; collecting pauses unrecorded submitted replies; recorded replies preserved",
+    "package": { "files": 30, "bytes": 2367467, "sha256": "1a7de8b975bd1816baf957f26da5d929d9c25081e46220ce121360971ae4db51", "crc": "pass", "versionAndDriver": "pass", "scope": "manifest/src/assets" },
+    "codeRabbit": { "issues": 1, "severity": "minor", "file": "README.md", "disposition": "fixed: identify current 0.5.1-driver.6 separately from historical 0.5.0-driver.6", "log": "output/coderabbit-051-driver6.ndjson", "finalZeroIssuesClaimed": false }
+  },
+  "liveVerification": "Not performed on reloaded real extension; provider tabs were only inventoried and were not sent prompts",
+  "uiFixture": { "status": "not run", "reason": "Automatic approval review rejected fixture-creation/server command with blocked by policy; no detailed reason; command not retried" },
+  "status": "Review; candidate prepared; manual reload and live paused-slot repair still pending; not published"
+}

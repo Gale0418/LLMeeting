@@ -2,6 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
+test("the single progress region is part of the sticky header", async () => {
+  const [html, css] = await Promise.all([readFile("src/sidepanel/index.html", "utf8"), readFile("src/sidepanel/styles.css", "utf8")]);
+  const header = html.match(/<header\b[\s\S]*?<\/header>/)[0];
+  assert.ok(header.includes('id="progressContainer"'));
+  assert.equal((html.match(/id="progressContainer"/g) || []).length, 1);
+  assert.ok([...css.matchAll(/\.topbar\s*\{([^}]+)\}/g)].some(match => /position:\s*sticky/.test(match[1])));
+});
+
 import {
   createProviderDiagnostics,
   updateProviderDiagnostic,
@@ -110,7 +118,7 @@ test("side panel exposes Pro summary strategy modes and random chair choice", as
   assert.match(html, /data-pro-feature="observerChair"/);
   assert.match(html, /data-pro-feature="anonymousReview"/);
   assert.match(html, /<option value="random">隨機主席<\/option>/);
-  assert.match(html, /class="version-badge">v0\.5\.0<\/span>/);
+  assert.match(html, /class="version-badge">v0\.5\.1<\/span>/);
   assert.match(app, /const summaryStrategyEls = Array\.from\(document\.querySelectorAll\("\.summary-strategy-select"\)\)/);
   assert.match(app, /selectedSummaryStrategy/);
   assert.match(app, /featureForSummaryStrategy/);

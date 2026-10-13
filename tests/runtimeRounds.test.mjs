@@ -10,6 +10,18 @@ function functionsBetween(source, start, end) {
   return source.slice(source.indexOf(`function ${start}(`), source.indexOf(`function ${end}(`));
 }
 
+test("sticky progress keeps the completed stage while waiting and does not call an early failure complete", async () => {
+  const source = await readFile("src/sidepanel/app.js", "utf8");
+  const context = vm.createContext({isCritiquePhase: phase => /^critique/.test(phase)});
+  vm.runInContext(functionsBetween(source, "progressStageForState", "progressStageLabel"), context);
+  assert.equal(context.progressStageForState({phase: "waiting_for_user", currentCritiqueRound: 0}), 1);
+  assert.equal(context.progressStageForState({phase: "waiting_for_user", currentCritiqueRound: 3}), 2);
+  assert.equal(context.progressStageForState({status: "error", phase: "first-round"}), 1);
+  assert.equal(context.progressStageForState({phase: "waiting_for_user", repairPause: {pausedPhase: "critique-2"}}), 2);
+  assert.equal(context.progressStageForState({phase: "waiting_for_user", repairPause: {pausedPhase: "summary"}}), 3);
+  assert.equal(context.progressStageForState({status: "done"}), 3);
+});
+
 test("runtime round normalization rejects invalid or unsafe numbers without capping valid rounds", () => {
   for (const value of [0, -2, 1.5, "7oops", Infinity, NaN, Number.MAX_SAFE_INTEGER + 1]) {
     assert.equal(normalizeRoundNumber(value), 1);
@@ -26,6 +38,10 @@ test("side panel progress and active transcript round use uncapped runtime numbe
   vm.runInContext(functionsBetween(source, "updateProgressBar", "progressStageForState"), context);
   context.updateProgressBar({ status: "running", phase: "critique-6", debateRounds: 7, currentCritiqueRound: 6 });
   assert.equal(progressBar.style.transform, "scaleX(0.69)");
+  context.updateProgressBar({status: "waiting", phase: "waiting_for_user", repairPause: {pausedPhase: "summary"}});
+  assert.equal(progressBar.style.transform, "scaleX(0.85)");
+  context.updateProgressBar({status: "error", phase: "critique-2"});
+  assert.equal(progressBar.style.transform, "scaleX(0.75)");
   assert.match(source, /const activeCritiqueRound = isCritiquePhase\(state.phase\)\s*\? normalizeRoundNumber\(/);
 });
 

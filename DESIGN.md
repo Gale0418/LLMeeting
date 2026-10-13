@@ -73,6 +73,18 @@ components:
 
 # Design System: LLMeeting
 
+## 2026-10-14 交付體驗調整
+
+延續龍艦橋視覺，縮小裝飾場景並關閉常駐裝飾動畫。模型選擇之後直接放啟動／停止，進階設定隨後展開，讓新使用者更快找到主操作。會議紀錄採最長 72vh／760px 的獨立閱讀區；貼底時跟隨、往上閱讀時保留可見段落位置，提供跳到最新回覆與簡短輔助科技提示。未改動的回覆節點及已展開的原故障保留，互動按鈕至少 44px，輔助說明與互動控制文字至少 12px。窄側欄中英日實機排版仍需確認。
+
+## 小劇場、抽卡與吸頂進度
+
+進度航道移入既有 sticky topbar，以 38px 高度容納節點與階段標籤；標籤不依賴顏色辨識。等待發言保留已到達的階段，錯誤以當前階段與紅色邊界呈現，不標示為百分之百完成。
+
+小劇場入口是空白草稿時的漸進展開，選擇只填題目與設定。挑戰選項採單欄、44px 以上的操作面；當使用者明確換牌，才以 220ms ease-out 與每張 28ms 的間隔短暫滑入。一般進度更新、長文閱讀保持穩定。選過的挑戰與成功複製使用幾何勾記及文字回饋；prefers-reduced-motion 時不播放抽卡動畫。
+
+本輪參考 [Motion Reference](https://motion-reference.takayustudio.jp/) 的順次出場、按壓回饋，以及 [Lucian UX/UI Prompt](https://lucianlabs.dev/uxui-prompt/) 的複製成功狀態。採用互動概念，沒有安裝網站提供的套件或複製整套樣式。原生側欄渲染驗收仍待完成。
+
 ## Overview
 
 **Creative North Star: "Holographic Dragon Command Deck"**

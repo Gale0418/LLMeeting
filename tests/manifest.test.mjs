@@ -2,6 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
+test("extension descriptions resolve in all three packaged locales", async () => {
+  const manifest = JSON.parse(await readFile("manifest.json", "utf8"));
+  assert.equal(manifest.default_locale, "zh_TW");
+  assert.equal(manifest.description, "__MSG_extensionDescription__");
+  for (const locale of ["zh_TW", "en", "ja"]) {
+    const messages = JSON.parse(await readFile(`_locales/${locale}/messages.json`, "utf8"));
+    assert.ok(messages.extensionDescription.message.length > 0);
+  }
+  const packager = await readFile("scripts/package-extension.mjs", "utf8");
+  assert.match(packager, /INCLUDED_PATHS[^;]*"_locales"/);
+});
+
 test("manifest declares the side-panel MV3 extension shell", async () => {
   const manifest = JSON.parse(await readFile("manifest.json", "utf8"));
   const packageJson = JSON.parse(await readFile("package.json", "utf8"));
@@ -9,8 +21,8 @@ test("manifest declares the side-panel MV3 extension shell", async () => {
   assert.equal(manifest.name, "LLMeeting");
   assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
   assert.equal(manifest.version, packageJson.version);
-  assert.equal(manifest.version, "0.5.0");
-  assert.equal(packageJson.version, "0.5.0");
+  assert.equal(manifest.version, "0.5.1");
+  assert.equal(packageJson.version, "0.5.1");
   assert.equal(manifest.action.default_title, "LLMeeting");
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.side_panel.default_path, "src/sidepanel/index.html");

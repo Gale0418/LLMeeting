@@ -1,0 +1,30 @@
+{
+  "build": "0.5.1-driver.9",
+  "observedAt": "2026-10-14T01:19:49+08:00",
+  "metaProbe": {
+    "submitted": false,
+    "input": "⚡ Grok",
+    "actual": "⚡️ Grok",
+    "actualCodepoints": [9889, 65039, 32, 71, 114, 111, 107],
+    "originalDraftEmpty": true,
+    "restoredDraftEmpty": true,
+    "cause": "Meta Lexical adds U+FE0F after U+26A1",
+    "fixScope": "Only lightning presentation equivalence in Lexical verification"
+  },
+  "serviceStatus": {
+    "claude": "Your free messages return at 4:30 AM.",
+    "grok": "需求量高；目前使用人數較多",
+    "fix": "Classify active UI status before writing, during submission confirmation and response polling; exclude conversation and draft"
+  },
+  "verification": {
+    "testsPassed": 387,
+    "testsFailed": 0,
+    "log": "output/051-driver9-tests.txt",
+    "wholeMeetingAfterReload": "pending",
+    "codeRabbitThisTurn": "not run"
+  },
+  "package": {
+    "bytes": 2379427,
+    "sha256": "B140590D6EC4FA95CC5C3364C174614AE137CAF03C01888DB887059A2CCE14DA"
+  }
+}

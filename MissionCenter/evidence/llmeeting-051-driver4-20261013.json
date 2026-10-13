@@ -1,0 +1,52 @@
+{
+  "timestamp": "2026-10-13T17:46:38+08:00",
+  "version": "0.5.1",
+  "driver": "0.5.1-driver.4",
+  "status": "local-candidate-review-not-published",
+  "requestedBehavior": "故障停下等待人工貼上，補齊後按繼續原流程才續跑",
+  "changes": [
+    "送出失敗不再送剩餘提示；已送在途結果收回保存",
+    "讀取失敗不再進入下一輪或總結；無 provider 故障自動重送",
+    "未補齊禁止繼續、插話、總結、擷取與新會議；重置／停止可取消",
+    "人工補回不自動恢復；resume 只跑未送工作與原定輪次",
+    "首輪、互評、來源總結、裁判總結及揭曉均可修補",
+    "故障暫停與原计划重載後保留；成功裁判總結不因歷史格修補清空",
+    "五家編輯器多行寫入、Meta 選取同步、ChatGPT composer 停止鈕與整句載入錯誤辨識",
+    "缺席引用保持中性；無有效內鬼原文時不捏造揭曉證據"
+  ],
+  "verification": {
+    "tests": { "passed": 357, "failed": 0, "log": "output/051-driver4-tests.txt" },
+    "syntax": { "passed": 22, "scope": "src/scripts JS/MJS; last service-worker patch checked again" },
+    "diff": "normal git diff --check passed; Windows CRLF conversion warnings only",
+    "ui": { "evidence": "051-driver4/pause-ui.json", "widths": [320, 480], "type": "HTTP fixture using real sidepanel and service-worker; fixed data; no external AI prompts", "passed": true },
+    "editor": { "evidence": "051-driver3/live-long-write-probes.json", "providers": 5, "longMultilineMatched": true, "originalDraftRestored": true, "scope": "actual editor writes, not extension E2E" },
+    "geminiSend": { "evidence": "051-driver4/gemini-send-probe.json", "method": "single trusted UI submission", "completed": true, "stopLabel": "停止回覆", "priorMissingRoundCause": "unknown" },
+    "package": { "files": 30, "bytes": 2360247, "sha256": "1f4019cf209b1e327eb767b1362f52bc8bbd72f169e264a00175673510a62910", "crc": "passed", "scope": "manifest/src/assets", "versionAndDriverHandshake": "passed" }
+  },
+  "codeRabbit": {
+    "driver3Issues": 2,
+    "driver3Disposition": "fixed: composer-scoped stop selectors and exact renderer failure classification",
+    "driver4FirstIssues": 2,
+    "driver4FirstDisposition": "fixed: stale test version regexes and action cleanup unlocking pause controls",
+    "driver4FollowupIssues": 1,
+    "driver4FollowupDisposition": "fixed with regression: preserve successful judge summaries during historical repair at summary pause",
+    "logs": ["output/coderabbit-051-driver4.ndjson", "output/coderabbit-051-driver4-final.ndjson"],
+    "lastPatchRereviewed": false,
+    "coverageLimit": "returned review file lists do not include newly untracked meetingRecovery.js; covered by direct inspection and tests"
+  },
+  "liveRun": {
+    "question": "511 O^O",
+    "chatgpt": "first-round renderer failure text had been treated as answer; exact classifier corrected",
+    "gemini": "critique-2 missing in current visible conversation; no original answer available to paste",
+    "legacyAttachment": "v0.5.0 失落地球 screenshot is a separate earlier run",
+    "driver4Loaded": "not yet verified; manual reload requested"
+  },
+  "cleanup": { "httpWorkerStopped": true, "createdTestTabsClosed": true, "userProviderTabsClosed": false },
+  "limitations": [
+    "Driver .4 reload and real extension failure-paste-resume test still pending",
+    "Full five-provider extension flow and continuation E2E still pending",
+    "Chrome internal extensions page cannot be claimed by browser tools; no bypass attempted",
+    "Historical repair does not recompute later generated answers; existing prompt and storage budgets remain",
+    "No upload, submission, publication, commit or push in this handoff"
+  ]
+}

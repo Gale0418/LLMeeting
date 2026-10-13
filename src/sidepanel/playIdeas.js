@@ -24,7 +24,7 @@ export function playIdeas(mode, interactionStyle) {
 }
 
 export function canUsePlayIdeas(state, pending = false) {
-  return !pending && !state?.busy && state?.phase === "waiting_for_user"
+  return !pending && !state?.busy && !state?.repairPause && state?.phase === "waiting_for_user"
     && isInteractiveDebateMode(state.mode);
 }
 

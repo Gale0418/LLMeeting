@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-14T03:11:23+08:00",
+  "scope": "三種小劇場開場、27張可選轉折、互動回饋與吸頂階段進度",
+  "copyAuthor": "Antigravity Bridge Codex",
+  "copyRequest": "llmeeting-play-copy-20261014",
+  "newCards": 18,
+  "existingCards": 9,
+  "scenes": 3,
+  "verification": {"tests": 436, "passed": 436, "syntax": "pass", "diffCheck": "pass", "zipCrc": "pass", "lexicalRenderGaps": 0},
+  "safetyAndBehavior": ["不覆蓋已有草稿或進行中的會議", "場景開啟劇場與共識接龍及互動控制台，不自動送出", "不修改人設", "抽卡只換選項、選卡只追加草稿", "busy／故障暫停／stale session 不接受選卡", "抓內鬼卡只討論公開證據", "語言及進度更新不偷抽新牌", "卡池限本側欄視窗，不新增持久儲存", "減少動態設定停用抽卡動畫", "等待和故障保留階段，錯誤不計完成100%"],
+  "references": [
+    {"url": "https://motion-reference.takayustudio.jp/", "readVia": "Chrome browser", "used": "順次出場與按壓回饋概念"},
+    {"url": "https://lucianlabs.dev/uxui-prompt/", "readVia": "Chrome browser", "used": "008複製成功回饋概念"}
+  ],
+  "package": {"bytes": 2631155, "sha256": "C49AAF743DA076702D173494D54666B45AB739A5053965A3F539C1CDBB37F4E2"},
+  "pending": ["原生側欄320/480px三語、吸頂與減少動效實機", "AI實際遵循場景與挑戰的互動試玩", "既有整場門檻"],
+  "published": false
+}

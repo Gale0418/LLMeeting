@@ -1,0 +1,8 @@
+{
+  "method": "HTTP fixture with real sidepanel and service-worker; fixed replies; no external AI prompts",
+  "manualPasteClicked": true,
+  "continueButtonClicked": false,
+  "completedAutomatically": true,
+  "status": "done",
+  "width": 480
+}

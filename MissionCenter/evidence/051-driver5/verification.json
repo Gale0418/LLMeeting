@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-10-13T18:40:06+08:00",
+  "version": "0.5.1",
+  "driver": "0.5.1-driver.5",
+  "userRequirement": "故障保持暫停；最後一段人工補齊後自動接續，不需再按繼續",
+  "tests": { "passed": 362, "failed": 0, "log": "output/051-driver5-tests.txt" },
+  "syntax": "22 src/scripts JS/MJS passed; final prompts patch checked again",
+  "diff": "passed",
+  "coverage": ["多缺段補一段仍等待", "補最後段自動續跑", "首輪、互評、來源總結、匿名裁判、揭曉", "不重送成功或已修補段落", "舊版已補齊暫停在重載恢復時自動續跑", "停止或清空暫停後不能復活", "讀取狀態不覆寫較新完成結果"],
+  "ui": { "proof": "auto-resume-ui.json", "screenshot": "auto-resume-480.jpg", "method": "HTTP fixture with real styles, sidepanel and worker; fixed replies; no external AI calls", "completedAfterPaste": true, "continueButtonClicked": false },
+  "codeRabbit": { "firstIssues": 2, "firstDisposition": "fixed: entry cancellation guard; recovery execution moved out of state getter; malformed recovery validation fails closed", "followupIssues": 1, "followupDisposition": "fixed with regression: nickname-only anonymous response is not a peer contribution", "lastSmallPatchRereviewed": false, "logs": ["output/coderabbit-051-driver5.ndjson", "output/coderabbit-051-driver5-final.ndjson"] },
+  "package": { "files": 30, "bytes": 2362744, "sha256": "fa90141889159660ef066a263dc648ac096c7c923e3594cffb57c390ff8b43bc", "crc": "pass", "scope": "manifest/src/assets", "versionAndBothDriverConstants": "pass" },
+  "userScreenshot": "D:/Downloads/2026-10-13 18 26 22.png shows v0.5.1 repaired reply and waiting-for-manual-continue message from previous candidate",
+  "liveDriver5Loaded": false,
+  "cleanup": "Both task HTTP workers stopped and created browser tabs closed; user meeting preserved",
+  "status": "Review; real extension auto-resume awaits reload; not uploaded or published"
+}

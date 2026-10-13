@@ -46,6 +46,98 @@ test("critique prompt labels the other speakers and treats quoted content as non
   assert.doesNotMatch(prompt, /ChatGPT:\n是散射。/);
 });
 
+test("interaction prompts replace failed replies with neutral absence notices", () => {
+  const prompt = buildInteractionPrompt({
+    recipient: "chatgpt",
+    activeProviders: ["chatgpt", "gemini", "grok"],
+    answers: {
+      gemini: "[錯誤：[送出提示] AI 輸入框寫入驗證失敗]",
+      grok: "[服務狀態：額度已用完]\n網頁原文：private service detail",
+    },
+  });
+
+  assert.match(prompt, /Gemini:\n\[該 AI 本輪未能提供有效發言/);
+  assert.match(prompt, /Grok:\n\[該 AI 本輪未能提供有效發言/);
+  assert.doesNotMatch(prompt, /輸入框寫入驗證失敗|額度已用完|private service detail/);
+  assert.match(prompt, /請勿推測缺席原因、要求其補答或攻擊缺席者/);
+});
+
+test("all failed anonymous replies are represented as absence and not as model content", () => {
+  const prompt = buildInteractionPrompt({
+    recipient: "chatgpt",
+    activeProviders: ["chatgpt", "gemini"],
+    answers: { gemini: "[錯誤：timeout]" },
+    speakerLabels: { gemini: "星星果凍" },
+    anonymizeSpeakers: true,
+  });
+
+  assert.match(prompt, /星星果凍:\n\[該 AI 本輪未能提供有效發言/);
+  assert.doesNotMatch(prompt, /timeout|Gemini:/);
+});
+
+test("brawl targets only providers with a valid reply when one participant is absent", () => {
+  const prompt = buildInteractionPrompt({
+    recipient: "gemini",
+    interactionStyle: "brawl",
+    activeProviders: ["chatgpt", "gemini", "grok"],
+    answers: {
+      chatgpt: "有效的 ChatGPT 觀點",
+      grok: "[錯誤：timeout]",
+    },
+  });
+
+  assert.match(prompt, /這是無差別格鬥！請猛烈攻擊 ChatGPT 的發言。/);
+  assert.doesNotMatch(prompt, /請猛烈攻擊[^\n]*Grok/);
+  assert.match(prompt, /Grok:\n\[該 AI 本輪未能提供有效發言/);
+});
+
+test("brawl with no available peer reply asks for context or uncertainty without inventing a target", () => {
+  const prompt = buildInteractionPrompt({
+    recipient: "gemini",
+    interactionStyle: "brawl",
+    activeProviders: ["chatgpt", "gemini", "grok"],
+    answers: {
+      chatgpt: "[服務狀態：unavailable]",
+      grok: "   ",
+    },
+  });
+
+  assert.match(prompt, /目前沒有其他 AI 的有效發言可回應/);
+  assert.match(prompt, /延續你前面已說的內容，或明確指出資料不足/);
+  assert.match(prompt, /不要猜測故障原因、要求缺席者補答、攻擊缺席者或捏造他人立場/);
+  assert.doesNotMatch(prompt, /無差別格鬥！請猛烈攻擊/);
+});
+
+test("an anonymous nickname without a reply does not create a target for interaction", () => {
+  const prompt = buildInteractionPrompt({ recipient: "gemini", interactionStyle: "brawl",
+    activeProviders: ["chatgpt", "gemini"], anonymizeSpeakers: true,
+    speakerLabels: { chatgpt: "小羊", gemini: "果凍" }, answers: { chatgpt: "暱稱：小羊" } });
+  assert.match(prompt, /目前沒有其他 AI 的有效發言可回應/);
+  assert.doesNotMatch(prompt, /無差別格鬥！請猛烈攻擊/);
+});
+
+test("final summary excludes failed opening and critique content while retaining valid voices", () => {
+  const prompt = buildFinalSummaryPrompt({
+    originalQuestion: "比較回答",
+    activeProviders: ["chatgpt", "gemini", "grok"],
+    answers: {
+      chatgpt: "有效回答",
+      gemini: "[服務狀態：Gemini 無法連線]\n系統細節",
+      grok: "[錯誤：timeout]",
+    },
+    critiqueRounds: [{
+      chatgpt: "有效互評",
+      gemini: "[錯誤：[送出提示] AI 輸入框寫入驗證失敗]",
+      grok: "[服務狀態：quota]",
+    }],
+  });
+
+  assert.match(prompt, /ChatGPT:\n有效回答/);
+  assert.match(prompt, /Gemini:\n\[該 AI 本輪未能提供有效發言/);
+  assert.match(prompt, /沒有可供評估的立場/);
+  assert.doesNotMatch(prompt, /Gemini 無法連線|系統細節|timeout|輸入框寫入驗證失敗|quota/);
+});
+
 test("interaction prompt clips quoted model output to a bounded context budget", () => {
   const longAnswer = "很長的回答".repeat(5000);
   const prompt = buildInteractionPrompt({

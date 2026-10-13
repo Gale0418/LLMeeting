@@ -8,5 +8,7 @@ export function isCritiquePhase(phase) {
 
 export function shouldShowChatControls(mode, state) {
   return isInteractiveDebateMode(mode)
+    || (state?.phase === "waiting_for_user" && Boolean(state.repairPause))
+    || (state?.phase === "waiting_for_user" && state.manuallyRecovered === true)
     || (state?.phase === "waiting_for_user" && isInteractiveDebateMode(state.mode));
 }

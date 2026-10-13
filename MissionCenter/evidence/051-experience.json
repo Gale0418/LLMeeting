@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-10-14T02:36:14+08:00",
+  "scope": "保留龍艦橋品牌與既有會議流程，改善主操作、長會議閱讀、三語及鍵盤體驗",
+  "changes": ["主操作移至模型選擇之後", "龍場景縮小及常駐裝飾動畫關閉", "44px互動按鈕與12px輔助文字", "未變更回覆節點保留", "可見段落錨點與貼底跟隨", "跳至最新回覆與短live提示", "原故障展開保留", "重置與清除確認視窗三語化"],
+  "copyAuthor": "Antigravity Bridge Codex",
+  "copyRequest": "llmeeting-experience-copy-20261014",
+  "verification": {"tests": 417, "passed": 417, "readerTests": 10, "syntax": "pass", "diffCheck": "pass", "zipCrc": "pass", "lexicalRenderGaps": 0},
+  "package": {"bytes": 2576237, "sha256": "1D845C78C2D02E88A6CFD6C17B868CBB35797BDF575FD3D0C4443DAC23E5A43E"},
+  "limits": ["瀏覽器工具沒有可控的LLMeeting原生側欄分頁，本輪無渲染截圖驗收", "仍需重載後驗證320/480px三語排版、鍵盤及真實長會議", "未重跑CodeRabbit", "本地測試不等於網站改版後永久可靠"],
+  "published": false
+}

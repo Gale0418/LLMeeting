@@ -1,47 +1,88 @@
-# LLMeeting
+# LLMeeting 商店文案
 
-版本：**0.5.0 發布候選文案**（尚未發布；需先完成整場實機驗收）。2026-10-02 查核商店公開頁面仍顯示 0.4.7；本文件不代表公開文案已更新。
+本地 0.5.1 候選版文案，尚未公開發布。2026-10-14 本次讀到的[商店公開頁面](https://chromewebstore.google.com/detail/llmeeting/cjombmcmgifhanenolhaeepbpnlchjdp)仍顯示 0.4.7；本文件與新介面不代表商店已更新。完成候選版實機驗收後，再由開發者更新商店。
 
-## 繁體中文短說明
+三語文案由 Antigravity Bridge Codex 編寫，整合時核對操作、成本與資料流。以下文字供 0.5.1 候選版使用。
 
-一個問題，多個 AI 觀點。在 Chrome 側欄收集回答、交叉互評，整理共識與分歧。
+## 繁體中文
 
-## 繁體中文詳細說明
+### 短說明
 
-不用再把同一題貼到好幾個聊天視窗。LLMeeting 協調你已登入的 ChatGPT、Gemini、Grok、Claude，以及可選的 Meta AI Beta，讓你在同一份會議紀錄比較各家回答。
+同一問題集中掌握各家AI觀點！上下串接多輪討論，免費使用擴充功能（需登入至少2家AI網站）。
 
-想比較方案？用快速鬥技場收集回答、互評與總結。想邊聊邊改方向？用自由群聊插話。想找創作靈感？用劇場大亂鬥設定人設。也能從目前 AI 分頁的對話開始總結辯論。
+### 詳細說明
 
-第一次使用，先登入至少兩家 AI，在側欄點亮參與模型、輸入問題，再開始快速鬥技場。手動檢查連線可選；一般會議預設開新對話分頁，啟動時仍會檢查必要模型。
+【同一個問題，集中看各家觀點】
+想知道不同 AI 對同一件事有何看法？LLMeeting 讓你在單一畫面中，依序瀏覽各 AI 的逐段發言，激盪更多思考面向。
 
-所有會議功能免費開放，AI 帳號與訂閱需自行準備。各服務的用量、等待時間與地區限制仍適用；AI 互評不保證正確，重要事實請自行查證。匿名評論僅將會議引用中的參與者化名，不會隱藏你對 AI 服務的帳號身分。
+【3 步輕鬆開始】
+1. 在瀏覽器登入至少 2 家想用的 AI 網站（如 ChatGPT、Claude、Gemini；Meta AI Beta 預設關閉，可手動開啟）。
+2. 點擊側欄圖示，勾選想參與討論的 AI 夥伴。
+3. 送出問題，檢視依序串接的多輪對話。
 
-對話由你的瀏覽器協調，不會傳到 LLMeeting 開發者伺服器；問題與引用回覆仍會送到所選 AI 網站。最新一場會議最長在本機保留 24 小時，可隨時清除。
+【計費與用量說明】
+• LLMeeting 擴充功能本身免費使用。
+• 各 AI 的帳號訂閱、地區限制與額度依各家服務各自計算。
+• AI 消耗額度取決於您各自在各 AI 平台的方案。討論輪數與啟用的 AI 數量越多，通常使用量也越多，不保證固定消耗比例。
 
-## Short description
+【隱私與事實查核】
+• 您的聊天內容絕不傳送至 LLMeeting 開發者伺服器，對話紀錄僅於本機保留最多 24 小時。
+• 注意：發出的問題與引用回覆仍會送到所選 AI 網站進行處理。
+• AI 生成內容可能含有偏誤，重要資訊仍請自行進行事實查核。
+• 會議中的「匿名」僅為討論化名，不會隱藏你對 AI 服務的帳號身分。
 
-Compare AI answers, cross-critiques, and summaries in your Chrome side panel.
+## English
 
-## Detailed description
+### 短說明
 
-LLMeeting helps you run an interactive debate across AI web apps you are already signed in to. Open the side panel, choose participants, enter a question, and let the extension coordinate answers, cross-critiques, optional user interjections, and a final chair summary.
+Compare multiple AI views in one feed. Round-by-round discussion. Free tool (login 2+ AIs).
 
-Core features:
+### 詳細說明
 
-- Fast arena debate with ChatGPT, Gemini, Grok, and Claude.
-- Optional Meta AI Beta participation; it stays disabled by default because availability and page structure may vary by account or region.
-- One to five cross-critique rounds.
-- Serious critique, casual chat, brawl, Yes-and, and imposter interaction styles.
-- Judge summary, observer chair, anonymous review, and all-anonymous judgments from every participant.
-- Chat and theater modes with user interjections and custom personas; all modes are available without an upgrade.
-- Bubble-style transcript and provider diagnostics.
-- Fast arena scheduling.
-- Summarize the current AI conversation and send it to the other providers.
-- Local storage for the latest session only, with a 24-hour retention limit and an explicit clear-data control.
+[Explore Diverse AI Perspectives in One Unified View]
+Curious how different AI models approach the same prompt? LLMeeting sequences responses into a clean, round-by-round discussion feed so you can easily discover broader insights.
 
-All LLMeeting meeting features are free. AI accounts, subscriptions, quotas, and regional restrictions remain separate. Cross-critiques do not guarantee accuracy. Anonymous modes use aliases in meeting quotations, not anonymous accounts at the AI services.
+[Get Started in 3 Simple Steps]
+1. Log in to at least two supported AI services in your browser (e.g., ChatGPT, Claude, Gemini; Meta AI Beta is off by default).
+2. Open LLMeeting in the Chrome side panel and select which active models you want to join the chat.
+3. Send your prompt and review the sequential discussion.
 
-LLMeeting does not send chat content to an LLMeeting developer server. Prompts and quoted AI replies are submitted only to the AI websites selected by the user and are processed under those providers' own terms and privacy policies.
+[Pricing & Quota]
+• LLMeeting extension features are free to use.
+• AI accounts, subscriptions, quotas, and regional restrictions remain separate.
+• Token/quota consumption relies entirely on your accounts with each AI provider. More rounds and more active AIs generally consume more quota, though not at a fixed ratio.
+
+[Privacy & Verification]
+• Chat content is never sent to LLMeeting developer servers, and history is kept locally for up to 24 hours.
+• Note: Prompts and referenced replies are still sent directly to your chosen AI websites.
+• Always verify critical facts, as AI outputs may contain inaccuracies.
+• Anonymous modes use aliases in meeting quotations, not anonymous accounts at the AI services.
+
+## 日本語
+
+### 短說明
+
+ひとつの問いで複数AIの視点を一括確認。段落順で多角的に深掘り。拡張機能は無料（2つ以上のAIログインが必要）。
+
+### 詳細說明
+
+【ひとつの問いから、各AIの視点を一括確認】
+同じテーマでもAIごとに着眼点は異なります。LLMeetingは各AIの発言を段落順に整理し、ひとつの画面で多角的な視点を素早く把握できます。
+
+【かんたん3ステップ】
+1. 利用したいAIサービスを2つ以上ブラウザでログイン（ChatGPT、Claude、Geminiなど。Meta AI Betaは初期設定でオフ）。
+2. サイドパネルを開き、参加させたいAIモデルを選択。
+3. 質問を送信し、順番に展開される議論を確認。
+
+【料金と利用枠について】
+• LLMeeting拡張機能自体の機能は無料で利用可能です。
+• 利用枠は各AIサービスのアカウントプランに準じます。やりとりのターン数や参加AI数が多いほど通常は消費量が増加しますが、固定比率ではありません。
+
+【プライバシーと事実確認】
+• チャット内容がLLMeeting開発者サーバーへ送信されることはなく、履歴は端末ローカルに最大24時間のみ保持されます。
+• ただし、入力した質問や引用された発言は選択した各AIサイトへ送信されます。
+• AIの回答には誤りが含まれる可能性があるため、重要事項は必ずご自身で事実確認を行ってください。
+• 会議内の「匿名」は表示用のニックネームです。
 
 ## Test instructions
 
@@ -57,7 +98,7 @@ LLMeeting does not send chat content to an LLMeeting developer server. Prompts a
 ## Permissions rationale
 
 - `sidePanel`: show the LLMeeting control panel.
-- `storage`: keep the latest local debate state for up to 24 hours and remember the local 🐑 mode easter egg preference.
+- `storage`: keep the latest local debate state for up to 24 hours and remember provider selections, UI language, and the local 🐑 mode easter egg preference.
 - `tabs`: list provider tabs for an explicit connection choice, or open fresh provider tabs when none is selected.
 - `scripting`: reinject the content script when a provider page is already open.
 - Host permissions for ChatGPT, Gemini, Grok, X Grok, Claude, and Meta AI: automate prompt entry and read replies only on explicitly supported AI web apps. Meta AI remains opt-in in the side panel.

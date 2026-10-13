@@ -37,6 +37,7 @@ function resetHarness({ confirm = true, sendMessage = async () => ({ ok: true, s
   let sends = 0;
   const context = {
     resetButton: { disabled: false }, resetActionPending: false, latestState: { question: "keep" }, hasMeetingContent,
+    uiText: (value) => value,
     confirm: () => confirm, chrome: { runtime: { sendMessage: (...args) => { sends++; return sendMessage(...args); } } },
     renderMessage: (message) => messages.push(message), renderState() {},
   };
@@ -78,7 +79,7 @@ test("recovery links use local Provider URLs, not returned diagnostic URLs or HT
   const createElement = () => ({ children: [], append(...items) { this.children.push(...items); } });
   const container = { children: [], replaceChildren() { this.children = []; }, append(item) { this.children.push(item); } };
   const context = {
-    providerRecovery: container, PROVIDERS, selectedProviderIds: () => ["gemini"], readinessRecovery,
+    providerRecovery: container, PROVIDERS, selectedProviderIds: () => ["gemini"], readinessRecovery, uiText: value => value,
     latestReadiness: { gemini: { ready: false, code: "LOGIN_REQUIRED", url: "javascript:alert(1)" }, meta: { ready: false, code: "TIMEOUT" } },
     readinessFailureLabel: () => "需要登入", document: { createElement },
   };

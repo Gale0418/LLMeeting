@@ -34,12 +34,14 @@ test("store listing prep documents privacy, permissions, and screenshots", async
   assert.match(privacy, /Meta AI/);
   assert.match(privacy, /24 hours|24 小時/);
   assert.match(listing, /Meta AI Beta/);
-  assert.match(listing, /all modes are available without an upgrade/);
+  assert.match(listing, /LLMeeting extension features are free to use/);
   assert.doesNotMatch(listing, /Pro chat and theater modes/);
   assert.match(listing, /initial prompt and two critique prompts/);
   assert.match(listing, /全員匿名 sends it to every participant independently/);
   assert.match(listing, /🐑 mode easter egg/);
   assert.match(listing, /清除紀錄/);
-  assert.match(privacy, /Last updated: 2026-07-17/);
+  assert.match(privacy, /Last updated: 2026-10-14/);
+  assert.match(privacy, /provider selection and UI language preference/);
+  assert.match(privacy, /preferences persist independently of the debate content expiry/);
   assert.match(screenshots, /Chrome Web Store/);
 });

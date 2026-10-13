@@ -1,0 +1,26 @@
+{
+  "build": "0.5.1-driver.10",
+  "implemented": [
+    "Fault cards offer manual reply or departure",
+    "Departure applies to this meeting and survives reload; new meetings reset it",
+    "Preserve previous replies and faults; exclude departed providers from pending repairs and future jobs",
+    "Resume original workflow only after other faults are resolved",
+    "Replace a departed chair with a remaining participant",
+    "Safely finish if fewer than two remain or the source-summary provider departs",
+    "Reject stale, duplicate or busy departure requests; retain imposter identity"
+  ],
+  "verification": {
+    "fullSuitePassed": 395,
+    "fullSuiteFailed": 0,
+    "fullSuiteLog": "output/051-driver10-tests.txt",
+    "lastUiTestsPassed": 20,
+    "syntax": "changed modules passed",
+    "diffCheck": "passed",
+    "nativeSidepanelClick": "pending user reload",
+    "codeRabbitThisTurn": "not run"
+  },
+  "package": {
+    "bytes": 2392018,
+    "sha256": "C87063E1EA67938D37AD761F290B8B86A13B3C47AFF9BB70CB33F565E3BC6AF5"
+  }
+}

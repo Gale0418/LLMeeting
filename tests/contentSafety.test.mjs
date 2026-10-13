@@ -54,14 +54,14 @@ test("Meta Lexical input writing uses serialized execCommand without events or D
   assert.match(metaWrite, /await waitForInputWritten\(element, serializedText, INPUT_WRITE_TIMEOUT_MS, abortCheck\)/);
   assert.doesNotMatch(inputWait, /dispatchEvent|execCommand|textContent\s*=/);
   assert.match(script, /const INPUT_WRITE_TIMEOUT_MS = 2000/);
-  assert.match(inputWait, /while \(true\) \{[\s\S]*?isPromptStillPresent\(element, expected\)[\s\S]*?throw createInputWriteError\(\)/);
+  assert.match(inputWait, /while \(true\) \{[\s\S]*?isPromptStillPresent\(element, expected\)[\s\S]*?createInputWriteError\("verification-timeout"\)[\s\S]*?throw error/);
 });
 
 test("content script keeps Enter fallback without a global generic submit selector", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
   const adapters = await readFile("src/content/provider-adapters.js", "utf8");
 
-  assert.match(script, /dispatchEnter\(input\)/);
+  assert.match(script, /dispatchEnter\(actionInput\)/);
   assert.doesNotMatch(adapters, /button\[type='submit'\]/);
   assert.match(script, /findLikelySendButton\(findComposerScope\(input, config\)\)/);
 });
@@ -71,7 +71,7 @@ test("content script does not accept the submitted prompt bubble as an AI respon
 
   assert.match(script, /!isPromptEcho\(prompt, currentText\)/);
   assert.match(script, /baseline,\s+errorBaseline,\s+prompt: message\.prompt/);
-  assert.match(script, /waitForCompletion\(config, providerId, message\.timeoutMs \|\| 120000, run\.baseline, run\.prompt, run\.errorBaseline, \(\) => assertAutomationEpoch\(runEpoch\), run\.userTurnCount\)/);
+  assert.match(script, /waitForCompletion\(config, providerId, message\.timeoutMs \|\| 120000, run\.baseline, run\.prompt, run\.errorBaseline, \(\) => assertAutomationEpoch\(runEpoch\), run\.userTurnCount,\s*\{ pollBudgetMs: message\.pollBudgetMs, state: run\.responseState \}\)/);
 });
 
 test("content script uses inactivity timeout with a bounded completion hard cap", async () => {

@@ -1,0 +1,20 @@
+{
+  "timestamp": "2026-10-14T02:24:45+08:00",
+  "feature": "繁體中文、English、日本語介面切換與本機偏好保存",
+  "copyAuthor": "Antigravity Bridge Codex / gemini-3.8-flash-high",
+  "copyRecords": 443,
+  "copyRequests": ["llmeeting-i18n-20261014-0131", "llmeeting-i18n-copy404-20261014-0200", "llmeeting-i18n-extra16-20261014-0210", "llmeeting-i18n-gaps-20261014-0224"],
+  "verification": {
+    "tests": {"total": 407, "passed": 407},
+    "placeholderSets": "三語各筆與原文一致",
+    "renderGapScan": 0,
+    "gapScanLimit": "詞法掃描只涵蓋可辨識UI節點，不構成所有流程實機證明",
+    "syntax": "通過",
+    "zipCrc": "通過",
+    "packagedLocales": ["zh_TW", "en", "ja"]
+  },
+  "preserved": ["使用者草稿", "編輯過的人設", "AI回覆", "匿名暱稱", "原始故障", "既有Driver.10行為"],
+  "package": {"path": "dist/llmeeting-0.5.1.zip", "bytes": 2568139, "sha256": "741504BDC6D0295FFCBA3F065D5E794220999217FFEC48949C25DE98DB960EA5"},
+  "pending": ["原生側欄英文日文窄寬排版實機確認", "既有整場與離席功能實機門檻"],
+  "published": false
+}

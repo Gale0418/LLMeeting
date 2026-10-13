@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-10-14T02:49:28+08:00",
+  "scope": "改善程式入口的利益表達、新手示範、推薦入口與三語對外草稿",
+  "changes": ["三種只填空白草稿的示範題", "不包含會議內容的推薦文字與手動複製退路", "中英日商店文案及推薦素材", "README開發紀錄漸進揭露", "移除README的真理／客觀保證及必有內鬼說法"],
+  "copyAuthor": "Antigravity Bridge Codex；Codex依實際資料流與操作核對、整合",
+  "copyRequests": ["llmeeting-marketing-copy-20261014", "llmeeting-marketing-copy-facts-20261014"],
+  "copyReview": ["拒絕不經第三方伺服器與註冊不要的誤導", "移除不存在的手動化名設定步驟", "不將上下排列的紀錄描述為多欄並列", "本機紀錄保留限定最多24h，AI費用額度另計"],
+  "publicStore": {"url": "https://chromewebstore.google.com/detail/llmeeting/cjombmcmgifhanenolhaeepbpnlchjdp", "observedVersion": "0.4.7", "oldClaims": ["徹底過濾幻覺", "確保產出最優解"], "changed": false},
+  "verification": {"tests": 421, "passed": 421, "recommendationTests": 4, "syntax": "pass", "diffCheck": "pass", "zipCrc": "pass", "lexicalRenderGaps": 0},
+  "package": {"bytes": 2590677, "sha256": "C29C22778FD39C0FDD102EF86687083652A3AEB2F9387F77BF059FBC5B36A323"},
+  "pending": ["重載後原生側欄三語排版與實際剪貼簿驗收", "新版整場實機門檻", "真實示範截圖", "發布後才可宣稱新功能已公開"],
+  "published": false
+}
