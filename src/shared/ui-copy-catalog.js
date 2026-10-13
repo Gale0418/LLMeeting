@@ -3586,4 +3586,26 @@ export const UI_COPY = [
     "en": "Compare an earlier suggestion with a later revision, highlighting objective shifts in feasibility. Avoid labeling or guessing hidden roles.",
     "ja": "以前の提案と修正案を並べ、実現可能性の客観的な変化を分析して。誰かの隠しキャラを決めつけたり推測するのは禁止です。"
   }
+,
+{
+  "id": "background.circuit",
+  "source": "背景電路",
+  "zh_TW": "背景電路",
+  "en": "Circuit Glow",
+  "ja": "サイバー回路"
+},
+{
+  "id": "background.motion",
+  "source": "電流動畫",
+  "zh_TW": "電流動畫",
+  "en": "Pulse Sparks",
+  "ja": "パルスアニメ"
+},
+{
+  "id": "background.effects",
+  "source": "背景效果",
+  "zh_TW": "背景效果",
+  "en": "Backdrop Effects",
+  "ja": "背景エフェクト"
+}
 ];

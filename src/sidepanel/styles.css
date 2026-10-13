@@ -882,9 +882,48 @@ body::before {
 }
 
 .shell {
+  position: relative;
+  isolation: isolate;
   max-width: 480px;
   gap: 10px;
 }
+
+.circuit-backdrop {
+  position: fixed;
+  z-index: 0;
+  inset: 0 auto auto 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}
+
+.circuit-base,
+.circuit-current,
+.circuit-details > * {
+  fill: none;
+  stroke: rgba(50, 130, 164, .26);
+  stroke-width: 1.1;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+
+.circuit-current {
+  stroke: rgba(98, 224, 249, .7);
+  stroke-width: 1.35;
+  stroke-dasharray: 0 62 4 260;
+  stroke-dashoffset: 0;
+  animation: circuitCurrent 34s linear infinite;
+}
+
+.circuit-current:nth-of-type(2n) { animation-duration: 41s; }
+.circuit-current:nth-of-type(3n) { animation-duration: 47s; }
+.circuit-current:nth-of-type(4n) { animation-delay: -16s; }
+.circuit-details > * { stroke: rgba(57, 133, 164, .23); stroke-width: .9; }
+.circuit-details circle { fill: rgba(75, 176, 204, .3); stroke: none; }
+.shell[data-circuit-background="off"] .circuit-backdrop { display: none; }
+.shell[data-circuit-motion="off"] .circuit-current,
+.shell[data-page-hidden="true"] .circuit-current { animation-play-state: paused; }
 
 .glass-surface {
   position: relative;
@@ -977,6 +1016,8 @@ body::before {
 }
 
 .main-content {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -986,7 +1027,7 @@ body::before {
 .command-stage {
   position: relative;
   isolation: isolate;
-  min-height: clamp(104px, 28vw, 140px);
+  min-height: clamp(170px, 47vw, 225px);
   overflow: hidden;
   border: 1px solid rgba(98, 204, 239, .28);
   border-radius: 16px;
@@ -1033,13 +1074,43 @@ body::before {
 .dragon-hologram {
   position: absolute;
   z-index: 2;
-  inset: 8px 7% 18px;
+  inset: 8px 5% 18px;
   background: url('../../assets/images/dragon-bg.png') center bottom / contain no-repeat;
   filter: none;
   opacity: 1;
   mix-blend-mode: normal;
   animation: none;
 }
+
+.circuit-controls {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.circuit-controls label {
+  display: flex;
+  flex: 1 1 130px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid rgba(96, 180, 211, .16);
+  border-radius: 8px;
+  background: rgba(3, 13, 21, .62);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.circuit-controls input { accent-color: var(--cyan); }
+.circuit-controls input:disabled { cursor: not-allowed; }
+.circuit-controls label:focus-within { outline: 2px solid var(--cyan); outline-offset: 2px; }
 
 .holo-projector {
   position: absolute;
@@ -1605,6 +1676,10 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.98); }
   100% { transform: translateX(125%); opacity: 0; }
 }
 
+@keyframes circuitCurrent {
+  to { stroke-dashoffset: -326px; }
+}
+
 @keyframes hologramBreath {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-2px); }
@@ -1629,7 +1704,7 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.98); }
 @media (max-width: 360px) {
   body { padding: 7px; }
   .topbar { top: 4px; }
-  .command-stage { min-height: 104px; }
+  .command-stage { min-height: 158px; }
   .composer, .output { padding: 11px; }
   .mode-options { grid-template-columns: 1fr; }
   .provider-console { gap: 3px; padding-inline: 5px; }
@@ -1651,6 +1726,7 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.98); }
     transition-duration: .001ms !important;
   }
   .dragon-hologram { transform: none; }
+  .circuit-current { animation: none !important; }
 }
 
 .language-picker {

@@ -1,0 +1,77 @@
+{
+  "timestamp": "2026-10-14T07:36:49+08:00",
+  "driver": "0.5.1-driver.11",
+  "debugFile": "llmeeting-debug-2026-10-13T23-24-22-678Z.json",
+  "faults": [
+    {
+      "phase": "critique",
+      "code": "PROVIDER_INPUT_WRITE_FAILED",
+      "extraChars": 197,
+      "extraLines": 197
+    },
+    {
+      "phase": "critique-2",
+      "code": "PROVIDER_INPUT_WRITE_FAILED",
+      "extraChars": 167,
+      "extraLines": 167
+    },
+    {
+      "phase": "summary",
+      "code": "PROVIDER_INPUT_WRITE_FAILED",
+      "extraChars": 496,
+      "extraLines": 496
+    }
+  ],
+  "rootCause": "ChatGPT的ProseMirror替色碼加inline-markdown及空色塊，行尾另有無src的caret separator；舊段落重建器拒絕節點，innerText的視覺段落空白被誤當提示差異。",
+  "liveEvidence": {
+    "editor": "DIV.ProseMirror[data-composer-markdown]",
+    "longProbe": {
+      "expectedLength": 5312,
+      "actualLength": 5481,
+      "expectedLines": 134,
+      "actualLines": 303,
+      "inlineColorWrapper": true
+    },
+    "finalProbe": {
+      "expectedLength": 32,
+      "actualLength": 38,
+      "colorSwatches": 1,
+      "caretSeparators": 1,
+      "sourceExactlyReconstructed": true
+    },
+    "noFullExtensionSubmitAcceptance": true,
+    "draftCleared": true,
+    "testIncident": "逐字輸入測試的Enter曾誤送一則LLMeeting寫入驗證；已向使用者說明並停止該方法，其餘探測僅寫草稿且清空。"
+  },
+  "verification": {
+    "tests": 443,
+    "passed": 443,
+    "syntax": "pass",
+    "diffCheck": "pass",
+    "zipCrc": "pass",
+    "regressionBeforeFix": "color-span及caret-separator回歸各確認失敗",
+    "invalidContentStillRejected": "異色色塊、非空widget、未知子節點、帶src圖片、附件alt、缺字及空白行差異"
+  },
+  "background": {
+    "paths": 6,
+    "baseAndPulseShared": true,
+    "viewportFixed": true,
+    "dragonHeight": "clamp(170px,47vw,225px)，窄側欄158px",
+    "controls": "44px targets；背景及動畫分開保存",
+    "reducedMotion": "stop",
+    "hiddenPage": "pause",
+    "copyAuthor": "Antigravity Bridge Codex",
+    "copyRequest": "llmeeting-circuit-copy-20261014",
+    "performanceMeasured": false
+  },
+  "package": {
+    "bytes": 2642054,
+    "sha256": "EED0D54EA1AF55847C9CEEAD1398D00E52CC497B7BB9487A07FF614209CE4B3A"
+  },
+  "codeRabbit": "本輪未重跑；前次審查不代表本次新增變更已審查",
+  "pending": [
+    "重新載入Driver .11後，含色碼長提示的整場實機",
+    "原生側欄320/480px三語背景、龍尺寸、動態開關及減少動效確認"
+  ],
+  "storePublished": false
+}

@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = "0.5.1-driver.10";
+  const CONTENT_SCRIPT_VERSION = "0.5.1-driver.11";
   const {
     assistantSnapshot,
     classifyProviderResponseError,
@@ -1061,6 +1061,20 @@
           const isPlaceholder = index === nodes.length - 1 &&
             node.classList?.contains("ProseMirror-trailingBreak");
           if (!isPlaceholder) line += "\n";
+        } else if (node.tagName === "SPAN" && node.classList?.contains("inline-markdown") &&
+            Array.from(node.childNodes || []).every((child) => child.nodeType === 3)) {
+          // ChatGPT wraps literal hex colors in inline-markdown text spans.
+          // Preserve every character; this is not Markdown rendering reversal.
+          line += Array.from(node.childNodes || []).map((child) => child.textContent || "").join("");
+        } else if (isMatchingColorSwatch(node, line)) {
+          // The adjacent empty, hidden ProseMirror color preview is decoration.
+        } else if (node.tagName === "IMG" && node.classList?.contains("ProseMirror-separator") &&
+            node.getAttribute?.("alt") === "" && node.getAttribute?.("src") === null &&
+            Array.from(node.childNodes || []).length === 0 && index === nodes.length - 2 &&
+            isMatchingColorSwatch(nodes[index - 1] || {}, line) && nodes[index + 1]?.tagName === "BR" &&
+            nodes[index + 1].classList?.contains("ProseMirror-trailingBreak")) {
+          // ProseMirror adds this source-less caret separator only at line-end
+          // color widgets. Images with a URL or outside this exact shape fail.
         } else {
           // Fail closed for formatting, attachments and future editor widgets.
           // Never silently omit unknown content or collapse source whitespace.
@@ -1070,6 +1084,14 @@
       lines.push(line);
     }
     return lines.join("\n");
+  }
+
+  function isMatchingColorSwatch(node, sourceBefore) {
+    const color = node.getAttribute?.("data-hex-color-swatch");
+    return node.tagName === "SPAN" && node.classList?.contains("ProseMirror-widget") &&
+      node.getAttribute?.("aria-hidden") === "true" && node.getAttribute?.("contenteditable") === "false" &&
+      /^#[0-9a-f]{6}$/i.test(color || "") && sourceBefore.endsWith(color) &&
+      !node.textContent && Array.from(node.childNodes || []).length === 0;
   }
 
   function readFormattedEditorSource(element) {

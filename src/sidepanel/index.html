@@ -8,6 +8,35 @@
   </head>
   <body>
     <main class="shell">
+      <svg class="circuit-backdrop" viewBox="0 0 480 900" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        <defs>
+          <path id="circuitRoute1" d="M-8 54H28L46 72H90V104H138" />
+          <path id="circuitRoute2" d="M-8 252H24V224H56L74 206H112V176H150" />
+          <path id="circuitRoute3" d="M-8 574H28L44 558V532H82L100 514H140" />
+          <path id="circuitRoute4" d="M488 112H454L438 128H394V158H354L338 174H310" />
+          <path id="circuitRoute5" d="M488 408H452V382H418L400 364H366V336H326" />
+          <path id="circuitRoute6" d="M488 742H454L438 726V698H398L380 680H344V652H310" />
+        </defs>
+        <g class="circuit-board">
+          <use href="#circuitRoute1" class="circuit-base" /><use href="#circuitRoute1" class="circuit-current" />
+          <use href="#circuitRoute2" class="circuit-base" /><use href="#circuitRoute2" class="circuit-current" />
+          <use href="#circuitRoute3" class="circuit-base" /><use href="#circuitRoute3" class="circuit-current" />
+          <use href="#circuitRoute4" class="circuit-base" /><use href="#circuitRoute4" class="circuit-current" />
+          <use href="#circuitRoute5" class="circuit-base" /><use href="#circuitRoute5" class="circuit-current" />
+          <use href="#circuitRoute6" class="circuit-base" /><use href="#circuitRoute6" class="circuit-current" />
+          <g class="circuit-details">
+            <rect x="70" y="190" width="20" height="20" rx="2" />
+            <line x1="74" y1="186" x2="74" y2="190" /><line x1="80" y1="186" x2="80" y2="190" /><line x1="86" y1="186" x2="86" y2="190" />
+            <line x1="74" y1="210" x2="74" y2="214" /><line x1="80" y1="210" x2="80" y2="214" /><line x1="86" y1="210" x2="86" y2="214" />
+            <line x1="66" y1="196" x2="70" y2="196" /><line x1="66" y1="202" x2="70" y2="202" /><line x1="90" y1="196" x2="94" y2="196" /><line x1="90" y1="202" x2="94" y2="202" />
+            <rect x="385" y="350" width="18" height="18" rx="2" />
+            <line x1="389" y1="346" x2="389" y2="350" /><line x1="395" y1="346" x2="395" y2="350" /><line x1="401" y1="346" x2="401" y2="350" />
+            <line x1="389" y1="368" x2="389" y2="372" /><line x1="395" y1="368" x2="395" y2="372" /><line x1="401" y1="368" x2="401" y2="372" />
+            <line x1="381" y1="356" x2="385" y2="356" /><line x1="381" y1="362" x2="385" y2="362" /><line x1="403" y1="356" x2="407" y2="356" /><line x1="403" y1="362" x2="407" y2="362" />
+            <circle cx="138" cy="104" r="2" /><circle cx="310" cy="174" r="2" /><circle cx="140" cy="514" r="2" /><circle cx="310" cy="652" r="2" />
+          </g>
+        </g>
+      </svg>
       <header class="topbar glass-surface">
         <div class="brand-lockup">
           <img class="brand-icon" src="../../assets/icons/icon-48.png" alt="">
@@ -48,6 +77,11 @@
           <div class="dragon-hologram" aria-hidden="true"></div>
           <div class="holo-projector" aria-hidden="true"><span></span></div>
         </section>
+        <div class="circuit-controls" role="group" aria-labelledby="circuitControlsLabel">
+          <span id="circuitControlsLabel" class="sr-only">背景效果</span>
+          <label><input id="circuitBackgroundToggle" type="checkbox" checked> <span id="circuitBackgroundLabel">背景電路</span></label>
+          <label><input id="circuitMotionToggle" type="checkbox" checked> <span id="circuitMotionLabel">電流動畫</span></label>
+        </div>
 
       <form id="debateForm" class="composer glass-surface">
         <div class="section-heading">
@@ -369,5 +403,6 @@
       </div>
     </main>
     <script type="module" src="app.js"></script>
+    <script type="module" src="backgroundControls.js"></script>
   </body>
 </html>

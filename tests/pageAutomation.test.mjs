@@ -459,7 +459,7 @@ test("Grok readiness recognizes the localized live composer structure", async ()
 test("provider content script uses a replaceable versioned listener after extension reload", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
 
-  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.10"/);
+  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.11"/);
   assert.match(script, /"aiDebate:getCapabilities": getCapabilities/);
   assert.match(script, /__aiDebateContentVersion/);
   assert.match(script, /onMessage\.removeListener\(globalThis\.__aiDebateContentMessageListener\)/);
@@ -480,7 +480,7 @@ test("same-version content reinjection replaces the listener without duplicating
   assert.equal(listeners.size, 1);
   assert.notEqual(context.__aiDebateContentMessageListener, previous);
   const response = await new Promise(resolve => context.__aiDebateContentMessageListener({ type: "aiDebate:getCapabilities" }, {}, resolve));
-  assert.equal(response.contentScriptVersion, "0.5.1-driver.10");
+  assert.equal(response.contentScriptVersion, "0.5.1-driver.11");
 });
 
 test("failed content initialization cannot poison the next injection", async () => {
@@ -1359,6 +1359,44 @@ test("ChatGPT paragraph editor verifies exact source despite rendered paragraph 
   const input = paragraphEditorFixture(["第一段", "", "第二段", "第三段"]);
   assert.notEqual(input.innerText, "第一段\n\n第二段\n第三段");
   await context.aiDebateProviderPageTest.waitForInputWritten(input, "第一段\n\n第二段\n第三段", 0);
+});
+
+test("ChatGPT verifies literal color-code spans and empty matching swatches without losing source", async () => {
+  const context = await loadProviderPageTestContext();
+  const input = paragraphEditorFixture(["第 1 輪對話。", "", "底色 #0e3a4a", "尾端"]);
+  const text = value => ({nodeType: 3, textContent: value});
+  const span = {tagName: "SPAN", childNodes: [text("#0e3a4a")],
+    classList: {contains: name => name === "inline-markdown"}};
+  const attrs = {"aria-hidden": "true", "contenteditable": "false", "data-hex-color-swatch": "#0e3a4a"};
+  const swatch = {tagName: "SPAN", textContent: "", childNodes: [],
+    getAttribute: name => attrs[name] ?? null,
+    classList: {contains: name => name === "ProseMirror-widget"}};
+  const separatorAttrs = {alt: "", src: null};
+  const separator = {tagName: "IMG", childNodes: [],
+    classList: {contains: name => name === "ProseMirror-separator"},
+    getAttribute: name => separatorAttrs[name] ?? null};
+  const trailingBreak = {tagName: "BR", classList: {contains: name => name === "ProseMirror-trailingBreak"}};
+  input.childNodes[2].childNodes = [text("底色 "), span, swatch, separator, trailingBreak];
+  const prompt = "第 1 輪對話。\n\n底色 #0e3a4a\n尾端";
+  await context.aiDebateProviderPageTest.waitForInputWritten(input, prompt, 0);
+  for (const corrupted of [prompt.replace("#0e3a4a", "#0e3a4b"), prompt.replace("\n\n", "\n"), prompt + "遺漏"]) {
+    await assert.rejects(context.aiDebateProviderPageTest.waitForInputWritten(input, corrupted, 0), e => e.code === "PROVIDER_INPUT_WRITE_FAILED");
+  }
+  for (const mutation of [
+    () => { swatch.textContent = "額外文字"; },
+    () => { swatch.textContent = ""; attrs["data-hex-color-swatch"] = "#abcdef"; },
+    () => { attrs["data-hex-color-swatch"] = "#0e3a4a"; swatch.childNodes = [{tagName: "IMG"}]; },
+    () => { swatch.childNodes = []; attrs["aria-hidden"] = "false"; },
+  ]) {
+    mutation();
+    await assert.rejects(context.aiDebateProviderPageTest.waitForInputWritten(input, prompt, 0), e => e.code === "PROVIDER_INPUT_WRITE_FAILED");
+  }
+  attrs["aria-hidden"] = "true";
+  separatorAttrs.src = "https://example.invalid/attachment.png";
+  await assert.rejects(context.aiDebateProviderPageTest.waitForInputWritten(input, prompt, 0), e => e.code === "PROVIDER_INPUT_WRITE_FAILED");
+  separatorAttrs.src = null;
+  separatorAttrs.alt = "附件";
+  await assert.rejects(context.aiDebateProviderPageTest.waitForInputWritten(input, prompt, 0), e => e.code === "PROVIDER_INPUT_WRITE_FAILED");
 });
 
 test("ChatGPT paragraph verification rejects missing text, extra blank lines and partial writes", async () => {
