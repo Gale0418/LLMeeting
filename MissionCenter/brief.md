@@ -1,9 +1,9 @@
 <!-- Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files. -->
-<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=4fb10bed2ec32dbd2e631bf388ac1e1133bb643cf1b47fb341d62db0c99dfaca -->
+<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=b6cd7cc34bf1113c9533fca90e30d436bd5414d75e88cc24aa0bcdbac28a4e1c -->
 # 任務簡報
 
 - 最後整理: 2026-10-14
-- 來源指紋: `4fb10bed2ec32dbd2e631bf388ac1e1133bb643cf1b47fb341d62db0c99dfaca`
+- 來源指紋: `b6cd7cc34bf1113c9533fca90e30d436bd5414d75e88cc24aa0bcdbac28a4e1c`
 - 唯一真實來源: `tasks.md`
 - 專案: LLMeeting
 - 北極星: 完成送出確認修復、接續討論與手動補回覆的本地候選，保留實機驗收與發布閘門
