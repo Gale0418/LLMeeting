@@ -204,11 +204,12 @@ export class DebateEngine {
     return engine;
   }
 
-  start(originalQuestion) {
+  start(originalQuestion, { roundZero = null } = {}) {
     const question = normalizeText(originalQuestion);
     this.state = createEngineState(this, {
       phase: "first-round",
       originalQuestion: question,
+      ...(roundZero ? { roundZero: structuredClone(roundZero) } : {}),
       status: "running",
     });
 

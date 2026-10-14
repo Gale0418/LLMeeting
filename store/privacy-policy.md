@@ -1,6 +1,6 @@
 # LLMeeting Privacy Policy
 
-Last updated: 2026-10-14
+Last updated: 2026-10-15
 
 LLMeeting is a local Chrome extension for coordinating a private multi-AI debate across AI web apps that you are already signed in to.
 
@@ -15,6 +15,8 @@ When you use LLMeeting on supported AI pages, the extension can read and write c
 - Meta AI, only when the user explicitly enables the Beta provider
 
 This access is used to submit your prompt, collect AI replies, paste cross-critiques, and produce a final summary prompt.
+
+If you explicitly select existing conversation tabs, starting a meeting first reads the loaded, identifiable user and AI messages from those selected, participating providers. It combines that quoted context with your new input as Round 0 and shares it with the AI providers participating in the meeting. It does not load hidden history by scrolling, read unselected conversation tabs, or silently skip a selected tab that fails to load. Round 0 is part of the locally stored meeting transcript and has the same 24-hour retention limit. Diagnostic downloads omit conversation bodies.
 
 ## Data storage
 

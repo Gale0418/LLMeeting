@@ -9,7 +9,7 @@ import { hasMeetingContent, launchGuide, readinessRecovery } from "./experienceR
 import { appendPlayIdea, canUsePlayIdeas, playIdeas } from "./playIdeas.js";
 import { normalizeRoundNumber } from "../shared/text.js";
 import { buildDebugReport } from "../shared/debugReport.js";
-import { buildContinuationDraft, isRecoverableReply, pendingReplyRepairs, MAX_MANUAL_REPLY_CHARS } from "../shared/meetingRecovery.js";
+import { isRecoverableReply, pendingReplyRepairs, MAX_MANUAL_REPLY_CHARS } from "../shared/meetingRecovery.js";
 import { uiText, translateUiMarkup } from "../shared/i18n.js";
 import { initializeLocale } from "./localeControls.js";
 import { createTranscriptReader } from "./transcriptReader.js";
@@ -95,6 +95,7 @@ const providerStateEls = {
 };
 
 let latestState = null;
+let hookScanPending = false;
 document.querySelector("#downloadDebugButton")?.addEventListener("click", async () => {
   try {
     const response = await chrome.runtime.sendMessage({ type: "aiDebate:getState" });
@@ -123,23 +124,15 @@ let lastRenderedIdeaKey = null;
 const shuffleChallengesButton = document.querySelector("#shuffleChallengesButton");
 shuffleChallengesButton?.addEventListener("click", shufflePlayChallenges);
 const challengeBatchLabel = document.querySelector("#challengeBatchLabel");
-let continuationReplies = [];
-let continuationTabs = {};
 let recoveryActionPending = false;
 let manualReplyTarget = null;
-const captureLinkedRepliesBtn = document.querySelector("#captureLinkedRepliesBtn");
-const cancelContinuationBtn = document.querySelector("#cancelContinuationBtn");
-const continuationStatus = document.querySelector("#continuationStatus");
-const continuationPreview = document.querySelector("#continuationPreview");
-const continuationPreviewPanel = document.querySelector("#continuationPreviewPanel");
 const manualReplyEditor = document.querySelector("#manualReplyEditor");
 const manualReplyInput = document.querySelector("#manualReplyInput");
 const saveManualReplyBtn = document.querySelector("#saveManualReplyBtn");
 const manualReplyStatus = document.querySelector("#manualReplyStatus");
 const starterQuestions = attachStarterQuestions({
   container: document.querySelector("#starterQuestions"), input: questionInput, translate: uiText,
-  isBlocked: () => Boolean(latestState?.busy || latestState?.repairPause || recoveryActionPending || continuationReplies.length),
-  onDraftChange: updateContinuationPreview,
+  isBlocked: () => Boolean(latestState?.busy || latestState?.repairPause || recoveryActionPending),
 });
 const recommendation = attachRecommendation({
   button: document.querySelector("#copyRecommendationButton"),
@@ -149,76 +142,16 @@ const recommendation = attachRecommendation({
 });
 const playScenes = attachPlayScenes({
   container: document.querySelector("#playScenePanel"), input: questionInput, translate: uiText,
-  isBlocked: () => Boolean(hasMeetingContent(latestState) || recoveryActionPending || continuationReplies.length),
+  isBlocked: () => Boolean(hasMeetingContent(latestState) || recoveryActionPending),
   onApply: () => {
     debateModeEls.forEach(input => { input.checked = input.value === "theater"; });
     interactionStyleSelect.value = "yesand";
     if (chatControls) chatControls.open = true;
     renderDebateModeState();
-    updateContinuationPreview();
     starterQuestions.render();
     renderMessage("劇場開場已填入，模式切為劇場與共識接龍；可先改設定再啟動。");
   },
 });
-
-function updateContinuationPreview() {
-  if (!continuationReplies.length) return;
-  try {
-    continuationPreview.value = buildContinuationDraft(continuationReplies, questionInput.value);
-    continuationPreviewPanel.hidden = false;
-  } catch (error) {
-    continuationPreview.value = "";
-    continuationStatus.textContent = uiText(error.message);
-  }
-}
-
-captureLinkedRepliesBtn?.addEventListener("click", async () => {
-  if (recoveryActionPending || latestState?.busy || hasPendingReplyRepairs(latestState) || latestState?.repairPause) {
-    renderMessage("請先補齊並繼續目前暫停的流程，或重置會議後再擷取接續內容。");
-    return;
-  }
-  recoveryActionPending = true;
-  setActionButtonsDisabled(true);
-  continuationStatus.textContent = uiText("正在擷取連結分頁最後一則 AI 發言…");
-  const draftAtStart = questionInput.value;
-  const tabs = { ...(latestState?.providerTabs || {}), ...selectedHookedTabs() };
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: "aiDebate:captureLinkedReplies", activeProviders: selectedProviderIds(), hookedTabs: tabs,
-    });
-    if (!response?.ok) throw new Error(response?.error || "無法擷取發言，請確認連線分頁。");
-    buildContinuationDraft(response.replies, questionInput.value);
-    continuationReplies = response.replies.filter((reply) => reply.ok);
-    continuationTabs = Object.fromEntries(continuationReplies.map(({ provider }) => [provider, tabs[provider]]));
-    updateContinuationPreview();
-    cancelContinuationBtn.hidden = false;
-    const failed = response.replies.filter((reply) => !reply.ok);
-    continuationStatus.textContent = uiText(`已擷取 ${continuationReplies.map(({ provider }) => providerLabel(provider)).join("、")} 的最後發言。`) +
-      (failed.length ? ` ${uiText("未加入")}：${failed.map(({ provider, error }) => `${providerLabel(provider)}（${error}）`).join("；")}。` : "") +
-      (questionInput.value !== draftAtStart ? uiText("已保留你剛更新的補充。") : uiText("可修改上方補充，預覽後按啟動送出。"));
-  } catch (error) {
-    continuationStatus.textContent = uiText(error.message) + (continuationReplies.length ? ` ${uiText("先前的接續草稿仍保留，可取消後重新擷取。")}` : "");
-  } finally {
-    recoveryActionPending = false;
-    setActionButtonsDisabled(Boolean(latestState?.busy));
-    starterQuestions.render();
-    playScenes.render();
-    if (latestState) renderChatBubbles(latestState);
-  }
-});
-
-function cancelContinuation() {
-  continuationReplies = [];
-  continuationTabs = {};
-  continuationPreview.value = "";
-  continuationPreviewPanel.hidden = true;
-  cancelContinuationBtn.hidden = true;
-  starterQuestions.render();
-  playScenes.render();
-  continuationStatus.textContent = uiText("接續草稿已取消，上方補充仍保留。");
-}
-cancelContinuationBtn?.addEventListener("click", cancelContinuation);
-questionInput.addEventListener("input", updateContinuationPreview);
 
 chatTranscript?.addEventListener("click", async (event) => {
   const button = event.target.closest?.("[data-depart-provider]");
@@ -447,39 +380,62 @@ function indexReadinessResults(results) {
 }
 
 async function scanAndPopulateHookTabs() {
-  for (const provider of PROVIDERS) {
-    const selectEl = hookSelects[provider.id];
-    if (!selectEl) continue;
+  if (hookScanPending || latestState?.busy || recoveryActionPending || basicDebateButton?.disabled) return;
+  hookScanPending = true;
+  setHookControlsDisabled(true);
+  try {
+    for (const provider of PROVIDERS) {
+      const selectEl = hookSelects[provider.id];
+      if (!selectEl) continue;
+      const selectedValue = selectEl.value;
+      const previousSelectedOption = Array.from(selectEl.options || []).find((option) => option.value === selectedValue);
+      selectEl.innerHTML = translateUiMarkup('<option value="">[預設] 開新分頁</option>');
 
-    // 保留第一個選項
-    selectEl.innerHTML = translateUiMarkup('<option value="">[預設] 開新分頁</option>');
+      try {
+        const tabs = [];
+        for (const pattern of provider.matchPatterns) {
+          const queryTabs = await chrome.tabs.query({ url: pattern });
+          tabs.push(...queryTabs);
+        }
 
-    try {
-      // 既有分頁只列在指定連線選單；未指定時 background 一律開新分頁。
-      const tabs = [];
-      for (const pattern of provider.matchPatterns) {
-        const queryTabs = await chrome.tabs.query({ url: pattern });
-        tabs.push(...queryTabs);
+        const uniqueTabs = Array.from(new Map(tabs.map((tab) => [tab.id, tab])).values());
+        uniqueTabs.sort((a, b) => b.windowId - a.windowId);
+        for (const tab of uniqueTabs) {
+          const option = document.createElement("option");
+          option.value = tab.id.toString();
+          const title = tab.title ? (tab.title.length > 30 ? tab.title.substring(0, 30) + "..." : tab.title) : "未命名分頁";
+          option.textContent = uiText(`[分頁] ${title}`);
+          selectEl.appendChild(option);
+        }
+
+        if (selectedValue && !uniqueTabs.some((tab) => tab.id.toString() === selectedValue)) {
+          const staleOption = previousSelectedOption || document.createElement("option");
+          staleOption.value = selectedValue;
+          if (!staleOption.textContent) staleOption.textContent = selectedValue;
+          staleOption.dataset.stale = "true";
+          selectEl.appendChild(staleOption);
+        }
+        selectEl.value = selectedValue;
+      } catch (error) {
+        console.error("Failed to query tabs for", provider.id, error);
+        if (selectedValue) {
+          const staleOption = previousSelectedOption || document.createElement("option");
+          staleOption.value = selectedValue;
+          if (!staleOption.textContent) staleOption.textContent = selectedValue;
+          staleOption.dataset.stale = "true";
+          selectEl.appendChild(staleOption);
+          selectEl.value = selectedValue;
+        }
       }
-
-      // 去重
-      const uniqueTabs = Array.from(new Map(tabs.map((t) => [t.id, t])).values());
-      uniqueTabs.sort((a, b) => b.windowId - a.windowId);
-
-      for (const tab of uniqueTabs) {
-        const option = document.createElement("option");
-        option.value = tab.id.toString();
-        const title = tab.title ? (tab.title.length > 30 ? tab.title.substring(0, 30) + "..." : tab.title) : "未命名分頁";
-        option.textContent = uiText(`[分頁] ${title}`);
-        selectEl.appendChild(option);
-      }
-    } catch (error) {
-      console.error("Failed to query tabs for", provider.id, error);
     }
+  } finally {
+    hookScanPending = false;
+    setHookControlsDisabled(Boolean(latestState?.busy || recoveryActionPending || basicDebateButton?.disabled));
   }
 }
 
 async function startSelectedDebate() {
+  if (hookScanPending) return;
   if (latestState?.repairPause || hasPendingReplyRepairs(latestState)) {
     renderMessage("目前會議有待補回覆內容；請先補齊並繼續原流程，或重置會議後再開始新會議。");
     return;
@@ -503,26 +459,20 @@ async function startSelectedDebate() {
 }
 
 async function startDebate(mode) {
+  if (hookScanPending) return;
   if (latestState?.repairPause || hasPendingReplyRepairs(latestState)) {
     renderMessage("目前會議有待補回覆內容；請先補齊並繼續原流程，或重置會議後再開始新會議。");
     return;
   }
-  let question = questionInput.value.trim();
-  if (continuationReplies.length) {
-    if (mode === "summary") {
-      renderMessage("接續草稿請使用快速鬥技場、自由群聊或劇場模式；總結辯論會另外擷取目前對話。");
-      return;
-    }
-    try { question = buildContinuationDraft(continuationReplies, question); }
-    catch (error) { renderMessage(error.message); return; }
-  }
-  if (mode !== "summary" && !question) {
+  const question = questionInput.value;
+  const activeProviders = selectedProviderIds();
+  const hookedTabs = selectedHookedTabs();
+  const hasSelectedActiveTab = activeProviders.some((providerId) => Number.isInteger(hookedTabs[providerId]));
+  if (mode !== "summary" && !question.trim() && !hasSelectedActiveTab) {
     renderMessage("請先輸入問題");
     questionInput.focus();
     return;
   }
-
-  const activeProviders = selectedProviderIds();
 
   if (activeProviders.length < 2) {
     renderMessage("❌ 至少需要選擇 2 家 AI 才能進行辯論喔！");
@@ -553,8 +503,6 @@ async function startDebate(mode) {
     customPersonas.meta = document.querySelector("#personaMeta")?.value || "";
   }
 
-  const hookedTabs = { ...continuationTabs, ...selectedHookedTabs() };
-
   const chatControls = document.getElementById("chatControls");
   const interactiveMode = mode === "chat" || Boolean(chatControls && chatControls.style.display !== "none" && chatControls.open);
 
@@ -584,15 +532,12 @@ async function startDebate(mode) {
     }
     setActionButtonsDisabled(false);
   }
-  if (response?.ok && continuationReplies.length) cancelContinuation();
   latestReadiness = indexReadinessResults(response?.results || response?.state?.preflightResults || []);
   renderState(response?.state);
 }
 
 function selectedHookedTabs() {
-  const tabHookingSettings = document.getElementById("tabHookingSettings");
   const hookedTabs = {};
-  if (!tabHookingSettings?.open) return hookedTabs;
   for (const providerId of Object.keys(hookSelects)) {
     const tabId = Number.parseInt(hookSelects[providerId]?.value || "", 10);
     if (Number.isInteger(tabId)) hookedTabs[providerId] = tabId;
@@ -645,7 +590,6 @@ clearLocalDataButton?.addEventListener("click", async () => {
 });
 
 function clearRecoveryDrafts() {
-  cancelContinuation();
   manualReplyEditor.hidden = true;
   manualReplyInput.value = "";
   manualReplyTarget = null;
@@ -666,7 +610,7 @@ async function sendControlRequest(message) {
     const current = await chrome.runtime.sendMessage({ type: "aiDebate:getState" }).catch(() => null);
     const state = current?.state;
     const sameMeeting = message.type === "aiDebate:nextRound" ||
-      (state?.mode === message.mode && state?.question === message.question);
+      (state?.mode === message.mode && state?.question === String(message.question || "").trim());
     if (sameMeeting && (state?.busy || state?.repairPause)) {
       return { ok: true, accepted: true, transportRecovered: true, state };
     }
@@ -1189,7 +1133,7 @@ function renderChatBubbles(state) {
   if (!chatTranscript) return;
   
   const transcript = state.transcript;
-  if (!transcript || !transcript.originalQuestion) {
+  if (!transcript || (!transcript.originalQuestion && !transcript.roundZero)) {
     if (state.phase === "source-summary") {
       const sourceProvider = state.sourceProvider || state.summaryProvider || "chatgpt";
       replaceChatTranscriptHTML(`
@@ -1208,13 +1152,16 @@ function renderChatBubbles(state) {
 
   let html = "";
 
-  // 1. 使用者提問
-  html += `
-    <div class="bubble-group user">
-      <div class="bubble-meta">${escapeHTML(uiText(state.mode === "summary" ? "目前對話總結" : "使用者提問 🙋"))}</div>
-      <div class="bubble-content">${escapeHTML(transcript.originalQuestion)}</div>
-    </div>
-  `;
+  if (transcript.roundZero) {
+    html += renderRoundZeroBubbles(transcript.roundZero);
+  } else {
+    html += `
+      <div class="bubble-group user">
+        <div class="bubble-meta">${escapeHTML(uiText(state.mode === "summary" ? "目前對話總結" : "使用者提問 🙋"))}</div>
+        <div class="bubble-content">${escapeHTML(transcript.originalQuestion)}</div>
+      </div>
+    `;
+  }
 
   // 2. 第一輪回答
   if (state.sourceProvider && isRecoverableReply(state.sourceSummary)) {
@@ -1361,6 +1308,25 @@ function renderChatBubbles(state) {
   replaceChatTranscriptHTML(html);
 }
 
+function renderRoundZeroBubbles(roundZero) {
+  let html = `<div class="round-divider">${escapeHTML(uiText("第 0 輪：分頁對話與你的補充"))}</div>`;
+  for (const source of Array.isArray(roundZero?.sources) ? roundZero.sources : []) {
+    if (typeof source?.content !== "string") continue;
+    const provider = source.provider || "unknown";
+    html += `<div class="bubble-group assistant ${safeProviderClass(provider)}">
+      <div class="bubble-meta">${escapeHTML(providerLabel(provider))}</div>
+      <div class="bubble-content">${formatContent(source.content)}</div>
+    </div>`;
+  }
+  if (typeof roundZero?.userText === "string" && roundZero.userText) {
+    html += `<div class="bubble-group user">
+      <div class="bubble-meta">${escapeHTML(uiText("使用者提問 🙋"))}</div>
+      <div class="bubble-content">${escapeHTML(roundZero.userText)}</div>
+    </div>`;
+  }
+  return html;
+}
+
 function replaceChatTranscriptHTML(html) {
   if (!chatTranscript || html === lastRenderedChatHtml) {
     return;
@@ -1498,8 +1464,6 @@ function setActionButtonsDisabled(disabled) {
   disabled = disabled || recoveryActionPending;
   const repairBlocked = Boolean(latestState?.repairPause) || hasPendingReplyRepairs(latestState);
   basicDebateButton.disabled = disabled || repairBlocked;
-  if (captureLinkedRepliesBtn) captureLinkedRepliesBtn.disabled = disabled || repairBlocked;
-  if (cancelContinuationBtn) cancelContinuationBtn.disabled = disabled;
   for (const button of [chatSendBtn, chatCritiqueBtn, chatSummarizeBtn]) {
     const canResume = button === chatCritiqueBtn && latestState?.repairPause && !hasPendingReplyRepairs(latestState);
     if (button) button.disabled = disabled || latestState?.phase !== "waiting_for_user" || (repairBlocked && !canResume);
@@ -1511,6 +1475,13 @@ function setActionButtonsDisabled(disabled) {
   advancedControlEls.forEach((control) => {
     control.disabled = disabled;
   });
+}
+
+function setHookControlsDisabled(disabled) {
+  for (const select of Object.values(hookSelects)) {
+    if (select) select.disabled = disabled;
+  }
+  if (refreshHooksBtn) refreshHooksBtn.disabled = disabled;
 }
 
 function meetingSpeakerLabel(state, providerId) {
@@ -1649,11 +1620,16 @@ function buildTranscriptText(state) {
     return "尚未開始";
   }
 
+  const opening = transcript.roundZero ? [
+    uiText("第 0 輪：分頁對話與你的補充"),
+    ...transcript.roundZero.sources.map((source) => speakerBlock(providerLabel(source.provider), source.content)),
+    uiText("使用者提問 🙋"),
+    transcript.roundZero.userText,
+  ] : [state.mode === "summary" ? "目前對話總結:" : "原問題:", transcript.originalQuestion || state.question || ""];
   const lines = [
     `狀態: ${state.message || state.status}`,
     "",
-    state.mode === "summary" ? "目前對話總結:" : "原問題:",
-    transcript.originalQuestion || state.question || "",
+    ...opening,
     "",
     "第一輪回答:",
     ...PROVIDERS.map((provider) => speakerBlock(meetingSpeakerLabel(state, provider.id), transcript.answers?.[provider.id])),

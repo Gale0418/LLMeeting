@@ -131,9 +131,8 @@ test("a repaired reply retains the latest original fault as escaped visible evid
   assert.doesNotMatch(html, /舊故障|<script>/);
 });
 
-test("repair pauses disable new meetings and continuation capture but leave reset available", () => {
+test("repair pauses disable new meetings but leave reset available", () => {
   assert.match(source, /latestState\?\.repairPause \|\| hasPendingReplyRepairs\(latestState\)/);
-  assert.match(source, /captureLinkedRepliesBtn\.disabled = disabled \|\| repairBlocked/);
   const buttonDisabling = source.slice(source.indexOf("function setActionButtonsDisabled"), source.indexOf("function meetingSpeakerLabel"));
   assert.doesNotMatch(buttonDisabling, /resetButton\.disabled\s*=/);
   assert.match(source, /if \(latestState\?\.repairPause\) \{[\s\S]*?action !== "resume"/);
@@ -142,7 +141,7 @@ test("repair pauses disable new meetings and continuation capture but leave rese
 test("re-enabling action buttons after a paste keeps supplement and summary locked until resume", () => {
   const body = source.slice(source.indexOf("function setActionButtonsDisabled"), source.indexOf("function meetingSpeakerLabel"));
   const context = { recoveryActionPending: false, latestState: { phase: "waiting_for_user", repairPause: {} },
-    hasPendingReplyRepairs: () => false, basicDebateButton: {}, captureLinkedRepliesBtn: {}, cancelContinuationBtn: {},
+    hasPendingReplyRepairs: () => false, basicDebateButton: {},
     chatSendBtn: {}, chatCritiqueBtn: {}, chatSummarizeBtn: {}, checkReadinessButton: {},
     providerToggleEls: [], advancedControlEls: [] };
   vm.createContext(context);
@@ -157,10 +156,102 @@ test("re-enabling action buttons after a paste keeps supplement and summary lock
   assert.equal(context.chatCritiqueBtn.disabled, true);
 });
 
+test("linked reply capture controls and continuation draft flow are removed", async () => {
+  assert.doesNotMatch(source, /captureLinkedRepliesBtn|cancelContinuationBtn|continuationReplies|continuationTabs|buildContinuationDraft/);
+  assert.doesNotMatch(await readFile("src/sidepanel/index.html", "utf8"), /captureLinkedRepliesBtn|cancelContinuationBtn|continuationPreview/);
+});
+
+test("selected linked tabs are read even when the settings details are closed", () => {
+  const body = source.slice(source.indexOf("function selectedHookedTabs()"), source.indexOf("resetButton.addEventListener"));
+  const context = {
+    hookSelects: { chatgpt: { value: "123" }, claude: { value: "" }, gemini: { value: "456" } },
+    document: { getElementById: () => ({ open: false }) },
+  };
+  vm.createContext(context);
+  vm.runInContext(`${body}\nglobalThis.select = selectedHookedTabs;`, context);
+  assert.deepEqual({ ...context.select() }, { chatgpt: 123, gemini: 456 });
+});
+
+test("start passes the user's question without composing a continuation draft", () => {
+  const body = source.slice(source.indexOf("async function startDebate("), source.indexOf("function selectedHookedTabs()"));
+  assert.match(body, /const question = questionInput\.value;/);
+  assert.match(body, /!question\.trim\(\) && !hasSelectedActiveTab/);
+  assert.match(body, /type: "aiDebate:start",[\s\S]*?question,/);
+  assert.doesNotMatch(body, /continuation|buildContinuationDraft/);
+});
+
+test("round zero renders source bubbles and the user text once without rendering composite originalQuestion", async () => {
+  const html = await readFile("src/sidepanel/index.html", "utf8");
+  const match = source.match(/function renderRoundZeroBubbles\(roundZero\) \{[\s\S]*?\n\}/);
+  assert.ok(match);
+  const escapeHTML = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const context = {
+    escapeHTML,
+    uiText: (text) => text,
+    safeProviderClass: (id) => id === "chatgpt" ? id : "unknown-provider",
+    providerLabel: (id) => id === "chatgpt" ? "ChatGPT" : id,
+    formatContent: (text) => `<safe>${escapeHTML(text)}</safe>`,
+  };
+  vm.createContext(context);
+  vm.runInContext(`${match[0]}\nglobalThis.render = renderRoundZeroBubbles;`, context);
+  const round = context.render({
+    sources: [{ provider: "chatgpt", content: "既有回答 <script>", messageCount: 4 }],
+    userText: "我的補充",
+  });
+  assert.match(round, /第 0 輪：分頁對話與你的補充/);
+  assert.match(round, /既有回答 &lt;script&gt;/);
+  assert.match(round, /我的補充/);
+  assert.equal((round.match(/使用者提問 🙋/g) || []).length, 1);
+  assert.match(source, /if \(transcript\.roundZero\) \{\s*html \+= renderRoundZeroBubbles\(transcript\.roundZero\);\s*\} else \{/);
+  assert.match(html, /選擇既有分頁後，啟動時會收集該頁已載入的對話，和上方輸入一起分享給所有參與 AI。未指定時開啟新對話。/);
+});
+
+test("rescanning linked tabs keeps the selected tab option when the tab is gone", async () => {
+  const body = source.slice(source.indexOf("async function scanAndPopulateHookTabs()"), source.indexOf("async function startSelectedDebate()"));
+  const select = {
+    _value: "123",
+    children: [{ value: "", textContent: "default", dataset: {} }, { value: "123", textContent: "[分頁] 舊對話", dataset: {} }],
+    get options() { return this.children; },
+    get value() { return this._value; },
+    set value(value) { this._value = this.children.some((option) => option.value === value) ? value : ""; },
+    set innerHTML(_value) { this.children = [{ value: "", textContent: "default" }]; },
+    appendChild(option) { this.children.push(option); },
+  };
+  const disabledStates = [];
+  const context = {
+    hookScanPending: false, latestState: null, recoveryActionPending: false,
+    basicDebateButton: { disabled: false },
+    hookSelects: { chatgpt: select },
+    PROVIDERS: [{ id: "chatgpt", matchPatterns: ["*://chatgpt.com/*"] }],
+    chrome: { tabs: { query: async () => [] } },
+    document: { createElement: () => ({ value: "", textContent: "", dataset: {} }) },
+    translateUiMarkup: (text) => text, uiText: (text) => text,
+    setHookControlsDisabled: (disabled) => disabledStates.push(disabled),
+    refreshHooksBtn: {},
+  };
+  vm.createContext(context);
+  vm.runInContext(`${body}\nglobalThis.scan = scanAndPopulateHookTabs;`, context);
+  await context.scan();
+  assert.equal(select.value, "123");
+  assert.equal(select.children.at(-1).value, "123");
+  assert.equal(select.children.at(-1).dataset.stale, "true");
+  assert.deepEqual(disabledStates, [true, false]);
+});
+
 test("plain text reveal fallback also avoids provider order labels", () => {
   const body = source.slice(source.indexOf("function buildTranscriptText"));
   assert.doesNotMatch(body, /`參與者 \$\{index \+ 1\}`/);
   assert.match(body, /state\.reveal\.anonymous \? \(anonymousLabel \|\| "匿名參與者（暱稱未取得）"\)/);
+});
+
+test("clearing recovery drafts no longer depends on removed continuation controls", () => {
+  const body = source.slice(source.indexOf("function clearRecoveryDrafts"), source.indexOf("let chatActionPending"));
+  const context = vm.createContext({ manualReplyEditor: { hidden: false }, manualReplyInput: { value: "draft" }, manualReplyTarget: {} });
+  vm.runInContext(body, context);
+  context.clearRecoveryDrafts();
+  assert.equal(context.manualReplyEditor.hidden, true);
+  assert.equal(context.manualReplyInput.value, "");
+  assert.equal(context.manualReplyTarget, null);
 });
 
 function harness(sendMessage) {
@@ -189,7 +280,7 @@ test("a lost receipt reconciles the running meeting without sending the action t
     if (message.type === "aiDebate:getState") return { ok: true, state };
     throw new Error("The message channel closed before a response was received");
   });
-  const result = await context.sendControlRequest({ type: "aiDebate:start", mode: "fast", question: "這場會議" });
+  const result = await context.sendControlRequest({ type: "aiDebate:start", mode: "fast", question: "  這場會議\n" });
   assert.equal(result.ok, true);
   assert.equal(result.transportRecovered, true);
   assert.equal(result.state, state);

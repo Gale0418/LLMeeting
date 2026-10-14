@@ -1,0 +1,77 @@
+{
+  "date": "2026-10-15",
+  "task": "LLM-T66",
+  "driver": "0.5.1-driver.12",
+  "scope": [
+    "automatic linked-tab round zero",
+    "remove separate capture/cancel/preview",
+    "move optional linked tabs before launch",
+    "preserve dragon logo and all advanced modes",
+    "cross-provider loaded chat with user note",
+    "source summary/manual repair retention"
+  ],
+  "limits": {
+    "scope": "only explicitly chosen participating tabs, loaded identifiable conversation only",
+    "roundZeroChars": 60000,
+    "stabilityMs": 500,
+    "maxWaitMs": 5000,
+    "newEmptyTab": "positive new-route/composer readiness required"
+  },
+  "verification": {
+    "providerAutomation": 111,
+    "catalogEntries": 527,
+    "fullSuite": {
+      "passed": 495,
+      "failed": 0
+    },
+    "nativeSidePanel": "pending reload acceptance"
+  },
+  "copy": {
+    "author": "Antigravity",
+    "records": 8,
+    "review": "placeholder/source checks; character unit corrected to 字元"
+  },
+  "review": {
+    "initialFiles": 11,
+    "initialIssues": {
+      "major": 2
+    },
+    "fixes": [
+      "wait for loaded stable history; existing route cannot be empty",
+      "account for all visible role evidence; reject partial user/AI history"
+    ],
+    "followupIssues": 0,
+    "followupFiles": [
+      "src/background/service-worker.js",
+      "src/content/provider-page.js",
+      "src/sidepanel/app.js",
+      "tests/allAnonymousWorkflow.test.mjs",
+      "tests/sidepanelRequests.test.mjs",
+      "src/sidepanel/index.html"
+    ],
+    "commands": 3,
+    "remoteReviews": 2,
+    "localPreflightFailure": "first invocation lacked an explicit base branch; corrected with --base main before remote analysis",
+    "exclusions": [
+      "assets",
+      "large generated UI catalog",
+      "stylesheet",
+      "historical evidence",
+      "private conversation exports",
+      "large test fixtures"
+    ],
+    "thirdPartyCopy": "none; review snapshot used project source only",
+    "postReviewMechanicalCorrection": "Added actual Grok /c, Meta /prompt, and Gemini /u/N/app route aliases; covered by 9 route assertions and final 495-test run. No additional remote review requested."
+  },
+  "limitations": [
+    "Chrome native side-panel layout and five-provider end-to-end awaiting reload",
+    "no store upload/submission/release"
+  ],
+  "package": {
+    "bytes": 2757059,
+    "sha256": "13037BC4E0AB0CD9633A5DC1655FBD63C0627980BA3DA3B8E02853ACA101B608",
+    "CRC": "pass",
+    "roundZeroModule": "included",
+    "driverHandshake": "both .12"
+  }
+}

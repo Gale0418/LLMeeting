@@ -82,7 +82,6 @@
         <div class="section-heading">
           <div>
             <h2>一個問題，多個 AI 觀點。</h2>
-            <p>先登入至少兩家 AI，點亮參與模型，再輸入你想比較的問題。</p>
           </div>
           <span class="signal-chip">LOCAL</span>
         </div>
@@ -105,16 +104,6 @@
             <button type="button" class="secondary-action" data-play-scene="space-picnic">太空野餐</button>
             <button type="button" class="secondary-action" data-play-scene="odd-inventions">怪發明展</button>
           </div>
-        </details>
-        <div class="continuation-actions">
-          <button type="button" id="captureLinkedRepliesBtn" class="secondary-action">接續連結分頁的討論</button>
-          <button type="button" id="cancelContinuationBtn" class="secondary-action" hidden>取消接續</button>
-        </div>
-        <p id="continuationStatus" class="settings-note" role="status">擷取各連結分頁最後一則 AI 發言一次，再加上上方的補充。預覽後按啟動才會送出。</p>
-        <details id="continuationPreviewPanel" hidden>
-          <summary>接續內容預覽</summary>
-          <label for="continuationPreview" class="sr-only">即將送給 AI 的接續內容</label>
-          <textarea id="continuationPreview" rows="6" readonly></textarea>
         </details>
         <p id="launchGuide" class="launch-guide">各家先回答同一題，再互評與總結。第一次使用，維持預設設定就可以。</p>
 
@@ -172,6 +161,43 @@
           <div id="providerRecovery" class="provider-recovery" hidden aria-label="模型連線修復指引"></div>
         </section>
 
+        <details id="tabHookingSettings" class="tab-hooking-settings">
+          <summary>🔗 指定連線分頁</summary>
+          <div class="settings-note">選擇既有分頁後，啟動時會收集該頁已載入的對話，和上方輸入一起分享給所有參與 AI。未指定時開啟新對話。</div>
+          <div class="hook-stack">
+            <div>
+              <label for="hookChatgpt" style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);">ChatGPT</label>
+              <select id="hookChatgpt" style="width: 100%; margin-top: 2px;">
+                <option value="">[預設] 開新分頁</option>
+              </select>
+            </div>
+            <div>
+              <label for="hookClaude" style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);">Claude</label>
+              <select id="hookClaude" style="width: 100%; margin-top: 2px;">
+                <option value="">[預設] 開新分頁</option>
+              </select>
+            </div>
+            <div>
+              <label for="hookGrok" style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);">Grok</label>
+              <select id="hookGrok" style="width: 100%; margin-top: 2px;">
+                <option value="">[預設] 開新分頁</option>
+              </select>
+            </div>
+            <div>
+              <label for="hookGemini" style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);">Gemini</label>
+              <select id="hookGemini" style="width: 100%; margin-top: 2px;">
+                <option value="">[預設] 開新分頁</option>
+              </select>
+            </div>
+            <div>
+              <label for="hookMeta" style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);">Meta AI (Beta)</label>
+              <select id="hookMeta" style="width: 100%; margin-top: 2px;">
+                <option value="">[預設] 開新分頁</option>
+              </select>
+            </div>
+          </div>
+          <button type="button" id="refreshHooksBtn" class="secondary-action compact-action">重新掃描分頁</button>
+        </details>
 
         <!-- 進階自訂面板 -->
         <div class="action-row">
@@ -285,44 +311,6 @@
               </div>
             </fieldset>
 
-            <!-- 分頁掛勾設定 -->
-            <details id="tabHookingSettings" class="tab-hooking-settings">
-              <summary>🔗 指定連線分頁</summary>
-              <div class="settings-note">展開以指定要沿用的既有分頁；未指定時，每次會議都會開啟新分頁。</div>
-              <div class="hook-stack">
-                <div>
-                  <label for="hookChatgpt" style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);">ChatGPT</label>
-                  <select id="hookChatgpt" style="width: 100%; margin-top: 2px;">
-                    <option value="">[預設] 開新分頁</option>
-                  </select>
-                </div>
-                <div>
-                  <label for="hookClaude" style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);">Claude</label>
-                  <select id="hookClaude" style="width: 100%; margin-top: 2px;">
-                    <option value="">[預設] 開新分頁</option>
-                  </select>
-                </div>
-                <div>
-                  <label for="hookGrok" style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);">Grok</label>
-                  <select id="hookGrok" style="width: 100%; margin-top: 2px;">
-                    <option value="">[預設] 開新分頁</option>
-                  </select>
-                </div>
-                <div>
-                  <label for="hookGemini" style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);">Gemini</label>
-                  <select id="hookGemini" style="width: 100%; margin-top: 2px;">
-                    <option value="">[預設] 開新分頁</option>
-                  </select>
-                </div>
-                <div>
-                  <label for="hookMeta" style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);">Meta AI (Beta)</label>
-                  <select id="hookMeta" style="width: 100%; margin-top: 2px;">
-                    <option value="">[預設] 開新分頁</option>
-                  </select>
-                </div>
-              </div>
-              <button type="button" id="refreshHooksBtn" class="secondary-action compact-action">重新掃描分頁</button>
-            </details>
           </div>
         </details>
 
@@ -366,7 +354,7 @@
           <label for="manualReplyInput">貼上這位 AI 在該階段的完整回覆</label>
           <textarea id="manualReplyInput" rows="6" aria-describedby="manualReplyHint"></textarea>
           <p id="manualReplyHint" class="settings-note">貼上對應階段的 AI 回覆；全部故障段落補齊後會自動繼續原流程。請先確認 AI 網頁已回答，最多 12,000 字元。</p>
-          <div class="continuation-actions">
+          <div class="manual-reply-actions">
             <button type="button" id="saveManualReplyBtn" class="primary-action">補入這段回覆</button>
             <button type="button" id="cancelManualReplyBtn" class="secondary-action">取消</button>
           </div>

@@ -14,7 +14,7 @@ import { DEFAULT_LOCALE, MESSAGES, SUPPORTED_LOCALES } from "../src/shared/i18n-
 import { UI_COPY } from "../src/shared/ui-copy-catalog.js";
 
 test("production UI catalog is complete in three languages with unchanged dynamic parameters", () => {
-  assert.equal(UI_COPY.length, 519);
+  assert.equal(UI_COPY.length, 527);
   assert.equal(uiText("背景電路", "en"), "Circuit Glow");
   assert.equal(uiText("電流動畫", "ja"), "パルスアニメ");
   assert.equal(new Set(UI_COPY.map(e=>e.id)).size, UI_COPY.length);

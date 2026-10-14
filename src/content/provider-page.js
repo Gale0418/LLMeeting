@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = "0.5.1-driver.11";
+  const CONTENT_SCRIPT_VERSION = "0.5.1-driver.12";
   const {
     assistantSnapshot,
     classifyProviderResponseError,
@@ -34,6 +34,9 @@
   const READINESS_DOM_TIMEOUT_MS = 3500;
   const READINESS_POLL_MS = 100;
   const READINESS_GENERATING_SETTLE_MS = 200;
+  const CURRENT_CONVERSATION_POLL_MS = 100;
+  const CURRENT_CONVERSATION_STABLE_MS = 500;
+  const CURRENT_CONVERSATION_MAX_WAIT_MS = 5000;
   const INPUT_CANDIDATE_SELECTOR = "textarea, input:not([type]), input[type='text'], div[contenteditable='true'], [role='textbox']";
   const INPUT_SCORE_THRESHOLD = 75;
   const INPUT_AMBIGUITY_MARGIN = 12;
@@ -79,6 +82,7 @@
       "aiDebate:abortAutomation": abortAutomation,
       "aiDebate:checkReadiness": checkReadiness,
       "aiDebate:readCurrentReply": readCurrentReply,
+      "aiDebate:readCurrentConversation": readCurrentConversation,
     };
     const handler = handlers[message?.type];
     if (!handler) {
@@ -123,6 +127,143 @@
     if (!content) throw new Error("目前分頁沒有可擷取的 AI 回覆。");
     if (classifyProviderResponseError(providerId, content)) throw new Error("目前顯示的是服務錯誤，請先處理 AI 網頁狀態。");
     return { ok: true, provider: providerId, content };
+  }
+
+  async function readCurrentConversation(message) {
+    const { providerId, config } = requireProviderPage(message.provider);
+    const epoch = automationEpoch;
+    const initialPageIdentity = readPageIdentity();
+    const deadline = Date.now() + CURRENT_CONVERSATION_MAX_WAIT_MS;
+    let stableSignature = "";
+    let stableSince = 0;
+
+    while (true) {
+      assertCurrentConversationRead(epoch, providerId, config, initialPageIdentity);
+      assertCurrentConversationPageUsable(config, providerId);
+
+      const records = readCurrentConversationRecords(config, providerId);
+      const evidence = readConversationRoleEvidence(providerId);
+      const uncoveredEvidence = evidence.filter((candidate) => !records.some((record) =>
+        record.role === candidate.role && (record.element === candidate.element ||
+          record.element.contains?.(candidate.element) || candidate.element.contains?.(record.element)),
+      ));
+      const signature = JSON.stringify({
+        messages: records.map(({ role, text }) => [role, text]),
+        uncovered: uncoveredEvidence.map(({ role, text }) => [role, text]),
+      });
+      const now = Date.now();
+      const pageSettled = isDocumentReady() && !isProviderPageLoading();
+      if (!pageSettled) {
+        stableSignature = "";
+        stableSince = now;
+      } else if (signature !== stableSignature) {
+        stableSignature = signature;
+        stableSince = now;
+      }
+
+      if (pageSettled && now - stableSince >= CURRENT_CONVERSATION_STABLE_MS) {
+        if (uncoveredEvidence.length) {
+          throw createConversationReadError(
+            "PROVIDER_CONVERSATION_UNREADABLE",
+            "偵測到目前對話內容，但無法用此版本的頁面選擇器安全辨識；請更新擴充功能後再開始會議。",
+          );
+        }
+        if (records.length) {
+          const messages = records.map(({ role, text }) => ({ role, text }));
+          return createCurrentConversationResult(providerId, messages);
+        }
+        if (!isExistingConversationRoute(providerId) && resolveInput(config).element) {
+          return createCurrentConversationResult(providerId, []);
+        }
+      }
+
+      const remainingMs = deadline - now;
+      if (remainingMs <= 0) {
+        throw createConversationReadError(
+          "PROVIDER_CONVERSATION_NOT_READY",
+          "目前對話尚未載入完成，請稍後再開始會議。",
+        );
+      }
+      await delay(Math.min(CURRENT_CONVERSATION_POLL_MS, remainingMs));
+    }
+  }
+
+  function assertCurrentConversationPageUsable(config, providerId) {
+    if (isGenerating(config)) {
+      throw createConversationReadError("PROVIDER_GENERATING", "AI 還在生成，請等回覆完成再擷取對話。");
+    }
+    if (readLoginWall(config).detected) {
+      throw createConversationReadError("PROVIDER_LOGIN_REQUIRED", "目前 provider 分頁需要登入，無法讀取對話。");
+    }
+    const blockingStatus = readBlockingServiceStatus(config, providerId);
+    const pageError = blockingStatus?.classification || readCurrentProviderError(config, providerId);
+    if (pageError) {
+      throw createConversationReadError(pageError.code || "PROVIDER_PAGE_ERROR",
+        pageError.message || "目前顯示的是服務錯誤，請先處理 AI 網頁狀態。");
+    }
+  }
+
+  function assertCurrentConversationRead(epoch, providerId, config, initialPageIdentity) {
+    assertAutomationEpoch(epoch);
+    if (readPageIdentity() !== initialPageIdentity) {
+      throw createConversationReadError("PROVIDER_CONVERSATION_NAVIGATED", "provider 分頁在讀取對話時已切換，請重新指定分頁。");
+    }
+    assertProviderLocation(providerId, config);
+  }
+
+  function readPageIdentity() {
+    return [location?.hostname, location?.pathname, location?.search, location?.hash].map((part) => String(part || "")).join("|");
+  }
+
+  function isDocumentReady() {
+    return !document.readyState || document.readyState === "interactive" || document.readyState === "complete";
+  }
+
+  function isProviderPageLoading() {
+    return collectElements([
+      "main[aria-busy='true']",
+      "[role='main'][aria-busy='true']",
+      "main [role='progressbar']",
+      "[role='main'] [role='progressbar']",
+      "main [aria-label*='loading' i]",
+      "[role='main'] [aria-label*='loading' i]",
+      "main [aria-label*='載入']",
+      "[role='main'] [aria-label*='載入']",
+    ]).some(isVisible);
+  }
+
+  function isExistingConversationRoute(providerId) {
+    const pathname = String(location?.pathname || "/").replace(/\/+$/, "") || "/";
+    const search = String(location?.search || "");
+    if (/(?:conversation|thread|chat)[_-]?(?:id|uuid)=/i.test(search)) return true;
+    const patterns = {
+      chatgpt: /\/(?:c|share)\/[^/]+(?:\/.*)?$/i,
+      gemini: /^\/(?:u\/\d+\/)?app\/[^/]+(?:\/.*)?$/i,
+      grok: /\/(?:c|chat|i\/grok)\/[^/]+(?:\/.*)?$/i,
+      claude: /\/chat\/[^/]+(?:\/.*)?$/i,
+      meta: /\/(?:prompt|chat|conversation|thread)\/[^/]+(?:\/.*)?$/i,
+    };
+    return Boolean(patterns[providerId]?.test(pathname));
+  }
+
+  function createConversationReadError(code, message) {
+    const error = new Error(message);
+    error.code = code;
+    return error;
+  }
+
+  function createCurrentConversationResult(providerId, messages) {
+    const content = messages.map(({ role, text }) => `${role}:\n${text}`).join("\n\n");
+    if (content.length > 60000) {
+      throw createConversationReadError("PROVIDER_CONVERSATION_TOO_LONG", "目前對話超過 60,000 字元，請縮短對話後再開始會議。");
+    }
+    return {
+      ok: true,
+      provider: providerId,
+      content,
+      empty: messages.length === 0,
+      messageCount: messages.length,
+    };
   }
 
   async function getCapabilities() {
@@ -1399,6 +1540,136 @@
       .map(({ text, identity }) => ({ text, identity }));
 
     return assistantSnapshot(messages);
+  }
+
+  function readCurrentConversationMessages(config, providerId) {
+    return readCurrentConversationRecords(config, providerId).map(({ role, text }) => ({ role, text }));
+  }
+
+  function readCurrentConversationRecords(config, providerId) {
+    const preferred = config.preferredResponseSelector
+      ? collectElements([config.preferredResponseSelector]).filter(isVisible)
+      : [];
+    let assistantElements = preferred.length ? preferred : collectElements(config.responseSelectors).filter(isVisible);
+    if (!assistantElements.some((element) => String(element.innerText || element.textContent || "").trim())) {
+      assistantElements = findSemanticAssistantResponses().filter(isVisible);
+    }
+    const userElements = collectElements(config.userMessageSelectors).filter(isVisible);
+
+    const candidateRecords = [
+      ...collapseNestedConversationElements(assistantElements).map((element) => ({ element, role: "AI" })),
+      ...collapseNestedConversationElements(userElements).map((element) => ({ element, role: "User" })),
+    ];
+    const records = candidateRecords
+      .filter(({ element }) => !element.closest?.("nav, aside, [role='navigation'], [aria-label*='history' i]"))
+      .filter(({ element, role }) => !candidateRecords.some((other) => other.element !== element && other.role !== role &&
+        (other.element.contains?.(element) || element.contains?.(other.element))))
+      .map(({ element, role }) => ({ element, role, text: readConversationElementText(element, providerId) }))
+      .filter((entry) => entry.text);
+
+    records.sort((left, right) => compareDocumentOrder(left.element, right.element));
+    return records;
+  }
+
+  function readConversationRoleEvidence(providerId) {
+    const userSelectors = [
+      "[data-message-author-role='user']", "[data-message-author='user']", "[data-author='user']",
+      "[data-role='user']", "[data-testid*='user-message' i]", "[data-testid*='message-bubble'][data-message-author='user']",
+    ];
+    const assistantSelectors = [
+      "[data-message-author-role='assistant']", "[data-message-author='assistant']", "[data-author='assistant']",
+      "[data-role='assistant']", "[data-testid*='assistant-message' i]", "[data-testid*='message-bubble'][data-message-author='assistant']",
+    ];
+    const evidence = [
+      ...collectElements(userSelectors).map((element) => ({ element, role: "User" })),
+      ...collectElements(assistantSelectors).map((element) => ({ element, role: "AI" })),
+      ...findSemanticAssistantResponses().map((element) => ({ element, role: "AI" })),
+    ].filter(({ element }) => isVisible(element) && !element.closest?.("nav, aside, [role='navigation']"))
+      .map(({ element, role }) => ({ element, role, text: readConversationElementText(element, providerId) }))
+      .filter(({ text }) => text);
+    const unique = evidence.filter(({ element, role }, index) =>
+      evidence.findIndex((candidate) => candidate.element === element && candidate.role === role) === index,
+    );
+    return unique.filter(({ element, role }) => !unique.some((other) => other.element !== element && other.role === role &&
+      other.element.contains?.(element)));
+  }
+
+  function collapseNestedConversationElements(elements) {
+    const unique = [...new Set(elements)];
+    return unique.filter((element) => !unique.some((other) => other !== element && other.contains?.(element)));
+  }
+
+  function compareDocumentOrder(left, right) {
+    if (left === right) return 0;
+    const position = left.compareDocumentPosition?.(right) || 0;
+    if (position & 4) return -1;
+    if (position & 2) return 1;
+    return 0;
+  }
+
+  function readConversationElementText(element, providerId) {
+    const source = serializeConversationNode(element, true);
+    return normalizeProviderResponse(providerId, source).replace(/\r\n?/g, "\n").trim();
+  }
+
+  function serializeConversationNode(node, isRoot = false) {
+    if (!node) return "";
+    if (node.nodeType === 3) return String(node.textContent || "");
+    if (node.nodeType !== 1 && !node.childNodes) {
+      return String(node.textContent || node.innerText || "");
+    }
+    if (node.nodeType === 1 && isExcludedConversationNode(node)) return "";
+
+    const tag = String(node.tagName || "").toLowerCase();
+    if (tag === "br") return "\n";
+
+    let content = "";
+    for (const child of Array.from(node.childNodes || [])) {
+      const childText = serializeConversationNode(child);
+      if (!childText) continue;
+      if (isConversationBlock(child) && content && !content.endsWith("\n")) content += "\n";
+      content += childText;
+    }
+    if (!isRoot && isConversationBlock(node) && content && !content.endsWith("\n")) content += "\n";
+
+    // A few DOM test doubles and provider wrappers expose text without childNodes.
+    if (!node.childNodes?.length && node.nodeType === 1) {
+      return String(node.textContent || node.innerText || "");
+    }
+    return content;
+  }
+
+  function isConversationBlock(node) {
+    return ["address", "article", "blockquote", "dd", "div", "dl", "dt", "fieldset", "figcaption", "figure",
+      "h1", "h2", "h3", "h4", "h5", "h6", "li", "ol", "p", "pre", "section", "table", "tbody", "td", "th", "tr", "ul"]
+      .includes(String(node?.tagName || "").toLowerCase());
+  }
+
+  function isExcludedConversationNode(node) {
+    if (node.hidden || String(node.getAttribute?.("aria-hidden") || "").toLowerCase() === "true") return true;
+    const role = String(node.getAttribute?.("role") || "").toLowerCase();
+    const editable = String(node.getAttribute?.("contenteditable") || "").toLowerCase() === "true";
+    if (["button", "toolbar", "navigation"].includes(role) || editable ||
+        ["button", "nav", "aside", "input", "textarea", "select"].includes(String(node.tagName || "").toLowerCase())) {
+      return true;
+    }
+
+    const testId = String(node.getAttribute?.("data-testid") || "").toLowerCase();
+    const thinkingTestIds = new Set(["thought-process", "thinking-block", "reasoning", "reasoning-content", "analysis-block"]);
+    if (node.getAttribute?.("data-is-thought") === "true" || node.getAttribute?.("data-is-reasoning") === "true" ||
+        thinkingTestIds.has(testId)) return true;
+
+    const classes = String(node.getAttribute?.("class") || "").toLowerCase().split(/\s+/);
+    const thinkingClasses = new Set(["thought", "thinking", "thought-process", "thinking-block", "reasoning", "reasoning-content"]);
+    if (classes.some((className) => thinkingClasses.has(className))) return true;
+
+    try {
+      const style = getComputedStyle(node);
+      if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return true;
+    } catch (_error) {
+      // Non-browser test doubles may not expose computed style.
+    }
+    return false;
   }
 
   function findSemanticAssistantResponses() {

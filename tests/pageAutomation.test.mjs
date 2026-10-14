@@ -24,7 +24,7 @@ async function loadProviderPageTestContext(overrides = {}) {
   const script = await readFile("src/content/provider-page.js", "utf8");
   const instrumentedScript = script.replace(
     /\}\)\(\);\s*$/,
-    "globalThis.aiDebateProviderPageTest = {\n      assertProviderLocation,\n      collectElements,\n      createResponseCandidateBuffer,\n      findInput,\n      readAssistantSnapshot,\n      resolveConfiguredSendButton,\n      resolveInput,\n      resolveLikelySendButton,\n      scoreInputCandidate,\n      scoreSendCandidate,\n      updateResponseCandidateBuffer,\n      userMessageContainsPrompt,\n      observeProviderSubmission,\n      waitForCompletion,\n      waitForGeminiSubmissionReady,\n      waitForInputWritten,\n      writeInput,\n    };\n})();",
+    "globalThis.aiDebateProviderPageTest = {\n      assertProviderLocation,\n      abortAutomation,\n      contentMessageListener,\n      collectElements,\n      createResponseCandidateBuffer,\n      findInput,\n      readAssistantSnapshot,\n      readCurrentConversation,\n      readCurrentConversationMessages,\n      isExistingConversationRoute,\n      readConversationElementText,\n      isGenerating,\n      resolveConfiguredSendButton,\n      resolveInput,\n      resolveLikelySendButton,\n      scoreInputCandidate,\n      scoreSendCandidate,\n      updateResponseCandidateBuffer,\n      userMessageContainsPrompt,\n      observeProviderSubmission,\n      waitForCompletion,\n      waitForGeminiSubmissionReady,\n      waitForInputWritten,\n      writeInput,\n    };\n})();",
   ).replace("      writeInput,\n", "      writeInput,\n      readBlockingServiceStatus,\n      readSubmittedResponse,\n      submittedRuns,\n      submitPrompt,\n");
   assert.notEqual(instrumentedScript, script);
 
@@ -69,6 +69,280 @@ test("provider location matching limits X to the Grok route", () => {
   assert.equal(matchesProviderLocation({ hostname: "x.com", pathname: "/i/grok" }, grok), true);
   assert.equal(matchesProviderLocation({ hostname: "x.com", pathname: "/i/grok/abc" }, grok), true);
   assert.equal(matchesProviderLocation({ hostname: "x.com", pathname: "/home" }, grok), false);
+});
+
+function conversationFixture(entries, extra = {}) {
+  const untouched = { click: 0, focus: 0, scroll: 0 };
+  const fakeClock = { now: 0 };
+  const loadingNode = {
+    getBoundingClientRect: () => ({ width: 100, height: 20 }),
+  };
+  const input = {
+    tagName: "DIV",
+    isContentEditable: true,
+    disabled: false,
+    getAttribute: name => ({ role: "textbox", contenteditable: "true", "data-testid": "chat-input" })[name] ?? null,
+    getBoundingClientRect: () => ({ width: 400, height: 40 }),
+  };
+  const nodes = entries.map((entry, index) => {
+    const element = {
+      innerText: entry.text,
+      textContent: entry.text,
+      order: index,
+      parentElement: null,
+      disabled: false,
+      getAttribute: name => entry.attributes?.[name] ?? null,
+      getBoundingClientRect: () => ({ width: 200, height: 40 }),
+      contains(other) {
+        for (let parent = other.parentElement; parent; parent = parent.parentElement) if (parent === this) return true;
+        return false;
+      },
+      closest: () => null,
+      compareDocumentPosition(other) { return this.order < other.order ? 4 : 2; },
+      cloneNode() {
+        return {
+          innerText: this.innerText,
+          textContent: this.textContent,
+          querySelectorAll: () => [],
+        };
+      },
+      click() { untouched.click += 1; },
+      focus() { untouched.focus += 1; },
+      scrollIntoView() { untouched.scroll += 1; },
+    };
+    entry.element = element;
+    return element;
+  });
+  for (const [index, entry] of entries.entries()) {
+    if (Number.isInteger(entry.parent)) nodes[index].parentElement = nodes[entry.parent];
+  }
+  const context = {
+    aiDebateAutomationCore: {
+      ...globalThis.aiDebateAutomationCore,
+      classifyProviderResponseError: () => null,
+      matchesProviderLocation,
+    },
+    aiDebateProviderAdapters: globalThis.aiDebateProviderAdapters,
+    location: { hostname: "grok.com", pathname: extra.pathname || "/", search: "", hash: "" },
+    document: {
+      readyState: extra.readyState || "complete",
+      querySelectorAll(selector) {
+        if (selector === "*") return [];
+        if (selector === "main[aria-busy='true']" || selector === "[role='main'][aria-busy='true']") return extra.loading ? [loadingNode] : [];
+        if (selector.includes("aria-busy='true'")) return [];
+        if (selector.startsWith("main [data-")) return entries.filter(entry => entry.attributes).map(entry => entry.element);
+        const roleSelector = selector.match(/\[(data-[\w-]+)='(user|assistant)'\]/i);
+        if (roleSelector) return entries.filter(entry => entry.attributes?.[roleSelector[1]]?.toLowerCase() === roleSelector[2].toLowerCase()).map(entry => entry.element);
+        if (selector.includes("user-message")) return entries.filter(entry => /user-message/i.test(entry.attributes?.["data-testid"] || "")).map(entry => entry.element);
+        if (selector.includes("assistant-message")) return entries.filter(entry => /assistant-message/i.test(entry.attributes?.["data-testid"] || "")).map(entry => entry.element);
+        if (globalThis.aiDebateProviderAdapters.grok.responseSelectors.includes(selector) || selector === "assistant" || selector === "assistant-duplicate") return entries.filter(entry => entry.role === "AI").map(entry => entry.element);
+        if (globalThis.aiDebateProviderAdapters.grok.userMessageSelectors.includes(selector) || selector === "user") return entries.filter(entry => entry.role === "User").map(entry => entry.element);
+        if (globalThis.aiDebateProviderAdapters.grok.errorSelectors.includes(selector) || selector === "error") return entries.filter(entry => entry.role === "Error").map(entry => entry.element);
+        if (selector.startsWith("button[aria-label^='Stop")) return extra.generating ? [nodes[0]].filter(Boolean) : [];
+        if (selector === globalThis.aiDebateProviderAdapters.grok.preferredInputSelector) return extra.inputReady ? [input] : [];
+        return [];
+      },
+    },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+    Date: { now: () => fakeClock.now },
+    setTimeout(callback, ms) {
+      fakeClock.now += Number(ms) || 0;
+      extra.onPoll?.(fakeClock.now, context);
+      queueMicrotask(callback);
+      return 1;
+    },
+    clearTimeout() {},
+    ...extra,
+  };
+  return { nodes, untouched, context, entries, fakeClock, input };
+}
+
+test("current conversation reader returns user and AI text once in DOM order", async () => {
+  const f = conversationFixture([
+    { role: "User", text: "第一個問題" },
+    { role: "AI", text: "第一個回答" },
+    { role: "AI", text: "重複的巢狀回答", parent: 1 },
+    { role: "User", text: "第二個問題" },
+  ]);
+  const context = await loadProviderPageTestContext(f.context);
+  const result = context.aiDebateProviderPageTest.readCurrentConversationMessages({
+    responseSelectors: ["assistant", "assistant-duplicate"],
+    userMessageSelectors: ["user"],
+  }, "grok");
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), [
+    { role: "User", text: "第一個問題" },
+    { role: "AI", text: "第一個回答" },
+    { role: "User", text: "第二個問題" },
+  ]);
+  assert.deepEqual(f.untouched, { click: 0, focus: 0, scroll: 0 });
+});
+
+test("conversation serializer preserves paragraphs, BR, code indentation, and meaningful double spaces", async () => {
+  const text = value => ({ nodeType: 3, textContent: value });
+  const element = (tagName, children = [], attributes = {}) => ({
+    nodeType: 1,
+    tagName: tagName.toUpperCase(),
+    childNodes: children,
+    getAttribute: name => attributes[name] ?? null,
+  });
+  const root = element("div", [
+    element("p", [text("第一段")]),
+    element("p", [text("第二段"), element("br"), text("接續")]),
+    element("pre", [text("  const  x = 1;\r\n  return  x;")]),
+    element("span", [text("分析 class 正文保留")], { class: "analysis" }),
+    element("div", [text("內部思考不納入")], { class: "thought-process" }),
+  ]);
+  const context = await loadProviderPageTestContext({
+    getComputedStyle: () => ({ display: "block", visibility: "visible", opacity: "1" }),
+  });
+  const output = context.aiDebateProviderPageTest.readConversationElementText(root, "grok");
+
+  assert.equal(output, "第一段\n第二段\n接續\n  const  x = 1;\n  return  x;\n分析 class 正文保留");
+  assert.equal(root.childNodes.length, 5, "serialization must not mutate the source DOM");
+});
+
+test("current conversation reader reports a genuinely empty page without mutating it", async () => {
+  const f = conversationFixture([], { inputReady: true });
+  const context = await loadProviderPageTestContext(f.context);
+  const result = await context.aiDebateProviderPageTest.readCurrentConversation({ provider: "grok" });
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), { ok: true, provider: "grok", content: "", empty: true, messageCount: 0 });
+  assert.deepEqual(f.untouched, { click: 0, focus: 0, scroll: 0 });
+});
+
+test("current conversation reader waits for delayed history before returning the snapshot", async () => {
+  const f = conversationFixture([{ role: "Pending", text: "" }], {
+    onPoll(now) {
+      if (now >= 200) {
+        f.entries[0].role = "User";
+        f.entries[0].text = "延遲載入的舊問題";
+        f.nodes[0].innerText = f.entries[0].text;
+        f.nodes[0].textContent = f.entries[0].text;
+      }
+    },
+  });
+  const context = await loadProviderPageTestContext(f.context);
+  const result = await context.aiDebateProviderPageTest.readCurrentConversation({ provider: "grok" });
+  assert.equal(result.content, "User:\n延遲載入的舊問題");
+  assert.equal(result.messageCount, 1);
+});
+
+test("current conversation reader rejects empty existing routes and waits for a ready composer on new routes", async () => {
+  const existing = conversationFixture([], { pathname: "/chat/conversation-123", inputReady: true });
+  const existingContext = await loadProviderPageTestContext(existing.context);
+  await assert.rejects(
+    existingContext.aiDebateProviderPageTest.readCurrentConversation({ provider: "grok" }),
+    error => error.code === "PROVIDER_CONVERSATION_NOT_READY",
+  );
+
+  const newPageNotReady = conversationFixture([]);
+  const newContext = await loadProviderPageTestContext(newPageNotReady.context);
+  await assert.rejects(
+    newContext.aiDebateProviderPageTest.readCurrentConversation({ provider: "grok" }),
+    error => error.code === "PROVIDER_CONVERSATION_NOT_READY",
+  );
+});
+
+test("current conversation reader rejects an unrecognized user turn even when an AI turn was read", async () => {
+  const f = conversationFixture([
+    { role: "AI", text: "已辨識的回答" },
+    { role: "Unknown", text: "未辨識的使用者問題", attributes: { "data-message-author-role": "user" } },
+  ]);
+  const context = await loadProviderPageTestContext(f.context);
+  await assert.rejects(
+    context.aiDebateProviderPageTest.readCurrentConversation({ provider: "grok" }),
+    error => error.code === "PROVIDER_CONVERSATION_UNREADABLE",
+  );
+});
+
+test("current conversation read cancels if the provider route changes while history is loading", async () => {
+  const f = conversationFixture([], {
+    inputReady: true,
+    onPoll(now, context) {
+      if (now >= 100) context.location.pathname = "/home";
+    },
+  });
+  const context = await loadProviderPageTestContext(f.context);
+  await assert.rejects(
+    context.aiDebateProviderPageTest.readCurrentConversation({ provider: "grok" }),
+    error => error.code === "PROVIDER_CONVERSATION_NAVIGATED",
+  );
+});
+
+test("current conversation read cancels when the automation epoch changes during its wait", async () => {
+  let cancelled = false;
+  let readerContext;
+  const f = conversationFixture([], {
+    inputReady: true,
+    onPoll() {
+      if (cancelled) return;
+      cancelled = true;
+      readerContext.aiDebateProviderPageTest.abortAutomation();
+    },
+  });
+  readerContext = await loadProviderPageTestContext(f.context);
+  await assert.rejects(
+    readerContext.aiDebateProviderPageTest.readCurrentConversation({ provider: "grok" }),
+    error => error.code === "PROVIDER_AUTOMATION_ABORTED",
+  );
+});
+
+test("current conversation reader refuses to report empty when visible role-marked messages are unrecognized", async () => {
+  const f = conversationFixture([{ role: "Unknown", text: "仍然載入中的使用者問題", attributes: { "data-message-author-role": "user" } }]);
+  const context = await loadProviderPageTestContext(f.context);
+  await assert.rejects(
+    context.aiDebateProviderPageTest.readCurrentConversation({ provider: "grok" }),
+    error => error.code === "PROVIDER_CONVERSATION_UNREADABLE",
+  );
+  assert.deepEqual(f.untouched, { click: 0, focus: 0, scroll: 0 });
+});
+
+test("aiDebate:readCurrentConversation RPC returns the exact read-only transcript contract", async () => {
+  const f = conversationFixture([
+    { role: "User", text: "請比較兩種做法" },
+    { role: "AI", text: "第一種做法的優點" },
+  ]);
+  const context = await loadProviderPageTestContext(f.context);
+  const result = await new Promise(resolve => {
+    const accepted = context.aiDebateProviderPageTest.contentMessageListener(
+      { type: "aiDebate:readCurrentConversation", provider: "grok" }, {}, resolve,
+    );
+    assert.equal(accepted, true);
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    ok: true,
+    provider: "grok",
+    content: "User:\n請比較兩種做法\n\nAI:\n第一種做法的優點",
+    empty: false,
+    messageCount: 2,
+  });
+  assert.deepEqual(f.untouched, { click: 0, focus: 0, scroll: 0 });
+});
+
+test("current conversation RPC rejects active generation, service errors, and content over 60,000 characters", async () => {
+  const generating = conversationFixture([{ role: "AI", text: "部分生成" }], { generating: true });
+  const generatingReader = await loadProviderPageTestContext(generating.context);
+  await assert.rejects(
+    generatingReader.aiDebateProviderPageTest.readCurrentConversation({ provider: "grok" }),
+    error => error.code === "PROVIDER_GENERATING",
+  );
+
+  const serviceError = conversationFixture([{ role: "Error", text: "An error occurred. Please try again." }]);
+  const errorReader = await loadProviderPageTestContext(serviceError.context);
+  await assert.rejects(
+    errorReader.aiDebateProviderPageTest.readCurrentConversation({ provider: "grok" }),
+    error => error.code === "PROVIDER_PAGE_ERROR",
+  );
+
+  const overlong = conversationFixture([{ role: "AI", text: "x".repeat(60001) }]);
+  const reader = await loadProviderPageTestContext(overlong.context);
+  await assert.rejects(
+    reader.aiDebateProviderPageTest.readCurrentConversation({ provider: "grok" }),
+    error => error.code === "PROVIDER_CONVERSATION_TOO_LONG",
+  );
+  for (const f of [generating, serviceError, overlong]) {
+    assert.deepEqual(f.untouched, { click: 0, focus: 0, scroll: 0 });
+  }
 });
 
 test("provider driver rejects a SPA route change before the next mutating or response step", async () => {
@@ -459,7 +733,7 @@ test("Grok readiness recognizes the localized live composer structure", async ()
 test("provider content script uses a replaceable versioned listener after extension reload", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
 
-  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.11"/);
+  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.12"/);
   assert.match(script, /"aiDebate:getCapabilities": getCapabilities/);
   assert.match(script, /__aiDebateContentVersion/);
   assert.match(script, /onMessage\.removeListener\(globalThis\.__aiDebateContentMessageListener\)/);
@@ -480,7 +754,7 @@ test("same-version content reinjection replaces the listener without duplicating
   assert.equal(listeners.size, 1);
   assert.notEqual(context.__aiDebateContentMessageListener, previous);
   const response = await new Promise(resolve => context.__aiDebateContentMessageListener({ type: "aiDebate:getCapabilities" }, {}, resolve));
-  assert.equal(response.contentScriptVersion, "0.5.1-driver.11");
+  assert.equal(response.contentScriptVersion, "0.5.1-driver.12");
 });
 
 test("failed content initialization cannot poison the next injection", async () => {
@@ -2110,4 +2384,19 @@ test("readSubmittedResponse retains pending runs and removes them only after a c
   assert.equal(completed.content, "完整答案");
   assert.equal(api.submittedRuns.has("run-poll"), false);
   assert.equal(sendClicks, 0);
+});
+
+
+test("existing conversation routes include current Grok, Meta and Gemini account paths", async () => {
+  for (const [provider, pathname, expected] of [
+    ["grok", "/c/b92f907b-35be-4d05-ae1e-e54e051e3a75", true],
+    ["grok", "/chat/old", true], ["grok", "/", false],
+    ["meta", "/prompt/080ab377-0f58-4067-b89b-1d825a797b07", true],
+    ["meta", "/", false], ["gemini", "/app/old", true],
+    ["gemini", "/u/2/app/old", true], ["gemini", "/app", false],
+    ["chatgpt", "/c/old", true],
+  ]) {
+    const context = await loadProviderPageTestContext({ location: { pathname, search: "" } });
+    assert.equal(context.aiDebateProviderPageTest.isExistingConversationRoute(provider), expected, `${provider}:${pathname}`);
+  }
 });

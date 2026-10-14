@@ -808,16 +808,14 @@ input[type="number"]:focus {
   40% { transform: scale(1); opacity: 1; }
 }
 
-.continuation-actions {
+.manual-reply-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-block: 10px;
 }
 
-.continuation-actions button { flex: 1 1 140px; }
-#continuationPreviewPanel { margin-block: 12px; }
-#continuationPreview { margin-top: 8px; }
+.manual-reply-actions button { flex: 1 1 140px; }
 .manual-reply-editor { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color); }
 .manual-reply-editor textarea { width: 100%; box-sizing: border-box; margin-top: 8px; }
 .manual-reply-editor p, .reply-recovery p, .reply-recovery-note { overflow-wrap: anywhere; }
@@ -1589,7 +1587,20 @@ details[open] > summary .deck-chevron { transform: rotate(225deg) translate(-2px
   padding-top: 10px;
   border-top: 1px solid var(--border-color);
 }
-.tab-hooking-settings > summary { color: var(--text-primary); cursor: pointer; font-size: 11px; font-weight: 700; }
+.tab-hooking-settings > summary {
+  min-height: 44px;
+  padding-block: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 650;
+}
+.tab-hooking-settings > summary:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
 .compact-action { margin-top: 8px; padding: 8px 12px; font-size: 12px; min-height: 44px; }
 
 .chat-controls { display: none; }

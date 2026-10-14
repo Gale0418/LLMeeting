@@ -74,6 +74,14 @@ export function degradeStateForStorage(state) {
         message: clipStoredText(error?.message, 500),
       }));
     }
+    if (transcript.roundZero) {
+      transcript.roundZero = {
+        userText: clipStoredText(transcript.roundZero.userText, 1000),
+        sources: (Array.isArray(transcript.roundZero.sources) ? transcript.roundZero.sources : []).slice(0, 5)
+          .map((source) => ({ provider: source.provider, content: clipStoredText(source.content, 1000),
+            messageCount: source.messageCount })),
+      };
+    }
     copy.transcript = transcript;
   }
 

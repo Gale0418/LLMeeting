@@ -15,6 +15,7 @@ import {
 import { buildConversationSummaryPrompt } from "../shared/prompts.js";
 import { normalizeRoundNumber } from "../shared/text.js";
 import { isRecoverableReply, MAX_MANUAL_REPLY_CHARS, pendingReplyRepairs } from "../shared/meetingRecovery.js";
+import { buildRoundZero, linkedContextProviders } from "../shared/roundZero.js";
 import {
   DEFAULT_ACTIVE_PROVIDER_IDS,
   PROVIDERS,
@@ -354,6 +355,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (controlOperation || lifecycleRevision !== startRevision) {
           throw createRunCancelledError();
         }
+        const initialContext = await collectLinkedRoundZero(message, reservationToken);
+        runController.assertCurrent(reservationToken);
+        if (controlOperation || lifecycleRevision !== startRevision) throw createRunCancelledError();
         preflight = await preflightStartRequest(message, reservationToken);
         runController.assertCurrent(reservationToken);
         if (controlOperation || lifecycleRevision !== startRevision) {
@@ -364,13 +368,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           busy: true,
           status: "running",
           phase: "preflight-complete",
-          message: "模型已就緒，準備啟航",
+          message: initialContext?.roundZero ? "第 0 輪對話已收集，準備分享給參與 AI。" : "模型已就緒，準備啟航",
           providerTabs: { ...runtimeState.providerTabs, ...preflight.providerTabs },
           preflightResults: preflight.results,
         };
         await publishState(reservationToken);
         runToken = runController.claim(reservationToken);
-        const execution = startAction(question, { activeProviders, summaryProvider, summaryStrategy, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode, preflight, runToken });
+        const execution = startAction(initialContext?.question ?? question, { activeProviders, summaryProvider, summaryStrategy, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode, preflight, runToken, roundZero: initialContext?.roundZero });
         replyStart({ ok: true, accepted: true, state: runtimeState });
         return execution;
       })
@@ -719,7 +723,8 @@ async function validateStartRequestBeforePreflight(message = {}) {
   if (runtimeState.repairPause || pendingReplyRepairs(runtimeState).length) {
     throw new Error("請先補齊故障回覆並繼續原流程，或重置目前會議。");
   }
-  if (message.mode !== "summary" && !String(message.question || "").trim()) {
+  if (message.mode !== "summary" && !String(message.question || "").trim()
+      && !linkedContextProviders(message.activeProviders, message.hookedTabs).length) {
     throw new Error("請先輸入問題");
   }
   const modeFeature = {
@@ -1041,7 +1046,7 @@ async function startInteractiveDebate(question, options = {}) {
     mode: options.mode,
     phase: "first-round",
     message: options.openingMessage,
-    question: trimmedQuestion,
+    question: options.roundZero?.userText ?? trimmedQuestion,
     activeProviders,
     summaryProvider,
     summaryStrategy: summarySetup.summaryStrategy,
@@ -1054,7 +1059,7 @@ async function startInteractiveDebate(question, options = {}) {
   };
   await publishState(runToken);
 
-  const firstRoundJobs = engine.start(trimmedQuestion);
+  const firstRoundJobs = engine.start(trimmedQuestion, { roundZero: options.roundZero });
   runtimeState = { ...runtimeState, transcript: engine.snapshot() };
   await publishState(runToken);
   await runFastProviderJobs(firstRoundJobs, "answer", runToken, {
@@ -1246,7 +1251,7 @@ async function startQuestionDebate(question, options = {}) {
     mode,
     phase: "first-round",
     message: options.openingMessage || "快速鬥技場：準備送出原始問題",
-    question: trimmedQuestion,
+    question: options.roundZero?.userText ?? trimmedQuestion,
     activeProviders,
     summaryProvider,
     summaryStrategy: summarySetup.summaryStrategy,
@@ -1259,7 +1264,7 @@ async function startQuestionDebate(question, options = {}) {
   };
   await publishState(runToken);
 
-  return runDebateRounds(trimmedQuestion, { scheduler, runToken, interactiveMode: options.interactiveMode });
+  return runDebateRounds(trimmedQuestion, { scheduler, runToken, interactiveMode: options.interactiveMode, roundZero: options.roundZero });
 }
 
 async function startSummaryDebate(userNote, options = {}) {
@@ -1303,7 +1308,7 @@ async function startSummaryDebate(userNote, options = {}) {
     mode: "summary",
     phase: "source-summary",
     message: `請 ${providerLabel(sourceProvider)} 總結目前對話`,
-    question: String(userNote || "").trim(),
+    question: options.roundZero?.userText ?? String(userNote || "").trim(),
     providerTabs,
     activeProviders: debateProviders,
     sourceProvider,
@@ -1318,7 +1323,7 @@ async function startSummaryDebate(userNote, options = {}) {
   await publishState(runToken);
 
   // Keep a recoverable session even if the source summary fails before answers.
-  engine.start(runtimeState.question || "總結目前對話");
+  engine.start(String(userNote || "").trim() || "總結目前對話", { roundZero: options.roundZero });
   runtimeState = { ...runtimeState, transcript: engine.snapshot() };
   const sourceResult = await sendJob({
     provider: sourceProvider,
@@ -1341,7 +1346,7 @@ async function startSummaryDebate(userNote, options = {}) {
   };
   await publishState(runToken);
 
-  return runDebateRounds(sourceResult.content, { scheduler: "fast", interactiveMode: options.interactiveMode, runToken });
+  return runDebateRounds(sourceResult.content, { scheduler: "fast", interactiveMode: options.interactiveMode, runToken, roundZero: options.roundZero });
 }
 
 async function runDebateRounds(originalQuestion, options = {}) {
@@ -1351,7 +1356,13 @@ async function runDebateRounds(originalQuestion, options = {}) {
   const runProviderJobs = scheduler === "fast" ? runFastProviderJobs : runSequentialProviderJobs;
   const schedulerLabel = scheduler === "fast" ? "快速" : "逐家";
 
-  const firstRoundJobs = engine.start(originalQuestion);
+  const roundZero = options.roundZero ?? engine.state?.roundZero;
+  // Summary mode keeps its source-summary step, but shares the same raw linked
+  // context with every peer instead of relying on the source AI to reproduce it.
+  const sharedQuestion = runtimeState.mode === "summary" && roundZero
+    ? `${buildRoundZero(roundZero.sources.map((source) => ({ ...source, ok: true })), roundZero.userText).question}\n\n【來源對話總結】\n${originalQuestion}`
+    : originalQuestion;
+  const firstRoundJobs = engine.start(sharedQuestion, { roundZero });
   runtimeState = {
     ...runtimeState,
     phase: "first-round",
@@ -2109,7 +2120,7 @@ async function refreshMetaInputProvider(tabId, job, runToken) {
   runController.assertCurrent(runToken);
 }
 
-const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.1-driver.11";
+const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.1-driver.12";
 const PROVIDER_DRIVER_CONTRACT_VERSION = 1;
 
 function isProviderLoginTab(tab, provider) {
@@ -2434,6 +2445,7 @@ export function createBoundedPersistedState(state) {
     sessionId: transcript.sessionId,
     phase: transcript.phase || "idle",
     originalQuestion: boundText(transcript.originalQuestion, 2000),
+    ...(transcript.roundZero ? { roundZero: boundRoundZero(transcript.roundZero, 1000) } : {}),
     activeProviders: providerIds,
     departedProviders: Array.isArray(transcript.departedProviders)
       ? [...new Set(transcript.departedProviders.filter(isProviderId))]
@@ -2473,6 +2485,7 @@ export function createBoundedPersistedState(state) {
 function boundTranscript(transcript, textLimit) {
   const bounded = JSON.parse(JSON.stringify(transcript));
   bounded.originalQuestion = boundText(bounded.originalQuestion, textLimit);
+  if (bounded.roundZero) bounded.roundZero = boundRoundZero(bounded.roundZero, textLimit);
   for (const key of ["answers", "critiques"]) {
     if (bounded[key] && typeof bounded[key] === "object") {
       bounded[key] = Object.fromEntries(Object.entries(bounded[key]).map(([providerId, value]) => [
@@ -2502,6 +2515,16 @@ function boundTranscript(transcript, textLimit) {
     }));
   }
   return bounded;
+}
+
+function boundRoundZero(roundZero, textLimit) {
+  return {
+    userText: boundText(roundZero?.userText, textLimit),
+    sources: (Array.isArray(roundZero?.sources) ? roundZero.sources : []).filter((source) => isProviderId(source?.provider))
+      .slice(0, PROVIDERS.length).map((source) => ({
+        provider: source.provider, content: boundText(source.content, textLimit), messageCount: source.messageCount,
+      })),
+  };
 }
 
 function boundText(value, limit) {
@@ -2630,6 +2653,28 @@ async function requireProFeature(featureId) {
   throw error;
 }
 
+async function collectLinkedRoundZero(message, token) {
+  const linked = linkedContextProviders(requiredProviderIdsForMessage(message), message.hookedTabs);
+  if (!linked.length) return null;
+  if (linked.some((provider) => !Number.isInteger(message.hookedTabs[provider]) || message.hookedTabs[provider] <= 0)) {
+    throw new Error("指定的對話分頁已失效，請重新選擇。");
+  }
+  runController.assertCurrent(token);
+  runtimeState = { ...runtimeState, busy: true, status: "running", phase: "collecting-context",
+    mode: message.mode || "fast", question: String(message.question || "").trim(),
+    providerTabs: { ...runtimeState.providerTabs, ...Object.fromEntries(linked.map((provider) => [provider, message.hookedTabs[provider]])) },
+    message: "正在收集指定分頁的第 0 輪對話…" };
+  await publishState(token);
+  const replies = await captureLinkedReplies({ ...message, readConversation: true }, token);
+  runController.assertCurrent(token);
+  const failed = replies.filter((reply) => !reply.ok);
+  if (failed.length) {
+    const detail = failed.map(({ provider, error }) => `${providerLabel(provider)}：${error}`).join("；");
+    throw new Error(`指定分頁讀取失敗，尚未送出新提示：${detail}`);
+  }
+  return buildRoundZero(replies, message.question);
+}
+
 async function captureLinkedReplies(message, token) {
   if (runtimeState.repairPause || pendingReplyRepairs(runtimeState).length) {
     throw new Error("請先補齊故障回覆並繼續原流程，或重置目前會議。");
@@ -2652,13 +2697,21 @@ async function captureLinkedReplies(message, token) {
         await ensureProviderContentScript(tab.id, { deadline: Date.now() + READINESS_TIMEOUT_MS });
         runController.assertCurrent(token);
         const response = await providerRpc(chrome.tabs.sendMessage(tab.id, {
-          type: "aiDebate:readCurrentReply", provider,
+          type: message.readConversation ? "aiDebate:readCurrentConversation" : "aiDebate:readCurrentReply", provider,
         }), "擷取目前發言", READINESS_TIMEOUT_MS);
         runController.assertCurrent(token);
-        if (!response?.ok || typeof response.content !== "string" || !response.content.trim()) throw new Error(response?.error || "沒有可擷取的 AI 發言。");
-        replies.push({ ok: true, provider, content: response.content });
+        const emptyConversation = message.readConversation && response?.ok && response.empty === true && response.content === "";
+        if (!emptyConversation && (!response?.ok || typeof response.content !== "string" || !response.content.trim())) {
+          throw Object.assign(new Error(response?.error || "沒有可擷取的 AI 發言。"), { code: response?.code });
+        }
+        replies.push({ ok: true, provider, content: response.content,
+          ...(message.readConversation ? { empty: emptyConversation, messageCount: response.messageCount } : {}) });
       } catch (error) {
         if (isRunCancelledError(error)) throw error;
+        if (message.readConversation) {
+          await setProviderDiagnostic(provider, { stage: "error", phase: "round-zero", debugStage: "collect-context",
+            code: error.code || "PROVIDER_CONTEXT_READ_FAILED", error: error.message }, token);
+        }
         replies.push({ ok: false, provider, error: error.message });
       }
     }

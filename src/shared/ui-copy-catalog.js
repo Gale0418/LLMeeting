@@ -3633,5 +3633,61 @@ export const UI_COPY = [
     "zh_TW": "恭喜解鎖🐑模式~\n\n覺得這個擴充功能好用嗎？\n歡迎訂閱作者的 YouTube 頻道、按讚並分享：\n{p0}\n\n要去看看嗎？ (被拖走)",
     "en": "Congrats on unlocking 🐑 Mode~\n\nEnjoying this extension?\nSubscribe to the creator's YouTube, like, and share:\n{p0}\n\nWant to check it out? (dragged away)",
     "ja": "🐑モード解放おめでとうございます~\n\nこの拡張機能を気に入っていただけましたか？\n作者のYouTubeチャンネル登録、高評価、シェアをお待ちしています：\n{p0}\n\n見に行ってみる？ (引きずられて退場)"
+  },
+  {
+    "id": "roundZero.1",
+    "source": "第 0 輪：分頁對話與你的補充",
+    "zh_TW": "第 0 輪：分頁對話＋你的補充 ✨",
+    "en": "Round 0: Tab Chat + Your Notes ✨",
+    "ja": "ラウンド 0：タブの会話＋追加メモ ✨"
+  },
+  {
+    "id": "roundZero.2",
+    "source": "選擇既有分頁後，啟動時會收集該頁已載入的對話，和上方輸入一起分享給所有參與 AI。未指定時開啟新對話。",
+    "zh_TW": "選好分頁後，啟動時會把已載入的對話與上方輸入打包，一起分享給 AI 夥伴！沒選就開啟新話題囉～",
+    "en": "Select a tab and we'll bundle its loaded chat with your notes for all AI buddies! Leave unselected to start fresh.",
+    "ja": "タブを選ぶと読み込み済みの会話と入力をまとめてAIたちに共有するよ！選ばないと新規スタート♪"
+  },
+  {
+    "id": "roundZero.3",
+    "source": "正在收集指定分頁的第 0 輪對話…",
+    "zh_TW": "正在收集指定分頁的第 0 輪對話中，稍等一下下…",
+    "en": "Gathering Round 0 chat from the selected tab, hang tight!…",
+    "ja": "指定タブからラウンド 0 の会話を集め中…ちょっと待ってね！"
+  },
+  {
+    "id": "roundZero.4",
+    "source": "指定分頁讀取失敗，尚未送出新提示：{p0}",
+    "zh_TW": "指定分頁讀取失敗，新提示尚未送出唷：{p0}",
+    "en": "Couldn't read the selected tab; prompt not sent yet: {p0}",
+    "ja": "指定タブの読み取りに失敗したため、プロンプトはまだ未送信です：{p0}"
+  },
+  {
+    "id": "roundZero.5",
+    "source": "第 0 輪內容超過 60,000 字元，請減少連線分頁或精簡原對話後再開始。",
+    "zh_TW": "第 0 輪內容超過 60,000 字元囉！請精簡原對話或減少連線分頁後再出發～",
+    "en": "Round 0 is over 60,000 characters! Please trim the chat or disconnect tabs before starting.",
+    "ja": "ラウンド 0 が60,000文字を超えています！会話を整理するかタブを減らしてから再開してね。"
+  },
+  {
+    "id": "roundZero.6",
+    "source": "指定的對話分頁已失效，請重新選擇。",
+    "zh_TW": "指定的對話分頁好像走丟了，請重新選擇一個吧！",
+    "en": "The selected chat tab is no longer available, please pick another one!",
+    "ja": "指定されたタブが見つからないみたい…もう一度選び直してね！"
+  },
+  {
+    "id": "roundZero.7",
+    "source": "指定分頁沒有已載入的對話，請輸入本次問題。",
+    "zh_TW": "指定分頁還沒有載入的對話，直接輸入這次想問的問題吧！",
+    "en": "No loaded chat found in this tab, feel free to type your question!",
+    "ja": "指定タブに読み込み済みの会話がありません。今回の質問を入力してね！"
+  },
+  {
+    "id": "roundZero.8",
+    "source": "第 0 輪對話已收集，準備分享給參與 AI。",
+    "zh_TW": "第 0 輪對話已打包完成！準備分享給 AI 夥伴們開聊囉 ✨",
+    "en": "Round 0 chat is all gathered! Ready to share with the AI crew ✨",
+    "ja": "ラウンド 0 の会話をまとめました！AIのみんなにシェアする準備完了だよ ✨"
   }
 ];

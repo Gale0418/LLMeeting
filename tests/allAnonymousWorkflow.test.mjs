@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DebateEngine } from "../src/background/debateEngine.js";
 
-const PROVIDER_CONTENT_VERSION = "0.5.1-driver.11";
+const PROVIDER_CONTENT_VERSION = "0.5.1-driver.12";
 
-function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [], serverOverload = [], pendingReads = [], pauseFirstRead, initialUrl = "chrome://newtab/", initialCurrentState } = {}) {
+function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [], serverOverload = [], pendingReads = [], pauseFirstRead, initialUrl = "chrome://newtab/", initialCurrentState, conversationReplies = {} } = {}) {
   const tabs = new Map();
   const submitted = new Map();
   const readAttempts = new Map();
@@ -83,6 +83,9 @@ function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [],
         }
         if (message.type === "aiDebate:checkReadiness") {
           return { ready: true, status: "ready" };
+        }
+        if (message.type === "aiDebate:readCurrentConversation") {
+          return conversationReplies[message.provider] || { ok: true, content: "", empty: true, messageCount: 0 };
         }
         if (message.type === "aiDebate:submitPrompt") {
           if (matchesFailure(failSubmit, message)) {
@@ -186,6 +189,109 @@ async function dispatchAndWait(mock, message, label) {
     !candidate.busy && ["done", "waiting_for_user", "error", "idle"].includes(candidate.status), label);
   return { ...response, state };
 }
+
+test('explicit tabs automatically share round zero before any prompt and keep it in the transcript', async () => {
+  await quickly(async () => {
+    const content = 'User:\n舊問題\n\nAI:\n舊對話內容';
+    const mock = createChromeMock({ initialUrl: 'https://chatgpt.com/c/old',
+      conversationReplies: { chatgpt: { ok: true, content, empty: false, messageCount: 2 } } });
+    await loadWorker(mock, 'linked-round-zero');
+    const response = await dispatchAndWait(mock, { type: 'aiDebate:start', mode: 'chat', question: '本次補充',
+      activeProviders: ['chatgpt', 'gemini'], hookedTabs: { chatgpt: 1, grok: 99 }, skipSummary: true }, '分頁第0輪');
+    const reads = mock.sent.filter(m => m.type === 'aiDebate:readCurrentConversation');
+    assert.equal(reads.length, 1);
+    assert.equal(reads[0].provider, 'chatgpt');
+    const firstSubmit = mock.sent.findIndex(m => m.type === 'aiDebate:submitPrompt');
+    assert.ok(firstSubmit > mock.sent.indexOf(reads[0]));
+    for (const job of mock.sent.filter(m => m.type === 'aiDebate:submitPrompt')) {
+      assert.equal(job.prompt.split(content).length - 1, 1);
+      assert.ok(job.prompt.includes('本次補充'));
+    }
+    assert.equal(response.state.transcript.roundZero.userText, '本次補充');
+    assert.equal(response.state.transcript.roundZero.sources[0].content, content);
+  });
+});
+
+test('failed or oversized linked context stops before new prompts or fresh tabs are created', async () => {
+  for (const [id, reply] of [
+    ['failed', { ok: false, error: 'AI 還在生成' }],
+    ['oversize', { ok: true, content: 'a'.repeat(60000), messageCount: 1 }],
+  ]) await quickly(async () => {
+    const mock = createChromeMock({ initialUrl: 'https://chatgpt.com/c/old', conversationReplies: { chatgpt: reply } });
+    await loadWorker(mock, `linked-context-${id}`);
+    const response = await mock.dispatch({ type: 'aiDebate:start', mode: 'chat', question: '補充',
+      activeProviders: ['chatgpt', 'gemini'], hookedTabs: { chatgpt: 1 } });
+    assert.equal(response.ok, false);
+    assert.match(response.error, id === 'failed' ? /尚未送出新提示/ : /60,000/);
+    if (id === 'failed') assert.ok(response.state.debugEvents.some(event => event.phase === 'round-zero'));
+    assert.equal(mock.sent.filter(m => m.type === 'aiDebate:submitPrompt').length, 0);
+    assert.equal(mock.getTabs().length, 1);
+  });
+});
+
+test('a linked empty tab needs a question while a nonempty conversation can start without one', async () => {
+  for (const hasContent of [false, true]) await quickly(async () => {
+    const mock = createChromeMock({ initialUrl: 'https://chatgpt.com/c/old', conversationReplies: hasContent
+      ? { chatgpt: { ok: true, content: 'AI:\n既有討論', empty: false, messageCount: 1 } } : {} });
+    await loadWorker(mock, `linked-context-no-note-${hasContent}`);
+    const request = { type: 'aiDebate:start', mode: 'chat', question: '',
+      activeProviders: ['chatgpt', 'gemini'], hookedTabs: { chatgpt: 1 } };
+    if (hasContent) {
+      const response = await dispatchAndWait(mock, request, '無補充分頁第0輪');
+      assert.equal(response.state.transcript.roundZero.userText, '');
+    } else {
+      const response = await mock.dispatch(request);
+      assert.equal(response.ok, false);
+      assert.match(response.error, /請輸入本次問題/);
+      assert.equal(mock.sent.filter(m => m.type === 'aiDebate:submitPrompt').length, 0);
+    }
+  });
+});
+
+test('stopping while round zero is being read cancels the pending start before any prompt', async () => {
+  await quickly(async () => {
+    const mock = createChromeMock({ initialUrl: 'https://chatgpt.com/c/old' });
+    let releaseRead, signalRead;
+    const reading = new Promise(resolve => { signalRead = resolve; });
+    const originalSend = mock.chrome.tabs.sendMessage;
+    mock.chrome.tabs.sendMessage = (id, message) => {
+      if (message.type === 'aiDebate:readCurrentConversation') {
+        signalRead();
+        return new Promise(resolve => { releaseRead = resolve; });
+      }
+      return originalSend(id, message);
+    };
+    await loadWorker(mock, 'cancel-round-zero-read');
+    const start = mock.dispatchWithoutWaiting({ type: 'aiDebate:start', mode: 'chat', question: '補充',
+      activeProviders: ['chatgpt', 'gemini'], hookedTabs: { chatgpt: 1 } });
+    await reading;
+    const stop = await mock.dispatch({ type: 'aiDebate:stop' });
+    assert.equal(stop.ok, true);
+    releaseRead({ ok: true, content: 'AI:\n已讀到的背景', empty: false, messageCount: 1 });
+    await waitForState(mock, state => !state.busy, '停止第0輪收集');
+    for (let attempt = 0; attempt < 10 && !start.responses.length; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    assert.equal(start.responses[0]?.code, 'RUN_CANCELLED');
+    assert.equal(mock.sent.filter(m => m.type === 'aiDebate:submitPrompt').length, 0);
+    assert.equal(mock.getTabs().length, 1);
+  });
+});
+
+test('summary mode retains linked round zero through source summary and passes it to peers', async () => {
+  await quickly(async () => {
+    const mock = createChromeMock({ initialUrl: 'https://chatgpt.com/c/source', conversationReplies: {
+      chatgpt: { ok: true, content: 'AI:\n來源分頁原始上下文', empty: false, messageCount: 1 },
+    } });
+    await loadWorker(mock, 'summary-with-round-zero');
+    const response = await dispatchAndWait(mock, { type: 'aiDebate:start', mode: 'summary', question: '本次補充',
+      activeProviders: ['chatgpt', 'gemini', 'grok'], hookedTabs: { chatgpt: 1 }, skipSummary: true }, '總結與第0輪');
+    assert.equal(response.state.transcript.roundZero.sources[0].content, 'AI:\n來源分頁原始上下文');
+    const jobs = mock.sent.filter(m => m.type === 'aiDebate:submitPrompt' && m.phase === 'first-round');
+    assert.equal(jobs.length, 2);
+    for (const job of jobs) assert.ok(job.prompt.includes('來源分頁原始上下文') && job.prompt.includes('本次補充'));
+  });
+});
 
 test("chat accepts the preflight handoff and waits after answers without running critiques", async () => {
   await quickly(async () => {
@@ -668,6 +774,7 @@ test("source summary failure automatically continues without resending source co
   await quickly(async () => {
     const mock = createChromeMock({
       initialUrl: "https://chatgpt.com/",
+      conversationReplies: { chatgpt: { ok: true, content: "AI:\n修復後仍需共享的第0輪", empty: false, messageCount: 1 } },
       failRead: [{ provider: "chatgpt", phase: "source-summary" }],
     });
     await loadWorker(mock, "source-summary-repair");
@@ -675,6 +782,7 @@ test("source summary failure automatically continues without resending source co
     const start = await dispatchAndWait(mock, {
       type: "aiDebate:start", mode: "summary", question: "請整理目前對話",
       activeProviders: ["chatgpt", "gemini", "grok"], debateRounds: 1,
+      hookedTabs: { chatgpt: 1 },
       skipSummary: true,
     }, "來源摘要故障暫停");
     assert.equal(start.ok, true, start.error);
@@ -703,6 +811,8 @@ test("source summary failure automatically continues without resending source co
 
     const finished = await waitForState(mock, (state) => state.status === "done", "來源摘要修補後辯論完成");
     assert.equal(finished.sourceSummary, "ChatGPT 人工補回的來源摘要");
+    assert.equal(finished.transcript.roundZero.sources[0].content, "AI:\n修復後仍需共享的第0輪");
+    assert.ok(submissions("first-round").every(job => job.prompt.includes("修復後仍需共享的第0輪")));
     assert.equal(sourceRequests().length, 1, "resume must not resend the successful or repaired source-summary job");
     assert.deepEqual(submissions("first-round").map(({ provider }) => provider), ["gemini", "grok"]);
     assert.deepEqual(submissions("summary"), []);

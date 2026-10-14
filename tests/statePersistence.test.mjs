@@ -30,6 +30,17 @@ test("state storage queue continues after a failed write without losing clear or
 });
 import { DebateEngine } from "../src/background/debateEngine.js";
 
+test("storage degradation bounds round-zero context while preserving provider attribution", () => {
+  const source = { provider: "chatgpt", content: "x".repeat(60000), messageCount: 5 };
+  const state = { transcript: { roundZero: { userText: "u".repeat(2000), sources: [source] } } };
+  const degraded = degradeStateForStorage(state);
+  assert.ok(degraded.transcript.roundZero.sources[0].content.length <= 1001);
+  assert.equal(degraded.transcript.roundZero.sources[0].provider, "chatgpt");
+  assert.equal(degraded.transcript.roundZero.sources[0].messageCount, 5);
+  assert.ok(degraded.transcript.roundZero.userText.length <= 1001);
+  assert.equal(state.transcript.roundZero.sources[0].content.length, 60000);
+});
+
 test("degradeStateForStorage trims transcript rounds to last 3 and truncates long text", () => {
   const longText = "a".repeat(2000);
   const state = {

@@ -79,7 +79,7 @@ test("side panel exposes one main debate button and advanced mutually exclusive 
   assert.match(html, /data-provider-toggle="claude" aria-pressed="true"/);
   assert.match(html, /data-provider-toggle="meta" aria-pressed="false"/);
   assert.equal(html.match(/data-provider-toggle=/g)?.length, 5);
-  assert.match(html, /未指定時，每次會議都會開啟新分頁/);
+  assert.match(html, /未指定時開啟新對話/);
   assert.equal(html.match(/\[預設\] 開新分頁/g)?.length, 5);
   assert.doesNotMatch(html, /尋找或開新分頁/);
   assert.match(app, /\[預設\] 開新分頁/);

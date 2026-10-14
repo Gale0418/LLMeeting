@@ -77,3 +77,5 @@
 | LLM-T64 | 星期彩虹字碼與電路流光改善 | Task | LLM-E7 | P2 | Review | Codex | LLM-T63 | 重載確認本地星期配色、午夜換色及320/480側欄動態與可讀性 | 461/461、日期/午夜/hidden清理回歸、七色雙寬靜態背景、語法、diff、ZIP CRC | 1 | background, rainbow, circuit | 週一至日紅橙黃綠藍紫白與互補電路，週日青藍；GitHub/Magic UI及Animated Circuit概念研究；每條光尾/亮頭同步且路線錯速反向，保留關閉/減少動效；未實測原生動畫或效能，本輪未跑兔子 |
 
 | LLM-T65 | 語言與背景偏好移入擴充功能選項 | Task | LLM-E7 | P2 | Review | Codex | LLM-T64 | 重載後由Chrome原生選項入口確認三語/背景/動畫即時套用已開側欄 | 468/468、無控制側欄、跨頁事件/清理/讀取競態、不回寫、manifest入口與封裝CRC | 1 | options, preferences, i18n | options_ui內嵌設定頁、側欄移除三控制；沿用原保存key、Chrome locale事件及背景origin storage事件即時同步；保留草稿/減少動效/星期色；原生實機待驗，本輪未跑兔子 |
+
+| LLM-T66 | 指定分頁第0輪與主流程整合 | Task | LLM-E7 | P1 | Review | Codex／Antigravity | LLM-T65 | 重載Driver .12驗證五家既有/空白分頁、載入延遲、停止與來源摘要修復 | 495/495、111對話自動化、角色完整/穩定載入/取消回歸、三語527筆、CodeRabbit首查2major已修及複查0、ZIP CRC | 2 | continuation, round-zero, simplicity | 分頁指定移到主流程、移除獨立擷取與重複教學，龍LOGO及進階功能保留；只讀明確選定且啟用分頁，已載入對話＋補充分享；來源不齊/超量不送，總結與人工修復保留；原生實機待驗 |
