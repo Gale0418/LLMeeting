@@ -20,7 +20,7 @@ class Target {
   }
 }
 
-function fixture({ reduced = false, saved, noStorage = false } = {}) {
+function fixture({ reduced = false, saved, noStorage = false, date = new Date(2026, 9, 12, 12) } = {}) {
   const shell = { dataset: {} };
   const backgroundToggle = Object.assign(new Target(), { checked: false });
   const motionToggle = Object.assign(new Target(), { checked: false, disabled: false });
@@ -50,14 +50,42 @@ function fixture({ reduced = false, saved, noStorage = false } = {}) {
       for (const listener of mediaListeners) listener();
     }
   };
-  return { shell, backgroundToggle, motionToggle, document, storage: noStorage ? null : storage, values, media };
+  let nextTimerId = 0;
+  const timers = new Map();
+  const cancelledTimers = [];
+  const fakeSetTimeout = (callback, delay) => {
+    const id = ++nextTimerId;
+    timers.set(id, { callback, delay });
+    return id;
+  };
+  const fakeClearTimeout = (id) => {
+    cancelledTimers.push(id);
+    timers.delete(id);
+  };
+  let currentDate = date;
+  return {
+    shell, backgroundToggle, motionToggle, document,
+    storage: noStorage ? null : storage, values, media,
+    now: () => new Date(currentDate),
+    setNow: (nextDate) => { currentDate = nextDate; },
+    setTimeout: fakeSetTimeout,
+    clearTimeout: fakeClearTimeout,
+    timers,
+    cancelledTimers,
+    fireTimer: (id = timers.keys().next().value) => {
+      const timer = timers.get(id);
+      if (!timer) throw new Error(`No timer ${id} is scheduled`);
+      timers.delete(id);
+      timer.callback();
+    }
+  };
 }
 
 test('persists the background and motion choices and pauses while the document is hidden', () => {
   const f = fixture();
   const destroy = initBackgroundControls({ ...f, matchMedia: () => f.media });
 
-  assert.deepEqual(f.shell.dataset, { circuitBackground: 'on', circuitMotion: 'on', pageHidden: 'false' });
+  assert.deepEqual(f.shell.dataset, { circuitBackground: 'on', circuitMotion: 'on', weekdayTheme: 'red', pageHidden: 'false' });
   f.backgroundToggle.checked = false;
   f.backgroundToggle.dispatch('change');
   assert.equal(f.shell.dataset.circuitBackground, 'off');
@@ -69,10 +97,59 @@ test('persists the background and motion choices and pauses while the document i
   f.document.hidden = true;
   f.document.dispatch('visibilitychange');
   assert.equal(f.shell.dataset.pageHidden, 'true');
+  assert.equal(f.timers.size, 0);
   destroy();
   f.document.hidden = false;
   f.document.dispatch('visibilitychange');
   assert.equal(f.shell.dataset.pageHidden, 'true');
+});
+
+test('maps each local weekday to its theme', () => {
+  const themes = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'white'];
+  for (let weekday = 0; weekday < 7; weekday += 1) {
+    const date = new Date(2026, 9, 12 + weekday, 12);
+    const f = fixture({ date });
+    const destroy = initBackgroundControls({ ...f, matchMedia: () => f.media });
+    assert.equal(f.shell.dataset.weekdayTheme, themes[weekday]);
+    destroy();
+  }
+});
+
+test('updates at local midnight and schedules only one next refresh', () => {
+  const f = fixture({ date: new Date(2026, 9, 12, 23, 59, 30) });
+  const destroy = initBackgroundControls({ ...f, matchMedia: () => f.media });
+
+  assert.equal(f.shell.dataset.weekdayTheme, 'red');
+  assert.equal(f.timers.size, 1);
+  const [timerId, timer] = f.timers.entries().next().value;
+  assert.equal(timer.delay, 30_000);
+  f.setNow(new Date(2026, 9, 13, 0, 0, 0));
+  f.fireTimer(timerId);
+  assert.equal(f.shell.dataset.weekdayTheme, 'orange');
+  assert.equal(f.timers.size, 1);
+  destroy();
+  assert.equal(f.timers.size, 0);
+});
+
+test('clears the midnight timer while hidden and refreshes immediately when visible', () => {
+  const f = fixture({ date: new Date(2026, 9, 12, 23, 59, 30) });
+  const destroy = initBackgroundControls({ ...f, matchMedia: () => f.media });
+  const [timerId] = f.timers.keys();
+
+  f.document.hidden = true;
+  f.document.dispatch('visibilitychange');
+  assert.equal(f.timers.size, 0);
+  assert.deepEqual(f.cancelledTimers, [timerId]);
+  f.setNow(new Date(2026, 9, 13, 0, 1, 0));
+  f.document.hidden = false;
+  f.document.dispatch('visibilitychange');
+  assert.equal(f.shell.dataset.weekdayTheme, 'orange');
+  assert.equal(f.timers.size, 1);
+
+  const [activeTimerId] = f.timers.keys();
+  destroy();
+  assert.equal(f.timers.size, 0);
+  assert.deepEqual(f.cancelledTimers, [timerId, activeTimerId]);
 });
 
 test('reduced motion disables animation without overriding the saved preference', () => {

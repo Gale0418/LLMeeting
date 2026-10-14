@@ -888,6 +888,17 @@ body::before {
   gap: 10px;
 }
 
+/* Decorative palette only: provider and action colors remain stable. */
+.shell { --rain-color: #62ed84; --circuit-hue: 300; }
+.shell[data-weekday-theme="red"] { --rain-color: #ff6678; --circuit-hue: 180; }
+.shell[data-weekday-theme="orange"] { --rain-color: #ffae59; --circuit-hue: 210; }
+.shell[data-weekday-theme="yellow"] { --rain-color: #f6e56b; --circuit-hue: 240; }
+.shell[data-weekday-theme="green"] { --rain-color: #62ed84; --circuit-hue: 300; }
+.shell[data-weekday-theme="blue"] { --rain-color: #6699ff; --circuit-hue: 40; }
+.shell[data-weekday-theme="purple"] { --rain-color: #b880ff; --circuit-hue: 90; }
+/* White has no chromatic complement; cyan stays visible on the dark board. */
+.shell[data-weekday-theme="white"] { --rain-color: #e2eaf0; --circuit-hue: 190; }
+
 .circuit-backdrop {
   position: fixed;
   z-index: 0;
@@ -903,7 +914,7 @@ body::before {
   inset: 0;
   overflow: hidden;
   pointer-events: none;
-  background: #020a04;
+  background: #03080b;
 }
 
 .digital-rain::before,
@@ -911,52 +922,76 @@ body::before {
   content: "";
   position: absolute;
   inset: -512px 0 0;
-  background: url('../../assets/images/digital-code-rain.svg') left top / 384px 512px repeat;
+  background: var(--rain-color);
+  mask: url('../../assets/images/digital-code-rain.svg') left top / 384px 512px repeat;
+  mask-mode: alpha;
   animation: digitalRainFall 12s linear infinite;
-  opacity: .72;
+  opacity: .52;
 }
 
 .digital-rain::after {
-  background-position: 192px 128px;
+  mask-position: 192px 128px;
   animation-duration: 19s;
   animation-delay: -9s;
-  opacity: .24;
+  opacity: .19;
 }
 
 .circuit-base,
 .circuit-glow,
 .circuit-current,
+.circuit-head,
 .circuit-details > * {
   fill: none;
-  stroke: rgba(55, 223, 83, .48);
-  stroke-width: 1.7;
+  stroke: hsl(var(--circuit-hue) 75% 64% / .2);
+  stroke-width: .85;
   vector-effect: non-scaling-stroke;
-  stroke-linecap: square;
-  stroke-linejoin: miter;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
+.circuit-route { --travel: 12s; --phase: -3s; }
+.circuit-route:nth-child(2n) { --travel: 15s; --phase: -8s; }
+.circuit-route:nth-child(3n) { --travel: 18s; --phase: -12s; }
+.circuit-route:nth-child(4n) { --travel: 14s; --phase: -6s; }
+
+.circuit-glow,
+.circuit-current,
+.circuit-head {
+  stroke-dashoffset: var(--pulse-offset, 0);
+  animation: circuitCurrent var(--travel) linear infinite;
+  animation-delay: var(--phase);
+}
+.circuit-route:nth-child(2n) > :is(.circuit-glow, .circuit-current, .circuit-head) {
+  animation-direction: reverse;
+}
 .circuit-glow {
-  stroke: rgba(42, 244, 76, .14);
-  stroke-width: 7;
+  stroke: hsl(var(--circuit-hue) 95% 65% / .16);
+  stroke-width: 5;
+  stroke-dasharray: 80 920;
 }
 
 .circuit-current {
-  stroke: rgba(164, 255, 174, .92);
-  stroke-width: 2.4;
-  stroke-dasharray: 36 84;
-  stroke-dashoffset: 0;
-  animation: circuitCurrent 6s linear infinite;
+  --pulse-offset: -56;
+  stroke: hsl(var(--circuit-hue) 95% 74% / .72);
+  stroke-width: 1.6;
+  stroke-dasharray: 24 976;
 }
 
-.circuit-current:nth-of-type(2n) { animation-duration: 7s; }
-.circuit-current:nth-of-type(3n) { animation-duration: 9s; }
-.circuit-current:nth-of-type(4n) { animation-delay: -3s; }
-.circuit-details > * { stroke: rgba(57, 133, 164, .23); stroke-width: .9; }
-.circuit-details circle { fill: rgba(75, 176, 204, .3); stroke: none; }
+.circuit-head {
+  --pulse-offset: -78;
+  stroke: hsl(var(--circuit-hue) 100% 94% / .95);
+  stroke-width: 2;
+  stroke-dasharray: 2 998;
+}
+.circuit-route:nth-child(2n) > :is(.circuit-current, .circuit-head) {
+  --pulse-offset: 0;
+}
+.circuit-details > * { stroke: hsl(var(--circuit-hue) 70% 65% / .26); stroke-width: .9; }
+.circuit-details circle { fill: hsl(var(--circuit-hue) 80% 75% / .45); stroke: none; }
 .shell[data-circuit-background="off"] .circuit-backdrop,
 .shell[data-circuit-background="off"] .digital-rain { display: none; }
-.shell[data-circuit-motion="off"] .circuit-current,
-.shell[data-page-hidden="true"] .circuit-current,
+.shell[data-circuit-motion="off"] :is(.circuit-current, .circuit-glow, .circuit-head),
+.shell[data-page-hidden="true"] :is(.circuit-current, .circuit-glow, .circuit-head),
 .shell[data-circuit-motion="off"] .digital-rain::before,
 .shell[data-circuit-motion="off"] .digital-rain::after,
 .shell[data-page-hidden="true"] .digital-rain::before,
@@ -1714,7 +1749,7 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.98); }
 }
 
 @keyframes circuitCurrent {
-  to { stroke-dashoffset: -120px; }
+  to { stroke-dashoffset: calc(var(--pulse-offset, 0) - 1000); }
 }
 
 @keyframes digitalRainFall {
@@ -1767,7 +1802,7 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.98); }
     transition-duration: .001ms !important;
   }
   .dragon-hologram { transform: none; }
-  .circuit-current { animation: none !important; }
+  .circuit-current, .circuit-glow, .circuit-head { animation: none !important; }
   .digital-rain::before, .digital-rain::after { animation: none !important; }
 }
 

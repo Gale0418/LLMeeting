@@ -1,0 +1,45 @@
+{
+  "date": "2026-10-15",
+  "task": "LLM-T64",
+  "tests": {
+    "passed": 461,
+    "failed": 0
+  },
+  "weekdayOrder": [
+    "red",
+    "orange",
+    "yellow",
+    "green",
+    "blue",
+    "purple",
+    "white"
+  ],
+  "circuitHues": [
+    180,
+    210,
+    240,
+    300,
+    40,
+    90,
+    190
+  ],
+  "clock": "browser local time, one midnight timer, clear while hidden/destroyed, refresh on visible",
+  "motion": "CSS only; controls, hidden pause, reduced motion cover glow/current/head/rain",
+  "sources": [
+    "https://github.com/magicuidesign/magicui/blob/main/apps/www/registry/magicui/animated-beam.tsx",
+    "https://www.robcrock.com/lab/animated-circuit"
+  ],
+  "reuse": "Concepts only; original SVG/CSS; no added dependency or third-party source copied",
+  "visual": "Seven palettes at 320 and 480 rendered as static background-only SVG using CairoSVG with variables/pathLength resolved; not native/browser animation acceptance",
+  "limitations": [
+    "Native side-panel motion/readability/performance pending reload",
+    "CodeRabbit not rerun",
+    "Not uploaded to store or released"
+  ],
+  "package": {
+    "path": "dist\\llmeeting-0.5.1.zip",
+    "bytes": 2728673,
+    "sha256": "FBCFACA95F02360691A9DB9C1F74AC5C7B84789A32884E074AF59A8EA8992444",
+    "zipCRC": "pass"
+  }
+}

@@ -73,3 +73,5 @@
 | LLM-T61 | 電路流光背景與龍恢復放大 | Task | LLM-E7 | P2 | Review | Codex／Antigravity | LLM-T60 | 重載確認320/480三語、背景開關、減少動效與可讀性 | 背景控制4項、三語參數、全套443/443、封裝CRC | 1 | ui, background, motion | 6條viewport走線共用底線與流光、微晶片及焊點；龍170–225px及窄幅158px；44px控制、偏好保存、隱藏暫停；尚未實測背景效能／原生側欄 |
 | LLM-T62 | 滿版字碼雨與交錯電路 | Task | LLM-E7 | P2 | Review | Codex | LLM-T61 | 重載確認整片動態、原生320/480文字可讀性與關閉動畫 | 443/443、控制及資產6項、SVG XML、320/480背景靜態預覽、封裝CRC | 1 | matrix, background, motion | 使用者參考改為綠色滿版；24欄32行原創字碼紋理，兩層12/19秒下落、10條6–9秒多段流光；大龍及開關保留；未實測native動態或效能，本輪未跑兔子 |
 | LLM-T63 | 全介面三語補全與瀏覽器自選 | Task | LLM-E7 | P1 | Review | Codex／Antigravity | LLM-T62 | 重載驗證auto與手選、羊彩蛋及重置清除三語對話框 | 458/458、519文案三語及重複一致性、地域語言、原稿保護、modal取消及stale session、語法、diff、ZIP CRC | 2 | i18n, dialogs, browser-locale | 英文fallback及manifest預設、Chrome UI語言自選，無API參考navigator；新auto選項；修正泛型模板搶先、URL組句、徽章及功能名混語；7詞法候選皆有意自稱/鍵標籤/非UI invariant；原生實機待驗、本輪未跑兔子 |
+
+| LLM-T64 | 星期彩虹字碼與電路流光改善 | Task | LLM-E7 | P2 | Review | Codex | LLM-T63 | 重載確認本地星期配色、午夜換色及320/480側欄動態與可讀性 | 461/461、日期/午夜/hidden清理回歸、七色雙寬靜態背景、語法、diff、ZIP CRC | 1 | background, rainbow, circuit | 週一至日紅橙黃綠藍紫白與互補電路，週日青藍；GitHub/Magic UI及Animated Circuit概念研究；每條光尾/亮頭同步且路線錯速反向，保留關閉/減少動效；未實測原生動畫或效能，本輪未跑兔子 |

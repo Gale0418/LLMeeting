@@ -19,7 +19,10 @@ function readPreferences(storage) {
 export function initBackgroundControls({
   document = globalThis.document,
   storage,
-  matchMedia = globalThis.matchMedia?.bind(globalThis)
+  matchMedia = globalThis.matchMedia?.bind(globalThis),
+  now = () => new Date(),
+  setTimeout = globalThis.setTimeout?.bind(globalThis),
+  clearTimeout = globalThis.clearTimeout?.bind(globalThis)
 } = {}) {
   const shell = document?.querySelector('.shell');
   const backgroundToggle = document?.getElementById('circuitBackgroundToggle');
@@ -36,6 +39,8 @@ export function initBackgroundControls({
 
   const preferences = readPreferences(storage);
   const reducedMotion = matchMedia?.('(prefers-reduced-motion: reduce)') || { matches: false };
+  const weekdayThemes = ['white', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'];
+  let midnightTimer = null;
 
   const persist = () => {
     try {
@@ -52,6 +57,27 @@ export function initBackgroundControls({
     motionToggle.checked = preferences.motion && !reducedMotion.matches;
     motionToggle.disabled = !preferences.background || reducedMotion.matches;
   };
+  const refreshWeekdayTheme = () => {
+    shell.dataset.weekdayTheme = weekdayThemes[now().getDay()];
+  };
+  const clearMidnightTimer = () => {
+    if (midnightTimer === null) return;
+    clearTimeout?.(midnightTimer);
+    midnightTimer = null;
+  };
+  const scheduleMidnightRefresh = () => {
+    clearMidnightTimer();
+    if (document.hidden || typeof setTimeout !== 'function') return;
+    const current = now();
+    const nextMidnight = new Date(current);
+    nextMidnight.setHours(24, 0, 0, 0);
+    midnightTimer = setTimeout(() => {
+      midnightTimer = null;
+      if (document.hidden) return;
+      refreshWeekdayTheme();
+      scheduleMidnightRefresh();
+    }, Math.max(0, nextMidnight.getTime() - current.getTime()));
+  };
 
   const onBackgroundChange = () => {
     preferences.background = backgroundToggle.checked;
@@ -65,6 +91,12 @@ export function initBackgroundControls({
   };
   const onVisibilityChange = () => {
     shell.dataset.pageHidden = document.hidden ? 'true' : 'false';
+    if (document.hidden) {
+      clearMidnightTimer();
+      return;
+    }
+    refreshWeekdayTheme();
+    scheduleMidnightRefresh();
   };
 
   backgroundToggle.addEventListener('change', onBackgroundChange);
@@ -79,6 +111,7 @@ export function initBackgroundControls({
     motionToggle.removeEventListener('change', onMotionChange);
     document.removeEventListener('visibilitychange', onVisibilityChange);
     reducedMotion.removeEventListener?.('change', render);
+    clearMidnightTimer();
   };
 }
 
