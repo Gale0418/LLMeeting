@@ -2,7 +2,6 @@ import {
   canUseFeature,
   entitlementsForPlan,
   featureLabel,
-  proRequiredMessage,
 } from "../shared/entitlements.js";
 import { DEFAULT_ACTIVE_PROVIDER_IDS, PROVIDERS } from "../shared/providers.js";
 import { isCritiquePhase, shouldShowChatControls } from "./modeRules.js";
@@ -18,6 +17,15 @@ import { attachStarterQuestions, attachRecommendation } from "./recommendation.j
 import { attachPlayScenes } from "./playScenes.js";
 import { extraChallenges } from "./playChallenges.js";
 import { createChallengeDeck } from "./challengeDeck.js";
+import { createUiDialogs } from "./uiDialogs.js";
+import { currentLocale, t } from "../shared/i18n.js";
+import { localizedFeatureLabel } from "../shared/i18n-catalog.js";
+
+const uiDialogs = createUiDialogs();
+
+function localizedUnavailableMessage(featureId) {
+  return t(currentLocale, "feature.proRequired", {feature: localizedFeatureLabel(featureId, currentLocale)});
+}
 
 const PROVIDER_SELECTION_STORAGE_KEY = "aiDebate.providerSelection.v1";
 
@@ -594,13 +602,16 @@ function selectedHookedTabs() {
 
 resetButton.addEventListener("click", resetCurrentMeeting);
 let resetActionPending = false;
+let clearActionPending = false;
 
 async function resetCurrentMeeting() {
-  if (resetActionPending || resetButton.disabled) return;
-  if (hasMeetingContent(latestState) && !globalThis.confirm(uiText("重置會結束目前會議並清除這場紀錄，無法復原。模型選擇會保留。確定重置？"))) return;
+  if (resetActionPending || clearActionPending || resetButton.disabled) return;
   resetActionPending = true;
-  resetButton.disabled = true;
   try {
+    const sessionId = latestState?.transcript?.sessionId;
+    if (hasMeetingContent(latestState) && !await uiDialogs.confirm(uiText("重置會結束目前會議並清除這場紀錄，無法復原。模型選擇會保留。確定重置？"))) return;
+    if (latestState?.transcript?.sessionId !== sessionId) return;
+    resetButton.disabled = true;
     const response = await chrome.runtime.sendMessage({ type: "aiDebate:reset" });
     if (response?.ok) {
       clearRecoveryDrafts();
@@ -616,14 +627,21 @@ async function resetCurrentMeeting() {
 }
 
 clearLocalDataButton?.addEventListener("click", async () => {
-  const confirmed = globalThis.confirm(uiText("確定要清除本機保存的辯論內容與等待紀錄嗎？"));
-  if (!confirmed) {
-    return;
+  if (resetActionPending || clearActionPending || clearLocalDataButton.disabled) return;
+  clearActionPending = true;
+  try {
+    const sessionId = latestState?.transcript?.sessionId;
+    const confirmed = await uiDialogs.confirm(uiText("確定要清除本機保存的辯論內容與等待紀錄嗎？"));
+    if (!confirmed || latestState?.transcript?.sessionId !== sessionId) return;
+    clearLocalDataButton.disabled = true;
+    const response = await chrome.runtime.sendMessage({ type: "aiDebate:clearLocalData" }).catch(() => null);
+    if (response?.ok) clearRecoveryDrafts();
+    renderState(response?.state);
+    renderMessage(response?.ok ? "本機辯論紀錄已清除" : (response?.error || "清除失敗"));
+  } finally {
+    clearActionPending = false;
+    clearLocalDataButton.disabled = false;
   }
-  const response = await chrome.runtime.sendMessage({ type: "aiDebate:clearLocalData" }).catch(() => null);
-  if (response?.ok) clearRecoveryDrafts();
-  renderState(response?.state);
-  renderMessage(response?.ok ? "本機辯論紀錄已清除" : (response?.error || "清除失敗"));
 });
 
 function clearRecoveryDrafts() {
@@ -816,9 +834,9 @@ async function loadState() {
 async function loadDevUnlock() {
   try {
     const { attachDevUnlock } = await import("./dev-unlock.js");
-    attachDevUnlock({ planBadge, renderMessage, loadState });
+    attachDevUnlock({ planBadge, renderMessage, loadState, dialogs: uiDialogs });
   } catch (error) {
-    renderMessage("作者模式載入失敗: " + error.message);
+    renderMessage(uiText("作者模式載入失敗: ") + error.message);
   }
 }
 
@@ -1508,7 +1526,7 @@ function safeProviderClass(id) {
 
 function renderEntitlementState() {
   if (planBadge) {
-    planBadge.textContent = currentEntitlements.sheepMode ? "🐑" : "Free";
+    planBadge.textContent = currentEntitlements.sheepMode ? "🐑" : uiText("Free");
     planBadge.className = `plan-badge ${currentEntitlements.sheepMode ? "is-pro" : "is-free"}`;
     planBadge.setAttribute("aria-label", uiText(currentEntitlements.sheepMode ? "🐑彩蛋，已啟用" : "Free，所有功能已開放"));
   }
@@ -1528,7 +1546,7 @@ function renderDebateModeState() {
   const locked = Boolean(featureId && !canUseFeature(currentEntitlements, featureId));
   basicDebateButton.textContent = uiText(debateModeButtonLabel(mode));
   basicDebateButton.classList.toggle("is-locked", locked);
-  basicDebateButton.title = uiText(locked ? proRequiredMessage(featureId) : debateModeButtonTitle(mode));
+  basicDebateButton.title = locked ? localizedUnavailableMessage(featureId) : uiText(debateModeButtonTitle(mode));
   renderDebateModeOptionStates();
 
   if (theaterSettings) {
@@ -1550,7 +1568,7 @@ function renderDebateModeOptionStates() {
     const featureId = optionEl.dataset.proFeature;
     const locked = !canUseFeature(currentEntitlements, featureId);
     optionEl.classList.toggle("is-locked", locked);
-    optionEl.title = uiText(locked ? proRequiredMessage(featureId) : featureLabel(featureId));
+    optionEl.title = locked ? localizedUnavailableMessage(featureId) : uiText(featureLabel(featureId));
     
     optionEl.style.display = "";
   }
@@ -1575,7 +1593,7 @@ function renderSummaryStrategyOptionStates() {
     const featureId = optionEl.dataset.proFeature;
     const locked = !canUseFeature(currentEntitlements, featureId);
     optionEl.classList.toggle("is-locked", locked);
-    optionEl.title = uiText(locked ? proRequiredMessage(featureId) : featureLabel(featureId));
+    optionEl.title = locked ? localizedUnavailableMessage(featureId) : uiText(featureLabel(featureId));
 
     optionEl.style.display = "";
   }
@@ -1606,7 +1624,7 @@ function debateModeButtonTitle(mode) {
 }
 
 function renderLockedFeatureMessage(featureId) {
-  renderMessage(proRequiredMessage(featureId));
+  renderMessage(localizedUnavailableMessage(featureId));
 }
 
 function startingMessage(mode) {

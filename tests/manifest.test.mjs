@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 
 test("extension descriptions resolve in all three packaged locales", async () => {
   const manifest = JSON.parse(await readFile("manifest.json", "utf8"));
-  assert.equal(manifest.default_locale, "zh_TW");
+  assert.equal(manifest.default_locale, "en");
   assert.equal(manifest.description, "__MSG_extensionDescription__");
   for (const locale of ["zh_TW", "en", "ja"]) {
     const messages = JSON.parse(await readFile(`_locales/${locale}/messages.json`, "utf8"));

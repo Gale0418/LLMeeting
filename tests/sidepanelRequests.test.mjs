@@ -3,8 +3,29 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { shouldShowChatControls } from "../src/sidepanel/modeRules.js";
+import { uiText, setLocale, t } from "../src/shared/i18n.js";
+import { localizedFeatureLabel } from "../src/shared/i18n-catalog.js";
 
 const source = await readFile("src/sidepanel/app.js", "utf8");
+
+test("badge and feature-unavailable messages stay in the selected language", () => {
+  try {
+    for (const [locale, label] of [["zh_TW", "免費"], ["en", "Free"], ["ja", "無料"]]) {
+      setLocale(locale);
+      const badge = {textContent: "", setAttribute() {}};
+      const context = vm.createContext({planBadge: badge, currentEntitlements: {sheepMode: false}, uiText,
+        renderDebateModeState() {}, renderSummaryStrategyState() {}, currentLocale: locale, t, localizedFeatureLabel});
+      const render = source.slice(source.indexOf("function renderEntitlementState("), source.indexOf("function renderDebateModeState("));
+      const unavailable = source.match(/function localizedUnavailableMessage\([^]*?\n\}/)[0];
+      vm.runInContext(render + unavailable, context);
+      context.renderEntitlementState();
+      assert.equal(badge.textContent, label);
+      const message = context.localizedUnavailableMessage("fastDebate");
+      assert.ok(message.includes(localizedFeatureLabel("fastDebate", locale)));
+      if (locale !== "zh_TW") assert.doesNotMatch(message, /快速鬥技場|目前無法使用/);
+    }
+  } finally {setLocale("en");}
+});
 
 test("fault controls offer departure and departed faults have no repeat actions", () => {
   const body = source.slice(source.indexOf("function replyRecoveryControls"), source.indexOf("function renderReplyRecoveryNotice"));

@@ -96,7 +96,6 @@ test("side panel exposes one main debate button and advanced mutually exclusive 
   assert.match(app, /mode === "chat"[\s\S]*?啟動自由群聊中/);
   assert.match(app, /mode === "theater"[\s\S]*?啟動劇場大亂鬥中/);
   assert.doesNotMatch(html, /class="pro-pill"/);
-  assert.match(app, /planBadge\.textContent = currentEntitlements\.sheepMode \? "🐑" : "Free"/);
 });
 
 test("all debate modes remain visible without plan-based automatic switching", async () => {

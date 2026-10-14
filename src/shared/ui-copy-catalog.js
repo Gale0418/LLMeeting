@@ -796,8 +796,8 @@ export const UI_COPY = [
     "id": "ui.copy.114",
     "source": "全員匿名裁決 👑",
     "zh_TW": "全員匿名裁決 👑",
-    "en": "All Anonymous Verdict 👑",
-    "ja": "全員匿名裁決 👑"
+    "en": "Anonymous Judges' Verdict 👑",
+    "ja": "全員の匿名判定 👑"
   },
   {
     "id": "ui.copy.115",
@@ -3099,8 +3099,8 @@ export const UI_COPY = [
     "id": "gap.copy.024",
     "source": "已離席；本場不再參與後續討論，先前發言仍保留。",
     "zh_TW": "已離席；本場不再參與後續討論，先前發言仍保留。",
-    "en": "Left the session; will not join subsequent discussions, but previous remarks remain preserved.",
-    "ja": "退席しました。本セッションの以降の議論には参加しませんが、これまでの発言は保持されます。"
+    "en": "Dismissed. It will not join further discussions this session; past comments are preserved.",
+    "ja": "退席しました。本セッションの今後の議論には参加しませんが、過去の発言は保持されます。"
   },
   {
     "id": "experience.latest",
@@ -3119,16 +3119,16 @@ export const UI_COPY = [
   {
     "id": "experience.reset",
     "source": "重置會結束目前會議並清除這場紀錄，無法復原。模型選擇會保留。確定重置？",
-    "zh_TW": "重置會結束目前會議並清除這場紀錄，無法復原。模型選擇會為你保留。確定要重置嗎？",
-    "en": "Resetting will end the current meeting and erase this record permanently (cannot be undone). Model selections will be kept. Are you sure you want to reset?",
-    "ja": "リセットすると現在のミーティングを終了し、今回の記録を消去します（元に戻すことはできません）。モデル選択は保持されます。本当にリセットしますか？"
+    "zh_TW": "重置會結束目前會議並清除這場紀錄，無法復原。模型選擇會保留。確定重置？",
+    "en": "Resetting ends this meeting and clears its transcript permanently. Model picks are kept. Confirm reset?",
+    "ja": "リセットすると現在の会議を終了し、記録を消去します（元に戻せません）。モデル選択は保持されます。リセットしますか？"
   },
   {
     "id": "experience.clear",
     "source": "確定要清除本機保存的辯論內容與等待紀錄嗎？",
-    "zh_TW": "確定要清除本機儲存的辯論內容與等待紀錄嗎？",
-    "en": "Are you sure you want to clear the locally saved debate content and pending records?",
-    "ja": "端末に保存されているディベート内容と待機ログを消去してもよろしいですか？"
+    "zh_TW": "確定要清除本機保存的辯論內容與等待紀錄嗎？",
+    "en": "Are you sure you want to clear locally stored debate transcripts and pending records?",
+    "ja": "ローカルに保存されたディベート記録と待機ログを消去してもよろしいですか？"
   },
   {
     "id": "examples.heading",
@@ -3241,8 +3241,7 @@ export const UI_COPY = [
     "zh_TW": "查看商店版本",
     "en": "View store version",
     "ja": "ストアのバージョンを確認"
-  }
-,
+  },
   {
     "id": "play.openTitle",
     "source": "想玩一場嗎？",
@@ -3585,27 +3584,54 @@ export const UI_COPY = [
     "zh_TW": "將先前的某個建議與後來的修正對照，分析兩者在可行性上的客觀差異，嚴禁下定論或揣摩任何發言者的隱藏角色。",
     "en": "Compare an earlier suggestion with a later revision, highlighting objective shifts in feasibility. Avoid labeling or guessing hidden roles.",
     "ja": "以前の提案と修正案を並べ、実現可能性の客観的な変化を分析して。誰かの隠しキャラを決めつけたり推測するのは禁止です。"
+  },
+  {
+    "id": "background.circuit",
+    "source": "背景電路",
+    "zh_TW": "背景電路",
+    "en": "Circuit Glow",
+    "ja": "サイバー回路"
+  },
+  {
+    "id": "background.motion",
+    "source": "電流動畫",
+    "zh_TW": "電流動畫",
+    "en": "Pulse Sparks",
+    "ja": "パルスアニメ"
+  },
+  {
+    "id": "background.effects",
+    "source": "背景效果",
+    "zh_TW": "背景效果",
+    "en": "Backdrop Effects",
+    "ja": "背景エフェクト"
+  },
+  {
+    "id": "locale.completion.0",
+    "source": "確定",
+    "zh_TW": "確定",
+    "en": "Confirm",
+    "ja": "確認"
+  },
+  {
+    "id": "locale.completion.1",
+    "source": "跟隨瀏覽器",
+    "zh_TW": "跟隨瀏覽器",
+    "en": "Follow browser",
+    "ja": "ブラウザに合わせる"
+  },
+  {
+    "id": "locale.completion.2",
+    "source": "方案徽章：{p0}",
+    "zh_TW": "方案徽章：{p0}",
+    "en": "Plan badge: {p0}",
+    "ja": "プランバッジ: {p0}"
+  },
+  {
+    "id": "locale.easterInvite",
+    "source": "恭喜解鎖🐑模式~\n\n覺得這個擴充功能好用嗎？\n歡迎訂閱作者的 YouTube 頻道、按讚並分享：\n{p0}\n\n要去看看嗎？ (被拖走)",
+    "zh_TW": "恭喜解鎖🐑模式~\n\n覺得這個擴充功能好用嗎？\n歡迎訂閱作者的 YouTube 頻道、按讚並分享：\n{p0}\n\n要去看看嗎？ (被拖走)",
+    "en": "Congrats on unlocking 🐑 Mode~\n\nEnjoying this extension?\nSubscribe to the creator's YouTube, like, and share:\n{p0}\n\nWant to check it out? (dragged away)",
+    "ja": "🐑モード解放おめでとうございます~\n\nこの拡張機能を気に入っていただけましたか？\n作者のYouTubeチャンネル登録、高評価、シェアをお待ちしています：\n{p0}\n\n見に行ってみる？ (引きずられて退場)"
   }
-,
-{
-  "id": "background.circuit",
-  "source": "背景電路",
-  "zh_TW": "背景電路",
-  "en": "Circuit Glow",
-  "ja": "サイバー回路"
-},
-{
-  "id": "background.motion",
-  "source": "電流動畫",
-  "zh_TW": "電流動畫",
-  "en": "Pulse Sparks",
-  "ja": "パルスアニメ"
-},
-{
-  "id": "background.effects",
-  "source": "背景效果",
-  "zh_TW": "背景效果",
-  "en": "Backdrop Effects",
-  "ja": "背景エフェクト"
-}
 ];

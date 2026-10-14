@@ -10,12 +10,14 @@ const staticSources = new WeakMap();
 
 /** Resolve the small set of locale names accepted by the UI runtime. */
 export function normalizeLocale(locale) {
-  if (typeof locale !== "string") return DEFAULT_LOCALE;
+  return resolveSupportedLocale(locale) || DEFAULT_LOCALE;
+}
+
+export function resolveSupportedLocale(locale) {
+  if (typeof locale !== "string") return null;
   const normalized = locale.trim().replaceAll("_", "-").toLowerCase();
-  if (normalized === "en") return "en";
-  if (normalized === "ja") return "ja";
-  if (["zh-tw", "zh-hant", "zh-hant-tw", "zh"].includes(normalized)) return "zh_TW";
-  return DEFAULT_LOCALE;
+  const match = /^(en|ja|zh)(?:-[a-z0-9]{2,8})*$/.exec(normalized);
+  return match ? (match[1] === "zh" ? "zh_TW" : match[1]) : null;
 }
 
 export function setLocale(locale) {
@@ -116,13 +118,6 @@ export function createTextTranslator(entries = []) {
     const trimmedSource = sourceExact.get(trimmed);
     if (trimmedSource) return { entry: trimmedSource.entry, values: new Map(), sourceText: `${leading}${trimmed}${trailing}`, leading, trailing };
 
-    for (const compiled of sourcePatterns) {
-      const rawResult = matchTemplate(compiled, raw);
-      if (rawResult) return {...rawResult, sourceText: raw, leading: "", trailing: ""};
-      const result = matchTemplate(compiled, trimmed);
-      if (result) return { ...result, sourceText: `${leading}${substitute(compiled.text, result.values)}${trailing}`, leading, trailing };
-    }
-
     const exactCandidates = reverseExact.get(trimmed);
     if (exactCandidates?.size === 1) {
       const entry = exactCandidates.values().next().value;
@@ -132,6 +127,21 @@ export function createTextTranslator(entries = []) {
 
     const matches = [];
     let bestSpecificity = -1;
+    // Prefer explicit localized labels over generic source templates. Then
+    // compare both template directions by specificity so a {p0}-only source
+    // cannot swallow an already-translated sentence during a locale switch.
+    for (const compiled of sourcePatterns) {
+      if (compiled.fixedLength < bestSpecificity) break;
+      const rawResult = matchTemplate(compiled, raw);
+      const result = rawResult || matchTemplate(compiled, trimmed);
+      if (!result) continue;
+      if (compiled.fixedLength > bestSpecificity) {
+        bestSpecificity = compiled.fixedLength;
+        matches.length = 0;
+      }
+      matches.push({...result, template: compiled, sourceText: rawResult ? raw : `${leading}${substitute(compiled.text, result.values)}${trailing}`,
+        leading: rawResult ? "" : leading, trailing: rawResult ? "" : trailing});
+    }
     for (const compiled of reversePatterns) {
       if (compiled.fixedLength < bestSpecificity) break;
       const result = matchTemplate(compiled, trimmed);
@@ -140,13 +150,13 @@ export function createTextTranslator(entries = []) {
         bestSpecificity = compiled.fixedLength;
         matches.length = 0;
       }
-      matches.push({ ...result, template: compiled });
+      matches.push({ ...result, template: compiled, sourceText: `${leading}${substitute(compiled.entry.source, result.values)}${trailing}`, leading, trailing });
     }
     if (!matches.length) return null;
     const entriesMatched = new Set(matches.map((candidate) => candidate.entry));
     if (entriesMatched.size !== 1) return null;
-    const { entry, values } = matches[0];
-    return { entry, values, sourceText: `${leading}${substitute(entry.source, values)}${trailing}`, leading, trailing };
+    const { entry, values, sourceText, leading: matchLeading, trailing: matchTrailing } = matches[0];
+    return { entry, values, sourceText, leading: matchLeading, trailing: matchTrailing };
   }
 
   function translateUiText(raw, locale = currentLocale) {

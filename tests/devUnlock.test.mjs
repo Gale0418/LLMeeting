@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 
 import { THIRD_CLICK_TAUNTS, attachDevUnlock } from "../src/sidepanel/dev-unlock.js";
 import { ENTITLEMENT_STORAGE_KEY, SHEEP_MODE_STORAGE_KEY } from "../src/shared/entitlements.js";
+import { setLocale } from "../src/shared/i18n.js";
+
+setLocale("zh_TW");
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const AUTHOR_YOUTUBE_URL = "https://www.youtube.com/@gale0418";
@@ -152,6 +155,18 @@ test("fifth Free click unlocks sheep mode and offers the author YouTube link", a
   assert.deepEqual(harness.opened, [[AUTHOR_YOUTUBE_URL, "_blank"]]);
 });
 
+test("easter-egg invite translates the whole message while preserving the public URL", async () => {
+  try {
+    for (const locale of ["en", "ja"]) {
+      setLocale(locale);
+      const harness = createHarness({confirmResult: false});
+      for (let click = 0; click < 5; click++) await harness.click();
+      assert.ok(harness.confirms[0].includes(AUTHOR_YOUTUBE_URL));
+      assert.doesNotMatch(harness.confirms[0], /恭喜解鎖|覺得這個擴充功能|要去看看嗎/);
+    }
+  } finally { setLocale("zh_TW"); }
+});
+
 test("author tab creation is awaited and rejected tabs do not escape the unlock flow", async () => {
   let createCalls = 0;
   const errors = [];
@@ -214,7 +229,7 @@ test("an incomplete sequence times out back to Free", async () => {
   assert.equal(harness.planBadge.textContent, "fre🐑");
 
   harness.runTimer(activeTimerId);
-  assert.equal(harness.planBadge.textContent, "Free");
+  assert.equal(harness.planBadge.textContent, "免費");
 
   await harness.click();
   assert.equal(harness.planBadge.textContent, "free🐑");

@@ -1,5 +1,5 @@
 <!-- Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files. -->
-<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=bcb11daf102c80507cf06b6d889b36cb6c8116e7cfd4e25dddececb1fcb8041b -->
+<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=006fa8c2d6f3dab857059caea3eb1a1f143d52cd7f473c65c327745889e213b7 -->
 # 當前工作集
 
 - 唯一真實來源: `tasks.md`

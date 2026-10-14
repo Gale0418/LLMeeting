@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "LLMeeting",
   "description": "__MSG_extensionDescription__",
-  "default_locale": "zh_TW",
+  "default_locale": "en",
   "version": "0.5.1",
   "icons": {
     "16": "assets/icons/icon-16.png",

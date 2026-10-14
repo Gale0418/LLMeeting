@@ -5,7 +5,7 @@
  */
 
 export const SUPPORTED_LOCALES = ["zh_TW", "en", "ja"];
-export const DEFAULT_LOCALE = "zh_TW";
+export const DEFAULT_LOCALE = "en";
 
 export const LOCALE_LABELS = {
   zh_TW: "繁體中文",

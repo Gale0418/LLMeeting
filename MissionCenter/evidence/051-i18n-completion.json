@@ -1,0 +1,62 @@
+{
+  "timestamp": "2026-10-14T11:14:36+08:00",
+  "task": "LLM-T63",
+  "scope": "所有程式介面文案中英日補全與瀏覽器自選",
+  "localePolicy": {
+    "default": "en",
+    "manifestDefault": "en",
+    "priority": ["有效手動選擇", "Chrome介面語言", "無Chrome語言API時的navigator語言偏好", "英文fallback"],
+    "unsupportedChromeUiLanguage": "en",
+    "autoPreference": "auto",
+    "autoDetectionDoesNotPinLanguage": true,
+    "regionAliases": ["en-US", "en-GB", "ja-JP", "zh-TW", "zh-Hant-HK", "zh-CN"]
+  },
+  "fixed": [
+    "帶網址羊彩蛋訊息未命中完整翻譯模板",
+    "泛型來源模板吞掉已翻譯文案，連續切語言停在前一語言",
+    "Free徽章及功能名未本地化",
+    "瀏覽器原生對話框按鈕無法跟隨程式語系，改為自有HTML dialog",
+    "3組重複來源的翻譯衝突",
+    "舊dialog延遲close事件干擾下一個排隊dialog"
+  ],
+  "dialogs": {
+    "buttonsInThreeLocales": true,
+    "pureTextContent": true,
+    "escapeAndCancel": false,
+    "openingFailurePermitsDestructiveAction": false,
+    "waitsForUserSelection": true,
+    "focusRestored": true,
+    "staleSessionCannotBeReset": true
+  },
+  "audit": {
+    "catalogEntries": 519,
+    "uniqueNonemptySources": 500,
+    "missingLocaleFields": 0,
+    "conflictingDuplicateSources": 0,
+    "staticLexicalUnmatched": 7,
+    "unmatchedDisposition": {
+      "languageSelfNames": ["繁體中文", "日本語"],
+      "keyTranslatedLabel": "語言（lang.selectLabel）",
+      "nonUiDevelopmentInvariants": 4
+    },
+    "method": "全部sidepanel JS、service-worker及HTML詞法盤點，UI_COPY三語及參數核對；另核對完整組句、徽章及功能名實際輸出",
+    "limits": "詞法掃描不是全程UI端到端證明；未知外部AI原文及診斷原錯誤保留，不當成介面文案改寫"
+  },
+  "copyAuthor": "Antigravity Bridge Codex",
+  "copyRequest": "llmeeting-i18n-completion-copy-20261014",
+  "verification": {
+    "tests": 458,
+    "passed": 458,
+    "syntax": "pass",
+    "diffCheck": "pass",
+    "zipCrc": "pass",
+    "regressionsBeforeFix": "完整彩蛋、瀏覽器語言、連續切換及延遲close均重現失敗",
+    "codeRabbit": "本輪未重跑"
+  },
+  "package": {
+    "bytes": 2724946,
+    "sha256": "2B20F6C5BC225CD3388269A06ECF655017367678FF3FF5B6B754F8220336C639"
+  },
+  "pending": ["重載後原生側欄三語與自有對話框實機", "Chrome各UI語言的首次啟動實機"],
+  "storePublished": false
+}

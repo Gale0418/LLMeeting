@@ -14,7 +14,7 @@ import { DEFAULT_LOCALE, MESSAGES, SUPPORTED_LOCALES } from "../src/shared/i18n-
 import { UI_COPY } from "../src/shared/ui-copy-catalog.js";
 
 test("production UI catalog is complete in three languages with unchanged dynamic parameters", () => {
-  assert.equal(UI_COPY.length, 515);
+  assert.equal(UI_COPY.length, 519);
   assert.equal(uiText("背景電路", "en"), "Circuit Glow");
   assert.equal(uiText("電流動畫", "ja"), "パルスアニメ");
   assert.equal(new Set(UI_COPY.map(e=>e.id)).size, UI_COPY.length);
@@ -33,6 +33,14 @@ test("duplicate source entries do not make existing translations ambiguous when 
   assert.equal(translate("Status", "ja"), "状態");
   const leading = createTextTranslator([{source: " 等待 {p0}", zh_TW: " 等待 {p0}", en: " Waiting {p0}", ja: " 待機 {p0}"}]);
   assert.equal(leading(" 等待 Claude", "en"), " Waiting Claude");
+});
+
+test("production duplicate sources have consistent translations in every locale", () => {
+  const seen = new Map();
+  for (const entry of UI_COPY) {
+    if (!seen.has(entry.source)) seen.set(entry.source, entry);
+    for (const locale of SUPPORTED_LOCALES) assert.equal(entry[locale], seen.get(entry.source)[locale], `${entry.id}/${locale}`);
+  }
 });
 
 function placeholders(value) {
@@ -81,7 +89,11 @@ test("locale normalization accepts supported script and region aliases and defau
   assert.equal(normalizeLocale("zh-TW"), "zh_TW");
   assert.equal(normalizeLocale("zh-Hant"), "zh_TW");
   assert.equal(normalizeLocale("JA"), "ja");
-  assert.equal(normalizeLocale("en-US"), DEFAULT_LOCALE);
+  assert.equal(DEFAULT_LOCALE, "en");
+  assert.equal(normalizeLocale("en-US"), "en");
+  assert.equal(normalizeLocale("en-GB"), "en");
+  assert.equal(normalizeLocale("ja-JP"), "ja");
+  assert.equal(normalizeLocale("zh-Hant-HK"), "zh_TW");
   assert.equal(normalizeLocale("fr"), DEFAULT_LOCALE);
   assert.equal(setLocale("ja"), "ja");
   assert.equal(setLocale("unknown"), DEFAULT_LOCALE);
@@ -117,6 +129,19 @@ test("dynamic UI values remain raw text and are localized when the locale change
   assert.equal(translate(`Hello, ${hostileLookingValue}!`, "ja"), `こんにちは、${hostileLookingValue}！`);
   assert.equal(translate("Hello, {p1} literal!", "ja"), "こんにちは、{p1} literal！");
   assert.equal(translate.resolveSource("こんにちは、{p1} literal！"), "Hello, {p1} literal!");
+});
+
+test("generic source templates cannot swallow explicit localized labels or sentences", () => {
+  const translate = createTextTranslator([
+    {source: "{p0}", zh_TW: "{p0}", en: "{p0}", ja: "{p0}"},
+    {source: "{p0} {p1}", zh_TW: "{p0} {p1}", en: "{p0} {p1}", ja: "{p0} {p1}"},
+    {source: "就緒", zh_TW: "就緒", en: "Ready", ja: "準備完了"},
+    {source: "準備：{p0}", zh_TW: "準備：{p0}", en: "Preparing: {p0}", ja: "準備中：{p0}"},
+  ]);
+  assert.equal(translate("Ready", "ja"), "準備完了");
+  assert.equal(translate("Preparing: original draft", "ja"), "準備中：original draft");
+  assert.equal(translate.resolveSource("Preparing: original draft"), "準備：original draft");
+  assert.equal(translate("private unknown text", "ja"), "private unknown text");
 });
 
 test("static locale application translates only catalog-matched UI and preserves protected regions", () => {

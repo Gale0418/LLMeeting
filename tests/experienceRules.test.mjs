@@ -36,9 +36,10 @@ function resetHarness({ confirm = true, sendMessage = async () => ({ ok: true, s
   const messages = [];
   let sends = 0;
   const context = {
-    resetButton: { disabled: false }, resetActionPending: false, latestState: { question: "keep" }, hasMeetingContent,
+    resetButton: { disabled: false }, resetActionPending: false, clearActionPending: false, latestState: { question: "keep" }, hasMeetingContent,
     uiText: (value) => value,
-    confirm: () => confirm, chrome: { runtime: { sendMessage: (...args) => { sends++; return sendMessage(...args); } } },
+    uiDialogs: {confirm: () => typeof confirm === "function" ? confirm() : confirm}, chrome: { runtime: { sendMessage: (...args) => { sends++; return sendMessage(...args); } } },
+    clearRecoveryDrafts() {},
     renderMessage: (message) => messages.push(message), renderState() {},
   };
   vm.createContext(context);
@@ -52,6 +53,20 @@ test("canceling reset does not send a destructive operation", async () => {
   await h.context.reset();
   assert.equal(h.sends(), 0);
   assert.equal(h.context.resetButton.disabled, false);
+});
+
+test("async reset confirmation waits and cannot erase a different session", async () => {
+  let finishConfirmation;
+  const h = resetHarness({confirm: () => new Promise(resolve => {finishConfirmation = resolve;})});
+  h.context.latestState.transcript = {sessionId: "original"};
+  const operation = h.context.reset();
+  assert.equal(h.sends(), 0);
+  await h.context.reset();
+  assert.equal(h.sends(), 0);
+  h.context.latestState = {question: "new", transcript: {sessionId: "new"}};
+  finishConfirmation(true); await operation;
+  assert.equal(h.sends(), 0);
+  assert.equal(h.context.resetActionPending, false);
 });
 
 test("reset transport failure preserves state and restores the control with honest feedback", async () => {

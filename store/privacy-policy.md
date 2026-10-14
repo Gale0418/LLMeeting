@@ -24,6 +24,8 @@ LLMeeting 不會將資料送到 LLMeeting 開發者伺服器。LLMeeting also do
 
 The side panel saves your circuit background and animation choices in its own local storage. These appearance preferences persist until changed or the extension's local data is removed; clearing debate history does not reset them.
 
+The UI language preference can be a manual language or “follow browser.” Automatic selection reads the browser's UI language (or preferred languages if that API is unavailable), with English as the fallback. Language detection stays local and does not transmit these preferences to the developer.
+
 ## Third-party AI services
 
 Your prompts and quoted AI replies are sent only to the AI web apps you choose as part of the debate flow. Those providers process data according to their own terms and privacy policies. Meta AI may apply account- or region-specific personalization under Meta's policies when the user enables that Beta provider.
