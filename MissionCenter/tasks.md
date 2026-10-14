@@ -79,3 +79,5 @@
 | LLM-T65 | 語言與背景偏好移入擴充功能選項 | Task | LLM-E7 | P2 | Review | Codex | LLM-T64 | 重載後由Chrome原生選項入口確認三語/背景/動畫即時套用已開側欄 | 468/468、無控制側欄、跨頁事件/清理/讀取競態、不回寫、manifest入口與封裝CRC | 1 | options, preferences, i18n | options_ui內嵌設定頁、側欄移除三控制；沿用原保存key、Chrome locale事件及背景origin storage事件即時同步；保留草稿/減少動效/星期色；原生實機待驗，本輪未跑兔子 |
 
 | LLM-T66 | 指定分頁第0輪與主流程整合 | Task | LLM-E7 | P1 | Review | Codex／Antigravity | LLM-T65 | 重載Driver .12驗證五家既有/空白分頁、載入延遲、停止與來源摘要修復 | 495/495、111對話自動化、角色完整/穩定載入/取消回歸、三語527筆、CodeRabbit首查2major已修及複查0、ZIP CRC | 2 | continuation, round-zero, simplicity | 分頁指定移到主流程、移除獨立擷取與重複教學，龍LOGO及進階功能保留；只讀明確選定且啟用分頁，已載入對話＋補充分享；來源不齊/超量不送，總結與人工修復保留；原生實機待驗 |
+
+| LLM-T67 | 向下批次資料封包電路 | Task | LLM-E7 | P2 | Review | Codex | LLM-T66 | 重載確認十條向下光流、批次空檔及側欄可見性/減少動效 | 495/495、背景控制9項、路線方向/三層對齊/共同空檔、320/480背景素材預覽、ZIP CRC | 1 | background, motion, packets | 每9秒三段封包，亮頭光尾加強；全部向下無反轉、靜態保留封包；不新增計時器；原生動態/效能待驗、本輪未跑兔子 |

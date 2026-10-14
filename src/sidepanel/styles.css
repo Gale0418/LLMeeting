@@ -940,49 +940,50 @@ body::before {
 .circuit-head,
 .circuit-details > * {
   fill: none;
-  stroke: hsl(var(--circuit-hue) 75% 64% / .2);
+  stroke: hsl(var(--circuit-hue) 75% 64% / .32);
   stroke-width: .85;
   vector-effect: non-scaling-stroke;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.circuit-route { --travel: 12s; --phase: -3s; }
-.circuit-route:nth-child(2n) { --travel: 15s; --phase: -8s; }
-.circuit-route:nth-child(3n) { --travel: 18s; --phase: -12s; }
-.circuit-route:nth-child(4n) { --travel: 14s; --phase: -6s; }
+/* A three-packet batch travels down each lane, then leaves a quiet gap.
+   Every dash pattern totals 2000 normalized units: one batch per cycle. */
+.circuit-route { --phase: -1.8s; }
+.circuit-route:nth-child(2n) { --phase: -2.4s; }
+.circuit-route:nth-child(3n) { --phase: -3s; }
+.circuit-route:nth-child(4n) { --phase: -3.6s; }
 
 .circuit-glow,
 .circuit-current,
 .circuit-head {
-  stroke-dashoffset: var(--pulse-offset, 0);
-  animation: circuitCurrent var(--travel) linear infinite;
+  animation: circuitGlow 9s linear infinite;
   animation-delay: var(--phase);
 }
-.circuit-route:nth-child(2n) > :is(.circuit-glow, .circuit-current, .circuit-head) {
-  animation-direction: reverse;
-}
 .circuit-glow {
-  stroke: hsl(var(--circuit-hue) 95% 65% / .16);
-  stroke-width: 5;
-  stroke-dasharray: 80 920;
+  stroke: hsl(var(--circuit-hue) 95% 65% / .38);
+  stroke-width: 8;
+  stroke-dasharray: 80 32 52 30 32 1774;
+  stroke-dashoffset: -360px;
 }
 
 .circuit-current {
-  --pulse-offset: -56;
-  stroke: hsl(var(--circuit-hue) 95% 74% / .72);
-  stroke-width: 1.6;
-  stroke-dasharray: 24 976;
+  animation-name: circuitCurrent;
+  stroke: hsl(var(--circuit-hue) 95% 74% / .94);
+  stroke-width: 2.6;
+  stroke-dasharray: 40 60 24 50 12 1814;
+  stroke-dashoffset: -400px;
 }
 
 .circuit-head {
-  --pulse-offset: -78;
-  stroke: hsl(var(--circuit-hue) 100% 94% / .95);
-  stroke-width: 2;
-  stroke-dasharray: 2 998;
+  animation-name: circuitHead;
+  stroke: hsl(var(--circuit-hue) 100% 94%);
+  stroke-width: 3;
+  stroke-dasharray: 4 80 4 58 4 1850;
+  stroke-dashoffset: -436px;
 }
-.circuit-route:nth-child(2n) > :is(.circuit-current, .circuit-head) {
-  --pulse-offset: 0;
+.shell[data-circuit-motion="off"] :is(.circuit-current, .circuit-glow, .circuit-head) {
+  animation: none;
 }
 .circuit-details > * { stroke: hsl(var(--circuit-hue) 70% 65% / .26); stroke-width: .9; }
 .circuit-details circle { fill: hsl(var(--circuit-hue) 80% 75% / .45); stroke: none; }
@@ -1729,8 +1730,17 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.98); }
   100% { transform: translateX(125%); opacity: 0; }
 }
 
+@keyframes circuitGlow {
+  from { stroke-dashoffset: 0px; }
+  to { stroke-dashoffset: -2000px; }
+}
 @keyframes circuitCurrent {
-  to { stroke-dashoffset: calc(var(--pulse-offset, 0) - 1000); }
+  from { stroke-dashoffset: -40px; }
+  to { stroke-dashoffset: -2040px; }
+}
+@keyframes circuitHead {
+  from { stroke-dashoffset: -76px; }
+  to { stroke-dashoffset: -2076px; }
 }
 
 @keyframes digitalRainFall {

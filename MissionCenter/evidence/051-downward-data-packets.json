@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-15",
+  "task": "LLM-T67",
+  "scope": [
+    "10 downward-only lanes",
+    "three-packet batches with quiet gap",
+    "brighter heads and trails",
+    "static packet fallback"
+  ],
+  "verification": {
+    "fullSuite": {
+      "passed": 495,
+      "failed": 0
+    },
+    "backgroundControls": 9,
+    "geometry": "10 strictly downward paths; 2000-unit dash cycles; all three heads aligned; simultaneous quiet interval",
+    "preview": "background-only 320/480 stills and 45-frame nine-second GIF; not native browser verification",
+    "zipCRC": "pass"
+  },
+  "limitations": [
+    "Native Chrome side-panel visibility, animation and performance pending reload",
+    "Prior animation freeze not confirmed",
+    "CodeRabbit not rerun for this SVG/CSS-only change"
+  ],
+  "package": {
+    "bytes": 2757414,
+    "sha256": "F83237701385843E51F1E644430E8B202A0AD4337F9F1427DD7236D6850C8BFF"
+  }
+}
