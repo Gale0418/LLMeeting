@@ -75,3 +75,5 @@
 | LLM-T63 | 全介面三語補全與瀏覽器自選 | Task | LLM-E7 | P1 | Review | Codex／Antigravity | LLM-T62 | 重載驗證auto與手選、羊彩蛋及重置清除三語對話框 | 458/458、519文案三語及重複一致性、地域語言、原稿保護、modal取消及stale session、語法、diff、ZIP CRC | 2 | i18n, dialogs, browser-locale | 英文fallback及manifest預設、Chrome UI語言自選，無API參考navigator；新auto選項；修正泛型模板搶先、URL組句、徽章及功能名混語；7詞法候選皆有意自稱/鍵標籤/非UI invariant；原生實機待驗、本輪未跑兔子 |
 
 | LLM-T64 | 星期彩虹字碼與電路流光改善 | Task | LLM-E7 | P2 | Review | Codex | LLM-T63 | 重載確認本地星期配色、午夜換色及320/480側欄動態與可讀性 | 461/461、日期/午夜/hidden清理回歸、七色雙寬靜態背景、語法、diff、ZIP CRC | 1 | background, rainbow, circuit | 週一至日紅橙黃綠藍紫白與互補電路，週日青藍；GitHub/Magic UI及Animated Circuit概念研究；每條光尾/亮頭同步且路線錯速反向，保留關閉/減少動效；未實測原生動畫或效能，本輪未跑兔子 |
+
+| LLM-T65 | 語言與背景偏好移入擴充功能選項 | Task | LLM-E7 | P2 | Review | Codex | LLM-T64 | 重載後由Chrome原生選項入口確認三語/背景/動畫即時套用已開側欄 | 468/468、無控制側欄、跨頁事件/清理/讀取競態、不回寫、manifest入口與封裝CRC | 1 | options, preferences, i18n | options_ui內嵌設定頁、側欄移除三控制；沿用原保存key、Chrome locale事件及背景origin storage事件即時同步；保留草稿/減少動效/星期色；原生實機待驗，本輪未跑兔子 |

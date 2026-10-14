@@ -4,7 +4,8 @@ import { initializeLocale, LOCALE_STORAGE_KEY } from "../src/sidepanel/localeCon
 
 function fixture() {
   const handlers = {};
-  const select = {value: "", addEventListener: (type, handler) => handlers[type] = handler};
+  const select = {value: "", addEventListener: (type, handler) => handlers[type] = handler,
+    removeEventListener: (type, handler) => { if (handlers[type] === handler) delete handlers[type]; }};
   const status = {textContent: ""};
   const label = {textContent: ""};
   const persona = {defaultValue: "preset", value: "my own persona"};
@@ -15,6 +16,13 @@ function fixture() {
     dispatchEvent: event => events.push(event),
   };
   return {doc, select, status, label, persona, handlers, events};
+}
+
+function changeEvent() {
+  const listeners = new Set();
+  return {addListener: listener => listeners.add(listener), removeListener: listener => listeners.delete(listener),
+    fire: (changes, area = "local") => [...listeners].forEach(listener => listener(changes, area)),
+    get size() { return listeners.size; }};
 }
 
 test("locale preference loads and rapid changes persist in order without touching edited personas", async () => {
@@ -77,4 +85,70 @@ test("invalid saved locale and unavailable Chrome language API use navigator or 
       browserI18n: {getUILanguage: () => {throw new Error("unavailable");}}, navigatorObject: {languages}});
     assert.equal(f.doc.documentElement.lang, expected); assert.equal(f.select.value, "auto");
   }
+});
+
+test("external local locale changes update the UI and dispatch without writing back", async () => {
+  const f = fixture(); const writes = []; const onChanged = changeEvent();
+  const controller = await initializeLocale({documentObject: f.doc, storage: {
+    get: async () => ({[LOCALE_STORAGE_KEY]: "en"}), set: async value => writes.push(value),
+  }, storageChanged: onChanged, browserI18n: {getUILanguage: () => "en-US"}});
+  onChanged.fire({[LOCALE_STORAGE_KEY]: {oldValue: "en", newValue: "ja"}}, "local");
+  assert.equal(f.doc.documentElement.lang, "ja");
+  assert.equal(f.select.value, "ja");
+  assert.equal(f.label.textContent, "言語：");
+  assert.deepEqual(f.events.map(event => event.type), ["llmeeting:locale-changed"]);
+  await controller.flush();
+  assert.deepEqual(writes, []);
+});
+
+test("external changes apply when the side panel has no language select", async () => {
+  const f = fixture(); const onChanged = changeEvent();
+  f.doc.querySelector = id => id === "#languageLabel" ? f.label : id === "#languageStatus" ? f.status : null;
+  const controller = await initializeLocale({documentObject: f.doc, storage: {get: async () => ({}), set: async () => {}},
+    storageChanged: onChanged, browserI18n: {getUILanguage: () => "en-US"}});
+  onChanged.fire({[LOCALE_STORAGE_KEY]: {newValue: "ja"}}, "local");
+  assert.equal(f.doc.documentElement.lang, "ja");
+  assert.deepEqual(f.events.map(event => event.type), ["llmeeting:locale-changed"]);
+  await controller.flush();
+});
+
+test("unrelated keys and non-local storage areas are ignored", async () => {
+  const f = fixture(); const onChanged = changeEvent();
+  const controller = await initializeLocale({documentObject: f.doc, storage: {get: async () => ({}), set: async () => {}},
+    storageChanged: onChanged, browserI18n: {getUILanguage: () => "en-US"}});
+  onChanged.fire({other: {newValue: "ja"}}, "local");
+  onChanged.fire({[LOCALE_STORAGE_KEY]: {newValue: "ja"}}, "sync");
+  assert.equal(f.doc.documentElement.lang, "en");
+  assert.deepEqual(f.events, []);
+  await controller.flush();
+});
+
+test("destroy removes both listeners", async () => {
+  const f = fixture(); const onChanged = changeEvent();
+  const controller = await initializeLocale({documentObject: f.doc, storage: {get: async () => ({}), set: async () => {}},
+    storageChanged: onChanged});
+  const initialLang = f.doc.documentElement.lang;
+  assert.equal(onChanged.size, 1);
+  assert.equal(typeof f.handlers.change, "function");
+  controller.destroy();
+  assert.equal(onChanged.size, 0);
+  assert.equal(f.handlers.change, undefined);
+  onChanged.fire({[LOCALE_STORAGE_KEY]: {newValue: "ja"}}, "local");
+  assert.equal(f.doc.documentElement.lang, initialLang);
+  assert.deepEqual(f.events, []);
+});
+
+test("storage change during initial read takes precedence over the stale read", async () => {
+  const f = fixture(); const onChanged = changeEvent(); let resolveRead;
+  const controllerPromise = initializeLocale({documentObject: f.doc, storage: {
+    get: () => new Promise(resolve => { resolveRead = resolve; }), set: async () => assert.fail("initial sync must not write"),
+  }, storageChanged: onChanged, browserI18n: {getUILanguage: () => "en-US"}});
+  await Promise.resolve();
+  onChanged.fire({[LOCALE_STORAGE_KEY]: {oldValue: "en", newValue: "ja"}}, "local");
+  resolveRead({[LOCALE_STORAGE_KEY]: "en"});
+  const controller = await controllerPromise;
+  assert.equal(f.doc.documentElement.lang, "ja");
+  assert.equal(f.select.value, "ja");
+  assert.deepEqual(f.events.map(event => event.type), ["llmeeting:locale-changed"]);
+  await controller.flush();
 });

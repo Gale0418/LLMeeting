@@ -15,8 +15,8 @@ class Target {
     this.listeners.get(type)?.delete(listener);
   }
 
-  dispatch(type) {
-    for (const listener of this.listeners.get(type) || []) listener();
+  dispatch(type, event) {
+    for (const listener of this.listeners.get(type) || []) listener(event);
   }
 }
 
@@ -187,4 +187,50 @@ test('controls remain interactive when local storage is unavailable', () => {
   f.motionToggle.dispatch('change');
   assert.equal(f.shell.dataset.circuitBackground, 'on');
   assert.equal(f.shell.dataset.circuitMotion, 'off');
+});
+
+test('a side panel without settings controls still follows external preferences and weekday colors', () => {
+  const f = fixture({ saved: { background: false, motion: false } });
+  const windowObject = new Target();
+  f.document.getElementById = () => null;
+  const destroy = initBackgroundControls({ ...f, windowObject, matchMedia: () => f.media });
+  assert.equal(f.shell.dataset.circuitBackground, 'off');
+  assert.equal(f.shell.dataset.circuitMotion, 'off');
+  assert.equal(f.shell.dataset.weekdayTheme, 'red');
+
+  const key = 'llmeeting.backgroundControls.v1';
+  f.values.set(key, JSON.stringify({ background: true, motion: true }));
+  windowObject.dispatch('storage', { key: 'unrelated', storageArea: f.storage });
+  assert.equal(f.shell.dataset.circuitBackground, 'off');
+  windowObject.dispatch('storage', { key, storageArea: {} });
+  assert.equal(f.shell.dataset.circuitBackground, 'off');
+  windowObject.dispatch('storage', { key, storageArea: f.storage });
+  assert.equal(f.shell.dataset.circuitBackground, 'on');
+  assert.equal(f.shell.dataset.circuitMotion, 'on');
+  f.media.change(true);
+  assert.equal(f.shell.dataset.circuitMotion, 'off');
+
+  destroy();
+  assert.equal(windowObject.listeners.get('storage').size, 0);
+  assert.equal(f.timers.size, 0);
+});
+
+test('an open options page reflects other options windows and cleared storage without writing back', () => {
+  const f = fixture();
+  const windowObject = new Target();
+  let writes = 0;
+  const setItem = f.storage.setItem;
+  f.storage.setItem = (...args) => { writes += 1; setItem(...args); };
+  const destroy = initBackgroundControls({ ...f, windowObject, matchMedia: () => f.media });
+  const key = 'llmeeting.backgroundControls.v1';
+  f.values.set(key, JSON.stringify({ background: false, motion: true }));
+  windowObject.dispatch('storage', { key, storageArea: f.storage });
+  assert.equal(f.backgroundToggle.checked, false);
+  assert.equal(f.motionToggle.disabled, true);
+  f.values.clear();
+  windowObject.dispatch('storage', { key: null, storageArea: f.storage });
+  assert.equal(f.backgroundToggle.checked, true);
+  assert.equal(f.motionToggle.disabled, false);
+  assert.equal(writes, 0);
+  destroy();
 });

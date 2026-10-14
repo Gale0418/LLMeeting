@@ -34,32 +34,53 @@ function detectBrowserLocale(browserI18n, navigatorObject) {
 }
 
 export async function initializeLocale({ documentObject = globalThis.document, storage = globalThis.chrome?.storage?.local,
-  browserI18n = globalThis.chrome?.i18n, navigatorObject = globalThis.navigator } = {}) {
+  browserI18n = globalThis.chrome?.i18n, navigatorObject = globalThis.navigator,
+  storageChanged = globalThis.chrome?.storage?.onChanged } = {}) {
   if (!documentObject) return;
   const select = documentObject.querySelector("#languageSelect");
   const status = documentObject.querySelector("#languageStatus");
-  let savedLocale, readError;
-  try { savedLocale = (await storage?.get(LOCALE_STORAGE_KEY))?.[LOCALE_STORAGE_KEY]; }
-  catch (error) { readError = error; }
-  let preference = resolveSupportedLocale(savedLocale) || "auto";
-  setLocale(preference === "auto" ? detectBrowserLocale(browserI18n, navigatorObject) : preference);
-  if (select) select.value = preference;
-  applyLocaleToUi(documentObject);
-  if (readError && status) status.textContent = uiText(`語言設定讀取失敗：${readError.message}`);
-  let saveQueue = Promise.resolve();
-  select?.addEventListener("change", () => {
-    preference = select.value === "auto" ? "auto" : normalizeLocale(select.value);
+  let savedLocale, readError, changedDuringRead = false, changedPreference;
+  const applyPreference = (nextPreference, dispatch = false) => {
+    const preference = resolveSupportedLocale(nextPreference) || "auto";
     const locale = preference === "auto" ? detectBrowserLocale(browserI18n, navigatorObject) : preference;
     setLocale(locale);
-    select.value = preference;
+    if (select) select.value = preference;
     applyLocaleToUi(documentObject);
-    const EventType = documentObject.defaultView?.CustomEvent || globalThis.CustomEvent;
-    if (EventType && documentObject.dispatchEvent) documentObject.dispatchEvent(new EventType("llmeeting:locale-changed", {detail: {locale}}));
+    if (dispatch) {
+      const EventType = documentObject.defaultView?.CustomEvent || globalThis.CustomEvent;
+      if (EventType && documentObject.dispatchEvent) documentObject.dispatchEvent(new EventType("llmeeting:locale-changed", {detail: {locale}}));
+    }
+    return preference;
+  };
+  const onStorageChanged = (changes, areaName) => {
+    if (areaName !== "local" || !Object.hasOwn(changes || {}, LOCALE_STORAGE_KEY)) return;
+    const nextPreference = resolveSupportedLocale(changes[LOCALE_STORAGE_KEY]?.newValue) || "auto";
+    changedDuringRead = true;
+    changedPreference = nextPreference;
+    preference = applyPreference(nextPreference, true);
+  };
+  let preference = "auto";
+  storageChanged?.addListener?.(onStorageChanged);
+  try { savedLocale = (await storage?.get(LOCALE_STORAGE_KEY))?.[LOCALE_STORAGE_KEY]; }
+  catch (error) { readError = error; }
+  preference = applyPreference(changedDuringRead ? changedPreference : savedLocale);
+  if (readError && status) status.textContent = uiText(`語言設定讀取失敗：${readError.message}`);
+  let saveQueue = Promise.resolve();
+  const onSelectChange = () => {
+    preference = select.value === "auto" ? "auto" : normalizeLocale(select.value);
+    applyPreference(preference, true);
     if (status) status.textContent = "";
     const savedPreference = preference;
     saveQueue = saveQueue.catch(() => {}).then(() => storage?.set({[LOCALE_STORAGE_KEY]: savedPreference})).catch((error) => {
       if (status) status.textContent = uiText(`語言偏好未能保存，這次切換仍會保留在目前視窗。${error.message}`);
     });
-  });
-  return {flush: () => saveQueue};
+  };
+  select?.addEventListener("change", onSelectChange);
+  return {
+    flush: () => saveQueue,
+    destroy() {
+      select?.removeEventListener?.("change", onSelectChange);
+      storageChanged?.removeListener?.(onStorageChanged);
+    },
+  };
 }

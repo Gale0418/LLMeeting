@@ -1154,36 +1154,6 @@ body::before {
   animation: none;
 }
 
-.circuit-controls {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  color: var(--text-secondary);
-}
-
-.circuit-controls label {
-  display: flex;
-  flex: 1 1 130px;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  min-height: 44px;
-  padding: 6px 10px;
-  border: 1px solid rgba(96, 180, 211, .16);
-  border-radius: 8px;
-  background: rgba(3, 13, 21, .62);
-  font-size: 12px;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  cursor: pointer;
-}
-
-.circuit-controls input { accent-color: var(--cyan); }
-.circuit-controls input:disabled { cursor: not-allowed; }
-.circuit-controls label:focus-within { outline: 2px solid var(--cyan); outline-offset: 2px; }
-
 .holo-projector {
   position: absolute;
   z-index: 3;
@@ -1806,17 +1776,6 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.98); }
   .digital-rain::before, .digital-rain::after { animation: none !important; }
 }
 
-.language-picker {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 8px 12px;
-  font-size: .8rem;
-}
-.language-picker select { width: auto; max-width: 55%; }
-#languageStatus { flex-basis: 100%; overflow-wrap: anywhere; }
 html[lang="en"] .secondary-action, html[lang="ja"] .secondary-action { white-space: normal; }
 
 .starter-questions { margin-block: 12px; }

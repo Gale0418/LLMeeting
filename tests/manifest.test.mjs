@@ -26,6 +26,13 @@ test("manifest declares the side-panel MV3 extension shell", async () => {
   assert.equal(manifest.action.default_title, "LLMeeting");
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.side_panel.default_path, "src/sidepanel/index.html");
+  assert.deepEqual(manifest.options_ui, { page: "src/options/index.html", open_in_tab: false });
+  const optionsHtml = await readFile(manifest.options_ui.page, "utf8");
+  const panelHtml = await readFile(manifest.side_panel.default_path, "utf8");
+  for (const id of ["languageSelect", "circuitBackgroundToggle", "circuitMotionToggle"]) {
+    assert.ok(optionsHtml.includes(`id="${id}"`), `${id} is available in extension options`);
+    assert.ok(!panelHtml.includes(`id="${id}"`), `${id} no longer occupies the side panel`);
+  }
   assert.equal(manifest.background.service_worker, "src/background/service-worker.js");
   assert.equal(manifest.background.type, "module");
   assert.deepEqual(

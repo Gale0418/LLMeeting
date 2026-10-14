@@ -19,6 +19,7 @@ function readPreferences(storage) {
 export function initBackgroundControls({
   document = globalThis.document,
   storage,
+  windowObject = globalThis.window,
   matchMedia = globalThis.matchMedia?.bind(globalThis),
   now = () => new Date(),
   setTimeout = globalThis.setTimeout?.bind(globalThis),
@@ -27,7 +28,7 @@ export function initBackgroundControls({
   const shell = document?.querySelector('.shell');
   const backgroundToggle = document?.getElementById('circuitBackgroundToggle');
   const motionToggle = document?.getElementById('circuitMotionToggle');
-  if (!shell || !backgroundToggle || !motionToggle) return () => {};
+  if (!shell) return () => {};
 
   if (storage === undefined) {
     try {
@@ -37,7 +38,7 @@ export function initBackgroundControls({
     }
   }
 
-  const preferences = readPreferences(storage);
+  let preferences = readPreferences(storage);
   const reducedMotion = matchMedia?.('(prefers-reduced-motion: reduce)') || { matches: false };
   const weekdayThemes = ['white', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'];
   let midnightTimer = null;
@@ -53,9 +54,11 @@ export function initBackgroundControls({
   const render = () => {
     shell.dataset.circuitBackground = preferences.background ? 'on' : 'off';
     shell.dataset.circuitMotion = preferences.motion && !reducedMotion.matches ? 'on' : 'off';
-    backgroundToggle.checked = preferences.background;
-    motionToggle.checked = preferences.motion && !reducedMotion.matches;
-    motionToggle.disabled = !preferences.background || reducedMotion.matches;
+    if (backgroundToggle) backgroundToggle.checked = preferences.background;
+    if (motionToggle) {
+      motionToggle.checked = preferences.motion && !reducedMotion.matches;
+      motionToggle.disabled = !preferences.background || reducedMotion.matches;
+    }
   };
   const refreshWeekdayTheme = () => {
     shell.dataset.weekdayTheme = weekdayThemes[now().getDay()];
@@ -98,17 +101,26 @@ export function initBackgroundControls({
     refreshWeekdayTheme();
     scheduleMidnightRefresh();
   };
+  // Extension options and side panels share this origin's local preferences.
+  const onStorageChange = (event) => {
+    if (event.key !== PREFERENCE_KEY && event.key !== null) return;
+    if (event.storageArea && event.storageArea !== storage) return;
+    preferences = readPreferences(storage);
+    render();
+  };
 
-  backgroundToggle.addEventListener('change', onBackgroundChange);
-  motionToggle.addEventListener('change', onMotionChange);
+  backgroundToggle?.addEventListener('change', onBackgroundChange);
+  motionToggle?.addEventListener('change', onMotionChange);
+  windowObject?.addEventListener('storage', onStorageChange);
   document.addEventListener('visibilitychange', onVisibilityChange);
   reducedMotion.addEventListener?.('change', render);
   render();
   onVisibilityChange();
 
   return () => {
-    backgroundToggle.removeEventListener('change', onBackgroundChange);
-    motionToggle.removeEventListener('change', onMotionChange);
+    backgroundToggle?.removeEventListener('change', onBackgroundChange);
+    motionToggle?.removeEventListener('change', onMotionChange);
+    windowObject?.removeEventListener('storage', onStorageChange);
     document.removeEventListener('visibilitychange', onVisibilityChange);
     reducedMotion.removeEventListener?.('change', render);
     clearMidnightTimer();

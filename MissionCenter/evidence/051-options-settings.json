@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-15",
+  "task": "LLM-T65",
+  "tests": {
+    "passed": 468,
+    "failed": 0
+  },
+  "optionsPage": "src/options/index.html",
+  "embedded": true,
+  "controls": [
+    "languageSelect",
+    "circuitBackgroundToggle",
+    "circuitMotionToggle"
+  ],
+  "preferenceCompatibility": {
+    "locale": "llmeeting.uiLocale.v1 / chrome.storage.local; unchanged",
+    "background": "llmeeting.backgroundControls.v1 / same-origin localStorage; unchanged"
+  },
+  "sync": [
+    "locale via chrome.storage.onChanged/local; no echo writes; latest event beats stale startup read",
+    "background via origin storage event, absent controls supported, foreign area/key ignored",
+    "existing weekday/motion/reduced-motion retained"
+  ],
+  "copy": "Reused existing Antigravity-authored three-language catalog labels; no new product copy",
+  "verification": [
+    "full npm test 468/468",
+    "22 focused locale/background/manifest checks after cleanup",
+    "changed JS syntax",
+    "git diff --check",
+    "ZIP CRC and options resources"
+  ],
+  "limitations": [
+    "Chrome native embedded options and side-panel cross-page interaction pending reload acceptance",
+    "CodeRabbit not rerun",
+    "No store publication"
+  ],
+  "source": "https://developer.chrome.com/docs/extensions/develop/ui/options-page",
+  "package": {
+    "bytes": 2733311,
+    "sha256": "C844996375697AB322A5A841598A54E808E04DCD2E79F611DA1764B5AC34A26A",
+    "zipCRC": "pass"
+  }
+}

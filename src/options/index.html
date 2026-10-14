@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LLMeeting</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <img src="../../assets/icons/icon-48.png" width="40" height="40" alt="">
+        <h1>LLMeeting</h1>
+      </header>
+      <div class="language-picker">
+        <label id="languageLabel" for="languageSelect">語言</label>
+        <select id="languageSelect" disabled>
+          <option value="auto">跟隨瀏覽器</option>
+          <option value="zh_TW">繁體中文</option>
+          <option value="en">English</option>
+          <option value="ja">日本語</option>
+        </select>
+        <p id="languageStatus" role="status"></p>
+      </div>
+      <fieldset>
+        <legend>背景效果</legend>
+        <label><input id="circuitBackgroundToggle" type="checkbox" checked> <span>背景電路</span></label>
+        <label><input id="circuitMotionToggle" type="checkbox" checked> <span>電流動畫</span></label>
+      </fieldset>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
