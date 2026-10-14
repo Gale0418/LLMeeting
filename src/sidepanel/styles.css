@@ -897,42 +897,79 @@ body::before {
   pointer-events: none;
 }
 
+.digital-rain {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: #020a04;
+}
+
+.digital-rain::before,
+.digital-rain::after {
+  content: "";
+  position: absolute;
+  inset: -512px 0 0;
+  background: url('../../assets/images/digital-code-rain.svg') left top / 384px 512px repeat;
+  animation: digitalRainFall 12s linear infinite;
+  opacity: .72;
+}
+
+.digital-rain::after {
+  background-position: 192px 128px;
+  animation-duration: 19s;
+  animation-delay: -9s;
+  opacity: .24;
+}
+
 .circuit-base,
+.circuit-glow,
 .circuit-current,
 .circuit-details > * {
   fill: none;
-  stroke: rgba(50, 130, 164, .26);
-  stroke-width: 1.1;
+  stroke: rgba(55, 223, 83, .48);
+  stroke-width: 1.7;
   vector-effect: non-scaling-stroke;
   stroke-linecap: square;
   stroke-linejoin: miter;
 }
 
-.circuit-current {
-  stroke: rgba(98, 224, 249, .7);
-  stroke-width: 1.35;
-  stroke-dasharray: 0 62 4 260;
-  stroke-dashoffset: 0;
-  animation: circuitCurrent 34s linear infinite;
+.circuit-glow {
+  stroke: rgba(42, 244, 76, .14);
+  stroke-width: 7;
 }
 
-.circuit-current:nth-of-type(2n) { animation-duration: 41s; }
-.circuit-current:nth-of-type(3n) { animation-duration: 47s; }
-.circuit-current:nth-of-type(4n) { animation-delay: -16s; }
+.circuit-current {
+  stroke: rgba(164, 255, 174, .92);
+  stroke-width: 2.4;
+  stroke-dasharray: 36 84;
+  stroke-dashoffset: 0;
+  animation: circuitCurrent 6s linear infinite;
+}
+
+.circuit-current:nth-of-type(2n) { animation-duration: 7s; }
+.circuit-current:nth-of-type(3n) { animation-duration: 9s; }
+.circuit-current:nth-of-type(4n) { animation-delay: -3s; }
 .circuit-details > * { stroke: rgba(57, 133, 164, .23); stroke-width: .9; }
 .circuit-details circle { fill: rgba(75, 176, 204, .3); stroke: none; }
-.shell[data-circuit-background="off"] .circuit-backdrop { display: none; }
+.shell[data-circuit-background="off"] .circuit-backdrop,
+.shell[data-circuit-background="off"] .digital-rain { display: none; }
 .shell[data-circuit-motion="off"] .circuit-current,
-.shell[data-page-hidden="true"] .circuit-current { animation-play-state: paused; }
+.shell[data-page-hidden="true"] .circuit-current,
+.shell[data-circuit-motion="off"] .digital-rain::before,
+.shell[data-circuit-motion="off"] .digital-rain::after,
+.shell[data-page-hidden="true"] .digital-rain::before,
+.shell[data-page-hidden="true"] .digital-rain::after { animation-play-state: paused; }
 
 .glass-surface {
   position: relative;
   overflow: hidden;
   border: 1px solid var(--border-color);
   border-radius: 14px;
-  background: linear-gradient(145deg, rgba(16, 36, 49, .86), rgba(4, 14, 23, .9));
+  background: linear-gradient(145deg, rgba(9, 24, 19, .76), rgba(3, 13, 11, .86));
   box-shadow: 0 12px 34px rgba(0, 0, 0, .34), inset 0 1px rgba(255, 255, 255, .05);
-  backdrop-filter: blur(18px) saturate(130%);
+  backdrop-filter: none;
 }
 
 .glass-surface::before {
@@ -1677,7 +1714,11 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.98); }
 }
 
 @keyframes circuitCurrent {
-  to { stroke-dashoffset: -326px; }
+  to { stroke-dashoffset: -120px; }
+}
+
+@keyframes digitalRainFall {
+  to { transform: translateY(512px); }
 }
 
 @keyframes hologramBreath {
@@ -1727,6 +1768,7 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.98); }
   }
   .dragon-hologram { transform: none; }
   .circuit-current { animation: none !important; }
+  .digital-rain::before, .digital-rain::after { animation: none !important; }
 }
 
 .language-picker {

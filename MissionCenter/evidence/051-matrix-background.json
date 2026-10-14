@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-10-14T10:45:23+08:00",
+  "task": "LLM-T62",
+  "scope": "依使用者參考改為滿版綠色字碼雨與交錯電路",
+  "implementation": {
+    "glyphTile": "assets/images/digital-code-rain.svg",
+    "glyphColumns": 24,
+    "glyphRows": 32,
+    "glyphCount": 768,
+    "glyphs": "ASCII字碼，避免SVG影像缺少CJK字型時出現方框",
+    "rainLayers": 2,
+    "rainDurationsSeconds": [12, 19],
+    "circuitPaths": 10,
+    "circuitDurationsSeconds": [6, 7, 9],
+    "circuitPulsePattern": "36px亮段／84px間隔，完整周期120px",
+    "newAnimationTimers": 0,
+    "remoteAssets": false,
+    "referenceImageCopied": false,
+    "largeDragonPreserved": true,
+    "backgroundAndMotionControlsPreserved": true,
+    "reducedMotion": "停止",
+    "hiddenDocument": "暫停"
+  },
+  "verification": {
+    "tests": 443,
+    "passed": 443,
+    "targetedControlAndAssetTests": 6,
+    "svgXml": "pass",
+    "diffCheck": "pass",
+    "zipCrc": "pass",
+    "backgroundOnlyStaticPreviews": [320, 480],
+    "nativeSidePanelVisualAcceptance": "pending",
+    "performanceMeasurement": "not-run",
+    "codeRabbit": "本輪未跑"
+  },
+  "package": {
+    "bytes": 2715184,
+    "sha256": "1F36A04E43B11A997665A5BD63894CA184B0A9346CF4E33FD5F993CBBDB69904"
+  },
+  "pending": ["重載後原生側欄滿版動態與320/480文字可讀性", "實際多AI討論時的耗能觀察"],
+  "storePublished": false
+}
