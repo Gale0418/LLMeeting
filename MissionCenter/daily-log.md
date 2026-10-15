@@ -1,6 +1,6 @@
 # 每日紀錄
 
-- 最後整理： 2026-10-15
+- 最後整理： 2026-10-16
 - Activity log:
   - [2026-08-27T15:41:56] 收窄全部 provider 停止 selector，並補上 Claude sendControlDeferredWhenEmpty；修正側欄歷史文字誤判生成中與空白 composer disabled 送出鈕。 | reason: Chrome 唯讀 DOM 顯示 Claude 可編輯輸入框存在，chat-input-send 空白時 disabled；aria-label*='停止' 另命中異星工廠歷史選單按鈕。 | impact: Claude readiness 不再回報仍在回答或無法送出；189/189 測試、語法、diff 與 0.5.0 封裝通過。
   - [2026-09-23] 全面程式審查修正最後輪總結、Provider readiness SPA 競態、錯誤 selector 退路、長聊恢復與儲存覆寫，以及 side panel 可讀性／停止語義。 | reason: 使用者要求跨域嚴格抓蟲，三席盲審、CodeRabbit 與獨立仲裁均提供具體證據。 | impact: 244/244 測試、語法、diff 與封裝通過；仲裁無剩餘 P0/P1；最終 CodeRabbit 重掃因 WebSocket 斷線、Chrome side panel 實機仍待驗。

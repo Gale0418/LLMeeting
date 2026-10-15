@@ -1,6 +1,22 @@
 // Program UI sources and three-language copy authored by Antigravity Bridge Codex.
 // Dynamic parameters are plain text; rendering boundaries own HTML escaping.
 export const UI_COPY = [
+  { "id": "live.enabled", "source": "{p0}：已啟用", "zh_TW": "{p0}：已啟用", "en": "{p0}: Enabled", "ja": "{p0}：有効" },
+  { "id": "live.disabled", "source": "{p0}：未啟用", "zh_TW": "{p0}：未啟用", "en": "{p0}: Disabled", "ja": "{p0}：無効" },
+  { "id": "live.readinessCounts", "source": "{p0} 家已啟用・{p1} 家就緒・{p2} 家需要處理", "zh_TW": "{p0} 家已啟用・{p1} 家就緒・{p2} 家需要處理", "en": "{p0} enabled · {p1} ready · {p2} needs attention", "ja": "{p0}社 有効・{p1}社 準備完了・{p2}社 要対応" },
+  { "id": "stage.identify", "source": "辨識頁面", "zh_TW": "辨識頁面", "en": "Identify page", "ja": "ページ認識" },
+  { "id": "stage.findInput", "source": "尋找輸入框", "zh_TW": "尋找輸入框", "en": "Find input box", "ja": "入力ボックスの検出" },
+  { "id": "stage.fillPrompt", "source": "填入提示", "zh_TW": "填入提示", "en": "Enter prompt", "ja": "プロンプト入力" },
+  { "id": "stage.sendPrompt", "source": "送出提示", "zh_TW": "送出提示", "en": "Send prompt", "ja": "プロンプト送信" },
+  { "id": "stage.waitReply", "source": "等待新回覆", "zh_TW": "等待新回覆", "en": "Wait for new response", "ja": "新規応答の待機" },
+  { "id": "stage.readReply", "source": "讀取新回覆", "zh_TW": "讀取新回覆", "en": "Read new response", "ja": "新規応答の読み取り" },
+  { "id": "live.reviewing", "source": "{p0} 評析中", "zh_TW": "{p0} 評析中", "en": "{p0} is reviewing", "ja": "{p0}がレビュー中" },
+  { "id": "live.responding", "source": "{p0} 回應中", "zh_TW": "{p0} 回應中", "en": "{p0} is responding", "ja": "{p0}が返答中" },
+  { "id": "live.review", "source": "{p0} 評析", "zh_TW": "{p0} 評析", "en": "{p0}'s Review", "ja": "{p0}のレビュー" },
+  { "id": "live.response", "source": "{p0} 回應", "zh_TW": "{p0} 回應", "en": "{p0}'s Response", "ja": "{p0}の返答" },
+  { "id": "live.writingReview", "source": "撰寫互評中", "zh_TW": "撰寫互評中", "en": "Writing peer reviews", "ja": "相互レビュー作成中" },
+  { "id": "live.compiling", "source": "彙整精華中…", "zh_TW": "彙整精華中…", "en": "Compiling highlights…", "ja": "ハイライトまとめ中…" },
+  { "id": "live.incomplete", "source": "總結未完成", "zh_TW": "總結未完成", "en": "Summary incomplete", "ja": "要約未完了" },
   {
     "id": "ui.rawProviderNotice",
     "source": "以下是該 AI 網頁顯示的原文，不是這位 AI 對題目的正式回答：",
@@ -202,7 +218,7 @@ export const UI_COPY = [
     "source": "{p0}：交叉評析 {p1} ⚡",
     "zh_TW": "{p0}：交叉評析 {p1} ⚡",
     "en": "{p0}: Cross-evaluating {p1} ⚡",
-    "ja": "{p0}：{p1} を相互レビュー ⚡"
+    "ja": "{p0}：相互レビュー {p1} ⚡"
   },
   {
     "id": "ui.copy.028",

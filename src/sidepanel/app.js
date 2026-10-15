@@ -757,12 +757,21 @@ document.addEventListener("llmeeting:locale-changed", () => {
   if (latestState) {
     localeRenderPending = true;
     const previousScroll = chatTranscript?.scrollTop;
-    lastRenderedChatHtml = null;
-    renderChatBubbles(latestState);
-    if (chatTranscript && Number.isFinite(previousScroll)) chatTranscript.scrollTop = previousScroll;
-    renderReplyRecoveryNotice(latestState);
-    renderDiagnostics(latestState);
-    localeRenderPending = false;
+    try {
+      statusText.textContent = uiText(latestState.message || latestState.status || "等待開始");
+      renderProviderStatuses(latestState);
+      updateProgressBar(latestState);
+      lastRenderedChatHtml = null;
+      renderChatBubbles(latestState);
+      if (chatTranscript && Number.isFinite(previousScroll)) chatTranscript.scrollTop = previousScroll;
+      renderReplyRecoveryNotice(latestState);
+      renderDiagnostics(latestState);
+      if (manualReplyTarget && !manualReplyEditor.hidden) {
+        document.querySelector("#manualReplyTarget").textContent = uiText(`${meetingSpeakerLabel(latestState, manualReplyTarget.provider)} · ${manualReplyPhaseLabel(manualReplyTarget.phase)} · 手動補回覆`);
+      }
+    } finally {
+      localeRenderPending = false;
+    }
   }
   renderPlayIdeas();
   starterQuestions.render();
@@ -1000,7 +1009,7 @@ function renderProviderRecovery(state) {
     const item = document.createElement("div");
     item.className = "recovery-item";
     const heading = document.createElement("strong");
-    heading.textContent = uiText(`${provider.label}：${readinessFailureLabel(latestReadiness[provider.id])}`);
+    heading.textContent = `${provider.label}: ${uiText(readinessFailureLabel(latestReadiness[provider.id]))}`;
     const guidance = document.createElement("p");
     guidance.textContent = uiText(readinessRecovery(latestReadiness[provider.id].code));
     const link = document.createElement("a");
@@ -1039,7 +1048,9 @@ function renderProviderSummary() {
   const failureCount = checked.filter((result) => !result.ready).length;
   providerSummaryText.textContent = uiText(checked.length === 0
     ? `${selected.length} 家已啟用・等待檢查`
-    : `${selected.length} 家已啟用・${readyCount} 家就緒${failureCount ? `・${failureCount} 家需要處理` : ""}`);
+    : failureCount
+      ? `${selected.length} 家已啟用・${readyCount} 家就緒・${failureCount} 家需要處理`
+      : `${selected.length} 家已啟用・${readyCount} 家就緒`);
 }
 
 function renderDiagnostics(state) {
@@ -1262,7 +1273,7 @@ function renderChatBubbles(state) {
       if (!reaction) return;
       const anonymousLabel = state.transcript?.anonymousNames?.[providerId];
       const label = state.reveal.anonymous
-        ? anonymousLabel || "匿名參與者（暱稱未取得）"
+        ? anonymousLabel || uiText("匿名參與者（暱稱未取得）")
         : providerLabel(providerId);
       html += `
         <div class="bubble-group assistant ${safeProviderClass(providerId)} reveal-reaction">
@@ -1486,7 +1497,7 @@ function setHookControlsDisabled(disabled) {
 
 function meetingSpeakerLabel(state, providerId) {
   if (["anonymousReview", "allAnonymous"].includes(state.summaryStrategy)) {
-    return state.transcript?.anonymousNames?.[providerId] || "匿名參與者（暱稱未取得）";
+    return state.transcript?.anonymousNames?.[providerId] || uiText("匿名參與者（暱稱未取得）");
   }
   return providerLabel(providerId);
 }
@@ -1693,7 +1704,20 @@ function formatReplyContent(str) {
     return `${formatReplyContent(str.slice(0, boundary))}<br>${formatContent(uiText(notice))}<br>${formatContent(str.slice(boundary + separator.length))}`;
   }
   const error = /^\[錯誤[：:]([\s\S]*)$/.exec(str);
-  return formatContent(error ? `${uiText("[錯誤：")}${error[1]}` : uiText(str));
+  if (error) return formatContent(`${uiText("[錯誤：")}${translateFaultStage(error[1])}`);
+  const service = /^\[服務狀態[：:]([\s\S]*)$/.exec(str);
+  return formatContent(uiText(service ? `[服務狀態：${translateFaultStage(service[1])}` : str));
+}
+
+function translateFaultStage(message, depth = 0) {
+  if (depth >= 4) return message;
+  // Only known leading automation stages are UI. The remaining browser/provider
+  // message stays verbatim, including any later stage-like quoted text.
+  const stage = "收集 AI 回覆|擷取目前發言|辨識頁面|尋找輸入框|填入提示|送出提示|等待新回覆|讀取新回覆";
+  const match = new RegExp(`^(?:\\[(${stage})\\]( ?)|(${stage})([:：] ?))([\\s\\S]*)$`).exec(message);
+  if (!match) return message;
+  const prefix = match[1] ? `[${uiText(match[1])}]${match[2]}` : `${uiText(match[3])}${match[4]}`;
+  return `${prefix}${translateFaultStage(match[5], depth + 1)}`;
 }
 
 function formatContent(str) {

@@ -22,6 +22,12 @@ test("fault cards translate generated wrappers while preserving AI replies and r
       assert.equal(context.formatReplyContent("回答原始問題"), "回答原始問題", 'ordinary AI prose is never translated');
       assert.equal(context.formatReplyContent("[服務狀態：ERR] 這位裁判未能完成總結。"), formatContent(uiText("[服務狀態：ERR] 這位裁判未能完成總結。")));
       assert.equal(context.formatReplyContent("[錯誤：原始故障]"), `${uiText("[錯誤：")}原始故障]`);
+      const nested = "收集 AI 回覆: provider readiness timeout";
+      assert.equal(context.formatReplyContent(`[服務狀態：${nested}] 這位裁判未能完成總結。`),
+        uiText(`[服務狀態：${uiText("收集 AI 回覆")}: provider readiness timeout] 這位裁判未能完成總結。`));
+      for (const stage of ['收集 AI 回覆', '擷取目前發言', '辨識頁面', '尋找輸入框', '填入提示', '送出提示', '等待新回覆', '讀取新回覆']) {
+        assert.equal(context.formatReplyContent(`[錯誤：[${stage}] 原始技術錯誤]`), `${uiText("[錯誤：")}[${uiText(stage)}] 原始技術錯誤]`);
+      }
       const result = context.formatReplyContent(`[服務狀態：ERR]\n${notice}\n${raw}`);
       assert.equal(result, `${uiText("[服務狀態：ERR]")}<br>${uiText(notice)}<br>${formatContent(raw)}`);
       if (locale !== "zh_TW") assert.notEqual(uiText(notice), notice);
@@ -82,7 +88,7 @@ test("failed provider preference persistence gives visible feedback and preserve
 
 test("anonymous UI fallback does not encode a fixed provider index", () => {
   const body = source.slice(source.indexOf("function meetingSpeakerLabel"), source.indexOf("function safeProviderClass"));
-  const context = {};
+  const context = { uiText: text => text };
   vm.createContext(context);
   vm.runInContext(`${body}\nglobalThis.label = meetingSpeakerLabel;`, context);
   assert.equal(context.label({ summaryStrategy: "allAnonymous" }, "meta"), "匿名參與者（暱稱未取得）");

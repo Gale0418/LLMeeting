@@ -1,0 +1,70 @@
+{
+  "date": "2026-10-16",
+  "task": "LLM-T69",
+  "scope": [
+    "missing conditional live-card copy",
+    "refresh state-derived labels on locale changes",
+    "known fault stage prefixes including the supplied timeout screenshot",
+    "readiness and accessibility labels",
+    "anonymous fallback without nickname translation"
+  ],
+  "copy": {
+    "catalogEntries": 545,
+    "newEntries": 16,
+    "changedJapaneseDivider": true,
+    "author": "Antigravity Bridge Codex",
+    "delivery": "completed same-request reconciliation via fresh CLI after stale MCP session; original disabled default request proven NOT_SENT; explicit eligible Flash replacement completed",
+    "preserved": [
+      "AI/user text",
+      "repair drafts",
+      "supplied anonymous nicknames",
+      "raw technical fault tails",
+      "original fault disclosures"
+    ]
+  },
+  "verification": {
+    "fullSuite": {
+      "passed": 502,
+      "failed": 0
+    },
+    "liveLocaleRendering": {
+      "meetingStates": 10,
+      "switchesPerState": 6,
+      "readinessCodes": 9,
+      "readinessLocalePasses": 4,
+      "anonymousFallbackLocales": 3,
+      "method": "actual app render function bodies and locale handler executed in VM with explicit fakes; no native browser claim"
+    },
+    "screenshots": [
+      "critique loading label and spinner",
+      "summary fault collecting-stage prefix"
+    ],
+    "faults": "all eight allowlisted automation stages, bracket and colon prefixes, raw tail retention",
+    "lexicalScan": "one trimmed author-mode prefix candidate; actual trailing-space source matches catalog; scan alone does not cover ternaries",
+    "syntax": "pass",
+    "zipCRC": "pass"
+  },
+  "review": {
+    "issues": 0,
+    "reviewedFiles": [
+      "src/sidepanel/app.js",
+      "tests/sidepanelRequests.test.mjs"
+    ],
+    "commandsThisHour": 1,
+    "excluded": [
+      "large generated copy catalog",
+      "new liveLocaleRendering test file not included by CLI (validated locally)",
+      "unchanged assets",
+      "unrelated sources",
+      "private exports"
+    ]
+  },
+  "limitations": [
+    "Native Chrome side-panel interaction/layout acceptance still requires reload",
+    "Raw third-party errors remain in original language by design; no assertion that future unknown text is fully localized"
+  ],
+  "package": {
+    "bytes": 2766668,
+    "sha256": "CCF7A0BA005E26F93349763E6D913DAF3CCFACE82EA66777F9F1805C157C3EB7"
+  }
+}
