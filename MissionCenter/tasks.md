@@ -2,7 +2,7 @@
 
 | ID | 標題 | 類型 | 上層 | 優先級 | 狀態 | 負責人 | 依賴 | 下一步 | 驗證方式 | 估算 | 標籤 | 備註 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| LLM-T71 | 本場健康摘要與故障時間軸 | Task | LLM-E7 | P1 | Review | Codex／Antigravity | LLM-T70 | Antigravity允許filesystem/locate_files後接續原請求完成文案複核 | 507/507、320/480獨立62組與原生31組三語／鍵盤、ZIP CRC、CodeRabbit核心8檔0issues | 2 | diagnostics, i18n, ux | 功能與三語草稿可用；原生360px非普通tab；摘要與歷史分離、離席保留、技術預設收合；23筆新增文案暫由Codex起草，Antigravity原請求已送但待工具授權，不建立重複writer；本輪兔子3次已用完 |
+| LLM-T71 | 本場健康摘要與故障時間軸 | Task | LLM-E7 | P1 | Done | Codex／Antigravity | LLM-T70 | 無；五家真實後端仍依原驗收邊界 | 507/507、320/480獨立62組與原生31組三語／鍵盤、ZIP CRC、CodeRabbit核心8檔0issues | 2 | diagnostics, i18n, ux | 原協作請求已交付並觀察到完成標記；核對後採用17筆文案，保留中性結果／永久離席／計數語意，修正Source Summary反向匹配歧義；三語複驗通過，不需再處理搜尋授權 |
 | LLM-E1 | LLMeeting MVP 收尾 | Epic |  | P1 | In Progress | Codex |  | 完成 Gemini Chrome 實機確認後擷取商店截圖 | 自動測試、語法檢查、Chrome 實機試跑、CodeRabbit review | 12 | chrome-extension, ai-debate | 0.4.1 候選包與 CodeRabbit follow-up 已完成，剩實機與上架素材 |
 | LLM-T1 | 多 AI 辯論基礎流程 | Task | LLM-E1 | P1 | Done | Codex |  | 無 | 使用 ChatGPT/Gemini/Grok 實際試跑，使用者回報可運行 | 2 | mvp | 已完成 |
 | LLM-T2 | Claude 參與者支援 | Task | LLM-E1 | P2 | Done | Codex |  | 無 | 使用者 Chrome 實機跑四家 AI 辯論，Claude 可參與 | 2 | provider, claude | 使用者回報四家 AI 實機辯論正常 |
