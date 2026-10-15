@@ -1167,7 +1167,7 @@ function renderChatBubbles(state) {
   if (state.sourceProvider && isRecoverableReply(state.sourceSummary)) {
     html += `<div class="bubble-group assistant ${safeProviderClass(state.sourceProvider)}">
       <div class="bubble-meta">${escapeHTML(uiText(`${meetingSpeakerLabel(state, state.sourceProvider)} · 來源總結`))}</div>
-      <div class="bubble-content">${formatContent(state.sourceSummary)}</div>
+      <div class="bubble-content">${formatReplyContent(state.sourceSummary)}</div>
       ${replyRecoveryControls(state, state.sourceProvider, "source-summary", state.sourceSummary)}
     </div>`;
   }
@@ -1191,7 +1191,7 @@ function renderChatBubbles(state) {
         html += `
           <div class="bubble-group assistant ${safeProviderClass(providerId)}">
             <div class="bubble-meta">${escapeHTML(meetingSpeakerLabel(state, providerId))}</div>
-            <div class="bubble-content">${formatContent(content)}</div>
+            <div class="bubble-content">${formatReplyContent(content)}</div>
             ${replyRecoveryControls(state, providerId, "first-round", content)}
           </div>
         `;
@@ -1238,7 +1238,7 @@ function renderChatBubbles(state) {
         html += `
             <div class="bubble-group assistant ${safeProviderClass(providerId)} critique">
             <div class="bubble-meta">${escapeHTML(uiText(`${meetingSpeakerLabel(state, providerId)} ${userMessage ? "回應" : "評析"}`))}</div>
-            <div class="bubble-content">${formatContent(content)}</div>
+            <div class="bubble-content">${formatReplyContent(content)}</div>
             ${replyRecoveryControls(state, providerId, roundNumber === 1 ? "critique" : `critique-${roundNumber}`, content)}
           </div>
         `;
@@ -1252,7 +1252,7 @@ function renderChatBubbles(state) {
       <div class="round-divider">揭曉輪 🕵️</div>
       <div class="bubble-group summary reveal">
         <div class="bubble-meta">${escapeHTML(uiText("遊戲揭曉"))}</div>
-        <div class="bubble-content">${formatContent(state.reveal.content || state.summary)}</div>
+        <div class="bubble-content">${formatReplyContent(state.reveal.content || state.summary)}</div>
       </div>
     `;
     const revealReactions = state.reveal.reactions || {};
@@ -1267,7 +1267,7 @@ function renderChatBubbles(state) {
       html += `
         <div class="bubble-group assistant ${safeProviderClass(providerId)} reveal-reaction">
           <div class="bubble-meta">${escapeHTML(uiText(`${label} 的揭曉反應`))}</div>
-           <div class="bubble-content">${formatContent(reaction)}</div>
+           <div class="bubble-content">${formatReplyContent(reaction)}</div>
           ${replyRecoveryControls(state, providerId, "reveal", reaction)}
         </div>
       `;
@@ -1280,7 +1280,7 @@ function renderChatBubbles(state) {
       html += `
         <div class="bubble-group summary${!content && state.busy ? " loading" : ""}">
           <div class="bubble-meta">${escapeHTML(uiText(`${meetingSpeakerLabel(state, judge)} 的總結`))}</div>
-          <div class="bubble-content">${content ? formatContent(content) : uiText(state.busy ? "彙整精華中…" : "總結未完成")}</div>
+          <div class="bubble-content">${content ? formatReplyContent(content) : uiText(state.busy ? "彙整精華中…" : "總結未完成")}</div>
           ${replyRecoveryControls(state, judge, "summary", content)}
         </div>`;
     }
@@ -1299,7 +1299,7 @@ function renderChatBubbles(state) {
       <div class="round-divider">最終裁決 👑</div>
       <div class="bubble-group summary ${safeProviderClass(sumProvider)}">
         <div class="bubble-meta">${escapeHTML(uiText(`${meetingSpeakerLabel(state, sumProvider)} 總結裁決`))}</div>
-        <div class="bubble-content">${formatContent(state.summary || state.summaries?.[sumProvider] || "")}</div>
+        <div class="bubble-content">${formatReplyContent(state.summary || state.summaries?.[sumProvider] || "")}</div>
         ${replyRecoveryControls(state, sumProvider, "summary", state.summary || state.summaries?.[sumProvider])}
       </div>
     `;
@@ -1680,6 +1680,20 @@ function escapeHTML(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function formatReplyContent(str) {
+  if (!isRecoverableReply(str)) return formatContent(str);
+  // Generated fault cards get localized UI wrappers; raw fault details and
+  // normal AI/user text remain untouched in state and recovery disclosures.
+  const notice = "以下是該 AI 網頁顯示的原文，不是這位 AI 對題目的正式回答：";
+  const separator = `\n${notice}\n`;
+  const boundary = str.indexOf(separator);
+  if (boundary !== -1) {
+    return `${formatReplyContent(str.slice(0, boundary))}<br>${formatContent(uiText(notice))}<br>${formatContent(str.slice(boundary + separator.length))}`;
+  }
+  const error = /^\[錯誤[：:]([\s\S]*)$/.exec(str);
+  return formatContent(error ? `${uiText("[錯誤：")}${error[1]}` : uiText(str));
 }
 
 function formatContent(str) {

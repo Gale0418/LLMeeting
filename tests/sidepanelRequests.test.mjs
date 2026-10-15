@@ -5,8 +5,30 @@ import vm from "node:vm";
 import { shouldShowChatControls } from "../src/sidepanel/modeRules.js";
 import { uiText, setLocale, t } from "../src/shared/i18n.js";
 import { localizedFeatureLabel } from "../src/shared/i18n-catalog.js";
+import { isRecoverableReply } from "../src/shared/meetingRecovery.js";
 
 const source = await readFile("src/sidepanel/app.js", "utf8");
+
+test("fault cards translate generated wrappers while preserving AI replies and raw provider evidence", () => {
+  const formatters = source.slice(source.indexOf("function formatReplyContent("), source.indexOf("function formatContent("));
+  const formatContent = (text) => String(text).replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\n", "<br>");
+  const context = vm.createContext({ formatContent, isRecoverableReply, uiText });
+  vm.runInContext(formatters, context);
+  const notice = "以下是該 AI 網頁顯示的原文，不是這位 AI 對題目的正式回答：";
+  const raw = "回答原始問題\n<script>保留網頁原文</script>";
+  try {
+    for (const locale of ["en", "ja", "zh_TW"]) {
+      setLocale(locale);
+      assert.equal(context.formatReplyContent("回答原始問題"), "回答原始問題", 'ordinary AI prose is never translated');
+      assert.equal(context.formatReplyContent("[服務狀態：ERR] 這位裁判未能完成總結。"), formatContent(uiText("[服務狀態：ERR] 這位裁判未能完成總結。")));
+      assert.equal(context.formatReplyContent("[錯誤：原始故障]"), `${uiText("[錯誤：")}原始故障]`);
+      const result = context.formatReplyContent(`[服務狀態：ERR]\n${notice}\n${raw}`);
+      assert.equal(result, `${uiText("[服務狀態：ERR]")}<br>${uiText(notice)}<br>${formatContent(raw)}`);
+      if (locale !== "zh_TW") assert.notEqual(uiText(notice), notice);
+      assert.doesNotMatch(result, /<script>/);
+    }
+  } finally { setLocale("en"); }
+});
 
 test("badge and feature-unavailable messages stay in the selected language", () => {
   try {

@@ -115,6 +115,44 @@ test('maps each local weekday to its theme', () => {
   }
 });
 
+test('each completed packet wave gets a fresh wait and speed, with no extra timers or hidden work', () => {
+  const f = fixture();
+  const properties = new Map();
+  const route = Object.assign(new Target(), { style: { setProperty: (key, value) => properties.set(key, value) } });
+  f.document.querySelectorAll = () => [route];
+  const samples = [.1, .2, .3, .4, .5, .6, .7, .8];
+  let calls = 0;
+  const destroy = initBackgroundControls({ ...f, matchMedia: () => f.media, random: () => samples[calls++] });
+  const initial = new Map(properties);
+  route.dispatch('animationend', { animationName: 'circuitGlow' });
+  assert.equal(calls, 2, 'only the head schedules the next batch');
+  route.dispatch('animationend', { animationName: 'circuitHead' });
+  assert.equal(calls, 4);
+  assert.notEqual(properties.get('--travel'), initial.get('--travel'));
+  assert.ok(parseFloat(properties.get('--phase')) > 0, 'the next wave waits before appearing');
+  for (const layer of ['glow', 'current', 'head']) assert.match(properties.get(`--${layer}-animation`), /Next$/);
+  const next = new Map(properties);
+  route.dispatch('animationend', { animationName: 'circuitHeadNext' });
+  assert.equal(calls, 6, 'the following wave also resamples');
+  assert.notEqual(properties.get('--phase'), next.get('--phase'));
+  assert.notEqual(properties.get('--travel'), next.get('--travel'));
+  assert.equal(f.timers.size, 1, 'only the existing midnight timer is scheduled');
+  f.document.hidden = true;
+  f.document.dispatch('visibilitychange');
+  route.dispatch('animationend', { animationName: 'circuitHead' });
+  assert.equal(calls, 6);
+  assert.equal(f.timers.size, 0);
+  f.document.hidden = false;
+  f.document.dispatch('visibilitychange');
+  assert.equal(calls, 8, 'a boundary event queued while hidden resumes when visible');
+  f.media.change(true);
+  route.dispatch('animationend', { animationName: 'circuitHead' });
+  assert.equal(calls, 8, 'reduced motion does not start more waves');
+  destroy();
+  assert.equal(route.listeners.get('animationend').size, 0);
+  assert.equal(f.timers.size, 0);
+});
+
 test('updates at local midnight and schedules only one next refresh', () => {
   const f = fixture({ date: new Date(2026, 9, 12, 23, 59, 30) });
   const destroy = initBackgroundControls({ ...f, matchMedia: () => f.media });

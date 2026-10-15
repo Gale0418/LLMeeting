@@ -14,7 +14,9 @@ import { DEFAULT_LOCALE, MESSAGES, SUPPORTED_LOCALES } from "../src/shared/i18n-
 import { UI_COPY } from "../src/shared/ui-copy-catalog.js";
 
 test("production UI catalog is complete in three languages with unchanged dynamic parameters", () => {
-  assert.equal(UI_COPY.length, 527);
+  assert.equal(UI_COPY.length, 529);
+  assert.equal(uiText("使用者提問 🙋", "en"), "User Question 🙋");
+  assert.equal(uiText("使用者提問 🙋", "ja"), "ユーザーの質問 🙋");
   assert.equal(uiText("背景電路", "en"), "Circuit Glow");
   assert.equal(uiText("電流動畫", "ja"), "パルスアニメ");
   assert.equal(new Set(UI_COPY.map(e=>e.id)).size, UI_COPY.length);
@@ -33,6 +35,40 @@ test("duplicate source entries do not make existing translations ambiguous when 
   assert.equal(translate("Status", "ja"), "状態");
   const leading = createTextTranslator([{source: " 等待 {p0}", zh_TW: " 等待 {p0}", en: " Waiting {p0}", ja: " 待機 {p0}"}]);
   assert.equal(leading(" 等待 Claude", "en"), " Waiting Claude");
+});
+
+test("nested program phase labels translate completely in statuses and manual repair titles", () => {
+  const phases = ["回答原始問題", "總結目前對話", "彙整總結", "互評：評析其他 AI", "第 2/5 輪互評：評析其他 AI"];
+  for (const phase of phases) {
+    for (const source of [`ChatGPT：等待${phase}`, `ChatGPT：${phase}送出中`]) {
+      const en = uiText(source, "en");
+      const ja = uiText(source, "ja");
+      assert.doesNotMatch(en, /\p{Script=Han}/u, source);
+      assert.equal(uiText(en, "ja"), ja, `${source}: en→ja`);
+      assert.equal(uiText(ja, "en"), en, `${source}: ja→en`);
+      assert.equal(uiText(en, "zh_TW"), source, `${source}: en→zh`);
+      assert.equal(uiText.resolveSource(en), source, `${source}: canonical source`);
+    }
+  }
+  assert.equal(uiText("ChatGPT：等待回答原始問題", "en"), "ChatGPT: Waiting for Answer the Original Question");
+  assert.equal(uiText("ChatGPT：等待第 2/5 輪互評：評析其他 AI", "ja"), "ChatGPT：第 2/5 ラウンド相互レビュー：他のAIをレビュー を待機中");
+  for (const phase of ["來源總結", "第一輪回答", "總結", "揭曉反應", "第 3 輪互評"]) {
+    const source = `ChatGPT · ${phase} · 手動補回覆`;
+    assert.doesNotMatch(uiText(source, "en"), /\p{Script=Han}/u);
+    assert.equal(uiText(uiText(source, "en"), "ja"), uiText(source, "ja"));
+  }
+  for (const scheduler of ["快速", "逐家"]) {
+    const source = `第 2/5 輪互評：${scheduler}送出交叉互評`;
+    assert.doesNotMatch(uiText(source, "en"), /\p{Script=Han}/u);
+  }
+});
+
+test("nested UI translation preserves nicknames, raw faults and unknown parameter text", () => {
+  const nickname = "回答原始問題";
+  assert.equal(uiText(`${nickname}：等待回答原始問題`, "en"), `${nickname}: Waiting for Answer the Original Question`);
+  assert.equal(uiText(`${nickname} · 第一輪回答 · 手動補回覆`, "en"), `${nickname} · Round 1 Answers · Manually supplement response`);
+  assert.equal(uiText("錯誤: 回答原始問題", "en"), "Error: 回答原始問題");
+  assert.equal(uiText("ChatGPT：等待私人內容 OWO", "en"), "ChatGPT: Waiting for 私人內容 OWO");
 });
 
 test("production duplicate sources have consistent translations in every locale", () => {

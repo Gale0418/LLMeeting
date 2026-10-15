@@ -21,6 +21,7 @@ export function initBackgroundControls({
   storage,
   windowObject = globalThis.window,
   matchMedia = globalThis.matchMedia?.bind(globalThis),
+  random = Math.random,
   now = () => new Date(),
   setTimeout = globalThis.setTimeout?.bind(globalThis),
   clearTimeout = globalThis.clearTimeout?.bind(globalThis)
@@ -29,14 +30,6 @@ export function initBackgroundControls({
   const backgroundToggle = document?.getElementById('circuitBackgroundToggle');
   const motionToggle = document?.getElementById('circuitMotionToggle');
   if (!shell) return () => {};
-
-  // Sample once per panel: independent speeds keep the lanes from marching
-  // together, without animation timers or work on every frame.
-  for (const route of document.querySelectorAll?.('.circuit-route') || []) {
-    const travel = 7 + Math.random() * 7;
-    route.style.setProperty('--travel', `${travel.toFixed(3)}s`);
-    route.style.setProperty('--phase', `${(-Math.random() * travel).toFixed(3)}s`);
-  }
 
   if (storage === undefined) {
     try {
@@ -50,6 +43,38 @@ export function initBackgroundControls({
   const reducedMotion = matchMedia?.('(prefers-reduced-motion: reduce)') || { matches: false };
   const weekdayThemes = ['white', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'];
   let midnightTimer = null;
+  const routeListeners = [];
+  const resumeWaves = [];
+  for (const route of document.querySelectorAll?.('.circuit-route') || []) {
+    let alternate = false;
+    let wavePending = false;
+    const sampleWave = (initial = false) => {
+      const travel = 7 + random() * 7;
+      route.style.setProperty('--travel', `${travel.toFixed(3)}s`);
+      route.style.setProperty('--phase', `${(initial ? -random() * travel : .5 + random() * 4).toFixed(3)}s`);
+      // Alternate equivalent keyframes to restart all layers together without
+      // forcing layout or scheduling timers for individual packets.
+      for (const layer of ['Glow', 'Current', 'Head']) {
+        route.style.setProperty(`--${layer.toLowerCase()}-animation`, `circuit${layer}${alternate ? 'Next' : ''}`);
+      }
+    };
+    const resumeWave = () => {
+      if (!wavePending) return;
+      if (document.hidden || !preferences.background || !preferences.motion || reducedMotion.matches) return;
+      wavePending = false;
+      alternate = !alternate;
+      sampleWave();
+    };
+    const onWaveEnd = (event) => {
+      if (!['circuitHead', 'circuitHeadNext'].includes(event.animationName)) return;
+      wavePending = true;
+      resumeWave();
+    };
+    sampleWave(true);
+    route.addEventListener('animationend', onWaveEnd);
+    routeListeners.push([route, onWaveEnd]);
+    resumeWaves.push(resumeWave);
+  }
 
   const persist = () => {
     try {
@@ -67,6 +92,7 @@ export function initBackgroundControls({
       motionToggle.checked = preferences.motion && !reducedMotion.matches;
       motionToggle.disabled = !preferences.background || reducedMotion.matches;
     }
+    for (const resumeWave of resumeWaves) resumeWave();
   };
   const refreshWeekdayTheme = () => {
     shell.dataset.weekdayTheme = weekdayThemes[now().getDay()];
@@ -108,6 +134,7 @@ export function initBackgroundControls({
     }
     refreshWeekdayTheme();
     scheduleMidnightRefresh();
+    for (const resumeWave of resumeWaves) resumeWave();
   };
   // Extension options and side panels share this origin's local preferences.
   const onStorageChange = (event) => {
@@ -132,6 +159,7 @@ export function initBackgroundControls({
     document.removeEventListener('visibilitychange', onVisibilityChange);
     reducedMotion.removeEventListener?.('change', render);
     clearMidnightTimer();
+    for (const [route, listener] of routeListeners) route.removeEventListener('animationend', listener);
   };
 }
 

@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-15",
+  "task": "LLM-T68",
+  "scope": [
+    "resample speed and wait after every packet wave",
+    "nested phase labels in waiting/sending/manual repair UI",
+    "static sidepanel/options label and attribute audit",
+    "generated fault-card wrappers with preserved raw evidence"
+  ],
+  "motion": {
+    "waveSeconds": [
+      7,
+      14
+    ],
+    "nextWaitSeconds": [
+      0.5,
+      4.5
+    ],
+    "trigger": "head animationend alternates equivalent single-run CSS keyframes",
+    "animationTimersAdded": 0,
+    "hiddenBoundary": "pending wave resumes on visibility/preferences restoration",
+    "cleanup": "all route listeners removed on destroy"
+  },
+  "i18n": {
+    "catalogEntries": 529,
+    "localizedParameterPolicy": "explicit program-owned label slots only, bounded depth, both translation and source reconstruction",
+    "templateDisambiguation": "inner review label cannot consume outer waiting status",
+    "antigravityCopy": [
+      "使用者提問 🙋",
+      "raw provider text notice",
+      "Organize Active Chat vs Summarize Active Chat"
+    ],
+    "preserved": [
+      "AI replies",
+      "user drafts and linked history",
+      "anonymous nicknames",
+      "raw provider evidence",
+      "original fault disclosures"
+    ],
+    "audit": "static sidepanel/options text and title/aria-label/aria-valuetext/placeholder; representative service status/phase/scheduler/manual-repair compositions in en/ja; no confirmed remaining gap in inspected paths",
+    "lexicalGap": "one trimmed author-mode prefix candidate; actual call includes catalog-matched trailing space, raw error appended unchanged",
+    "limits": "lexical coverage and automated cases do not prove every future runtime message or native layout"
+  },
+  "verification": {
+    "fullSuite": {
+      "passed": 499,
+      "failed": 0
+    },
+    "focused": {
+      "passed": 47,
+      "failed": 0
+    },
+    "syntax": "pass",
+    "zipCRC": "pass",
+    "nativeChrome": "pending reload; no claim of actual sidebar animation verification"
+  },
+  "review": {
+    "initialFiles": 5,
+    "initialIssues": {
+      "minor": 1
+    },
+    "fixed": "canonical source reconstruction now also resolves nested UI slots",
+    "followup": {
+      "issues": 0,
+      "reviewedFiles": [
+        "REVIEW_CONTEXT.md",
+        "src/shared/i18n.js",
+        "src/sidepanel/app.js",
+        "src/sidepanel/styles.css",
+        "tests/i18n.test.mjs",
+        "tests/sidepanelRequests.test.mjs"
+      ]
+    },
+    "commandsThisHour": 2,
+    "excluded": [
+      "large generated copy catalog (small known copy edits checked locally)",
+      "assets",
+      "unrelated historical evidence",
+      "private probes and exports"
+    ]
+  },
+  "package": {
+    "bytes": 2762786,
+    "sha256": "F6265198458197A50BB6C34A4520FF4B0E45460FCD13C2AF712259BA58D532D3"
+  }
+}

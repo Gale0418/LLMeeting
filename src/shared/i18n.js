@@ -7,6 +7,17 @@ export let currentLocale = DEFAULT_LOCALE;
 
 const ATTRIBUTE_WHITELIST = new Set(["title", "aria-label", "aria-valuetext", "placeholder"]);
 const staticSources = new WeakMap();
+// Only these slots contain program-owned UI labels. Never recursively translate
+// arbitrary parameters: they can be AI replies, nicknames, URLs or raw faults.
+const LOCALIZED_UI_SLOTS = new Map([
+  ["{p0} · {p1} · 手動補回覆", ["{p1}"]],
+  ["{p0}：等待{p1}", ["{p1}"]],
+  ["{p0}：{p1}送出中", ["{p1}"]],
+  ["{p0}：評析其他 AI", ["{p0}"]],
+  ["{p0}：{p1}送出交叉互評", ["{p0}", "{p1}"]],
+  ["{p0}：交叉評析 {p1} ⚡", ["{p0}"]],
+  ["{p0}互評:", ["{p0}"]],
+]);
 
 /** Resolve the small set of locale names accepted by the UI runtime. */
 export function normalizeLocale(locale) {
@@ -103,6 +114,10 @@ export function createTextTranslator(entries = []) {
     const match = compiled.matcher?.exec(input);
     if (!match) return null;
     const values = new Map(compiled.tokens.map((token, index) => [token, match[index + 1]]));
+    // This inner phase template must not consume an enclosing waiting status
+    // as its round label, especially when Japanese reorders the placeholders.
+    if (compiled.entry.source === "{p0}：評析其他 AI"
+      && !/^(?:互評|第\s+\d+(?:\/\d+)?\s+輪互評|Review|Round\s+\d+(?:\/\d+)?\s+Review|レビュー|相互レビュー|第\s+\d+(?:\/\d+)?\s+ラウンド相互レビュー)$/.test(values.get("{p0}") || "")) return null;
     return { entry: compiled.entry, values };
   }
 
@@ -159,15 +174,30 @@ export function createTextTranslator(entries = []) {
     return { entry, values, sourceText, leading: matchLeading, trailing: matchTrailing };
   }
 
-  function translateUiText(raw, locale = currentLocale) {
+  function translateUiText(raw, locale = currentLocale, depth = 0) {
     if (typeof raw !== "string") return raw;
+    if (depth > 4) return raw;
     const match = resolve(raw);
     if (!match) return raw;
     const template = match.entry?.[normalizeLocale(locale)];
-    return typeof template === "string" ? `${match.leading ?? ""}${substitute(template, match.values)}${match.trailing ?? ""}` : raw;
+    const values = new Map(match.values);
+    for (const token of LOCALIZED_UI_SLOTS.get(match.entry.source) || []) {
+      if (values.has(token)) values.set(token, translateUiText(values.get(token), locale, depth + 1));
+    }
+    return typeof template === "string" ? `${match.leading ?? ""}${substitute(template, values)}${match.trailing ?? ""}` : raw;
   }
 
-  translateUiText.resolveSource = (raw) => resolve(raw)?.sourceText ?? raw;
+  const resolveUiSource = (raw, depth = 0) => {
+    if (depth > 4) return raw;
+    const match = resolve(raw);
+    if (!match) return raw;
+    const values = new Map(match.values);
+    for (const token of LOCALIZED_UI_SLOTS.get(match.entry.source) || []) {
+      if (values.has(token)) values.set(token, resolveUiSource(values.get(token), depth + 1));
+    }
+    return `${match.leading ?? ""}${substitute(match.entry.source, values)}${match.trailing ?? ""}`;
+  };
+  translateUiText.resolveSource = resolveUiSource;
   return translateUiText;
 }
 

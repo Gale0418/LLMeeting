@@ -947,14 +947,14 @@ body::before {
   stroke-linejoin: round;
 }
 
-/* Each lane gets its own random speed and phase when the panel opens.
-   The three layers share those values, so each packet stays intact. */
+/* Each completed wave samples a fresh speed and wait; its layers stay aligned. */
 .circuit-route { --travel: 9s; --phase: -1.8s; }
 
 .circuit-glow,
 .circuit-current,
 .circuit-head {
-  animation: circuitGlow var(--travel) linear infinite;
+  opacity: 0;
+  animation: var(--glow-animation, circuitGlow) var(--travel) linear 1;
   animation-delay: var(--phase);
 }
 .circuit-glow {
@@ -965,7 +965,7 @@ body::before {
 }
 
 .circuit-current {
-  animation-name: circuitCurrent;
+  animation-name: var(--current-animation, circuitCurrent);
   stroke: hsl(var(--circuit-hue) 95% 74% / .94);
   stroke-width: 2.6;
   stroke-dasharray: 40 60 24 50 12 1814;
@@ -973,7 +973,7 @@ body::before {
 }
 
 .circuit-head {
-  animation-name: circuitHead;
+  animation-name: var(--head-animation, circuitHead);
   stroke: hsl(var(--circuit-hue) 100% 94%);
   stroke-width: 3;
   stroke-dasharray: 4 80 4 58 4 1850;
@@ -981,6 +981,7 @@ body::before {
 }
 .shell[data-circuit-motion="off"] :is(.circuit-current, .circuit-glow, .circuit-head) {
   animation: none;
+  opacity: 1;
 }
 .circuit-details > * { stroke: hsl(var(--circuit-hue) 70% 65% / .26); stroke-width: .9; }
 .circuit-details circle { fill: hsl(var(--circuit-hue) 80% 75% / .45); stroke: none; }
@@ -1728,16 +1729,35 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.98); }
 }
 
 @keyframes circuitGlow {
-  from { stroke-dashoffset: 0px; }
-  to { stroke-dashoffset: -2000px; }
+  from { stroke-dashoffset: 0px; opacity: 1; }
+  99.9% { opacity: 1; }
+  to { stroke-dashoffset: -2000px; opacity: 0; }
 }
 @keyframes circuitCurrent {
-  from { stroke-dashoffset: -40px; }
-  to { stroke-dashoffset: -2040px; }
+  from { stroke-dashoffset: -40px; opacity: 1; }
+  99.9% { opacity: 1; }
+  to { stroke-dashoffset: -2040px; opacity: 0; }
 }
 @keyframes circuitHead {
-  from { stroke-dashoffset: -76px; }
-  to { stroke-dashoffset: -2076px; }
+  from { stroke-dashoffset: -76px; opacity: 1; }
+  99.9% { opacity: 1; }
+  to { stroke-dashoffset: -2076px; opacity: 0; }
+}
+/* Equivalent names let animationend start a new independently timed wave. */
+@keyframes circuitGlowNext {
+  from { stroke-dashoffset: 0px; opacity: 1; }
+  99.9% { opacity: 1; }
+  to { stroke-dashoffset: -2000px; opacity: 0; }
+}
+@keyframes circuitCurrentNext {
+  from { stroke-dashoffset: -40px; opacity: 1; }
+  99.9% { opacity: 1; }
+  to { stroke-dashoffset: -2040px; opacity: 0; }
+}
+@keyframes circuitHeadNext {
+  from { stroke-dashoffset: -76px; opacity: 1; }
+  99.9% { opacity: 1; }
+  to { stroke-dashoffset: -2076px; opacity: 0; }
 }
 
 @keyframes digitalRainFall {
@@ -1790,7 +1810,7 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.98); }
     transition-duration: .001ms !important;
   }
   .dragon-hologram { transform: none; }
-  .circuit-current, .circuit-glow, .circuit-head { animation: none !important; }
+  .circuit-current, .circuit-glow, .circuit-head { animation: none !important; opacity: 1; }
   .digital-rain::before, .digital-rain::after { animation: none !important; }
 }
 

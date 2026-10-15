@@ -2,6 +2,20 @@
 // Dynamic parameters are plain text; rendering boundaries own HTML escaping.
 export const UI_COPY = [
   {
+    "id": "ui.rawProviderNotice",
+    "source": "以下是該 AI 網頁顯示的原文，不是這位 AI 對題目的正式回答：",
+    "zh_TW": "以下是該 AI 網頁顯示的原文，不是這位 AI 對題目的正式回答：",
+    "en": "The following is the original text displayed on the AI webpage, not this AI's official response to the question:",
+    "ja": "以下は当該AIのWebページに表示された原文であり、設問に対する正式な回答ではありません："
+  },
+  {
+    "id": "ui.questionLabel",
+    "source": "使用者提問 🙋",
+    "zh_TW": "使用者提問 🙋",
+    "en": "User Question 🙋",
+    "ja": "ユーザーの質問 🙋"
+  },
+  {
     "id": "ui.copy.001",
     "source": "",
     "zh_TW": "",
@@ -2483,7 +2497,7 @@ export const UI_COPY = [
     "id": "ui.copy.355",
     "source": "整理目前對話",
     "zh_TW": "整理目前對話",
-    "en": "Summarize Active Chat",
+    "en": "Organize Active Chat",
     "ja": "現在の対話を整理"
   },
   {
