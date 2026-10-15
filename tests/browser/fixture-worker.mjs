@@ -33,7 +33,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         return { ok: false, error: 'Fixture repair target mismatch' };
       }
       state.transcript.manualRepairs.push({ provider: message.provider, phase: message.phase,
-        originalError: state.summary, source: 'manual' });
+        originalError: state.summary, source: 'manual', repairedAt: Date.now() });
+      state.providerDiagnostics[message.provider] = { stage: 'manual-recovered', phase: message.phase };
       state.summary = message.content;
       state.summaries[message.provider] = message.content;
       state.repairPause = null;

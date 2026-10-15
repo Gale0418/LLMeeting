@@ -1,5 +1,7 @@
 ---
 name: LLMeeting
+health-diagnostics: 摘要常駐，歷史與技術細節分層展開；狀態與證據分開，不推測修復成功。
+health-history: 沿用debugEvents、manualRepairs與departures，本機最多100筆合併事件；失去時間時明示，Intl顯示當地時間。只重畫文字與清單，不取代details節點，保留開關與捲動，不新增timer或重複live播報。
 description: Holographic Dragon Command Deck for operating a private multi-AI debate.
 colors:
   dark-metal: "#0a0b10"

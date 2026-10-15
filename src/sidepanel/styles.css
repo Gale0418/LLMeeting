@@ -581,6 +581,20 @@ input[type="number"]:focus {
   padding-bottom: 8px;
 }
 
+.session-health h2 { margin: 0 0 12px; font-size: 16px; }
+.session-health { padding: 16px; }
+.session-health p { margin: 8px 0; overflow-wrap: anywhere; }
+#sessionHealthStatus { font-weight: 700; color: var(--text-primary); }
+#sessionHealthCounts { font-size: 14px; color: var(--text-secondary); }
+#sessionHealthProviders { padding: 0; margin: 16px 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 14px; }
+.health-history, .health-technical { border-top: 1px solid var(--border-color); }
+.session-health summary { min-height: 44px; font-size: 14px; padding-inline: 0; }
+#sessionHealthTimeline { padding-inline-start: 20px; max-height: 360px; overflow-y: auto; scrollbar-gutter: stable; }
+#sessionHealthTimeline li { padding: 8px 0; font-size: 14px; overflow-wrap: anywhere; }
+#sessionHealthTimeline time { display: block; color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+#sessionHealthTimeline [data-kind="fault"]::marker { color: #ffd290; }
+#sessionHealthTimeline [data-kind="repair"]::marker { color: #63e6c2; }
+.health-technical p { font-size: 14px; color: var(--text-secondary); }
 .diagnostics-panel {
   border: 1px solid var(--border-color);
   border-radius: 8px;

@@ -56,6 +56,23 @@ async function switchLocale(settings, panel, locale) {
   await panel.waitForFunction(expected => document.documentElement.lang === expected, lang[locale]);
 }
 async function inspectUi(panel, locale, scenario) {
+  const health = await panel.locator('#sessionHealth').innerText();
+  assert.ok(health.includes(uiText('本場健康摘要', locale)));
+  assert.ok(health.includes(uiText('已離席', locale)), 'departed provider remains visible');
+  assert.ok(health.includes(uiText(scenario === 'fault' ? '已暫停，請先處理故障' : '討論進行中', locale)));
+  const history = panel.locator('.health-history');
+  if (!(await history.evaluate(el => el.open))) {
+    await history.locator('summary').focus();
+    await history.locator('summary').press('Enter');
+  }
+  assert.ok((await history.innerText()).includes(uiText('已手動補入', locale)));
+  assert.ok((await history.innerText()).includes(uiText('已記錄故障', locale)));
+  assert.ok((await history.innerText()).includes(uiText('已離席', locale)));
+  if (locale === 'en') assert.doesNotMatch(await panel.locator('#sessionHealth').innerText(), /\p{Script=Han}/u);
+  assert.equal(await panel.locator('.health-technical').getAttribute('open'), null);
+  assert.ok(!(await history.innerText()).includes('Synthetic private raw fault'));
+  assert.ok((await panel.locator('#diagnosticsOutput').textContent()).includes('Synthetic private raw fault'));
+  assert.equal(await panel.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'page overflow');
   const result = await panel.evaluate(() => ({
     status: document.querySelector('#statusText').textContent,
     progress: document.querySelector('#progressContainer').getAttribute('aria-valuetext'),
@@ -134,14 +151,18 @@ async function exercise(panel, settings, control, label) {
   await input.fill(draft);
   await panel.locator('#saveManualReplyBtn').click();
   await editor.waitFor({ state: 'hidden' });
-  const disclosure = panel.locator('details.reply-recovery').filter({ hasText: 'View original' });
+  const disclosure = panel.locator('details.reply-recovery').filter({ hasText: fault });
   await disclosure.locator('summary').click();
   assert.ok((await disclosure.innerText()).includes(fault), 'original fault was translated/changed');
   assert.ok((await panel.locator('#chatTranscript').innerText()).includes(draft));
   const saved = await control({ type: 'test:inspect' });
   assert.equal(saved.state.summary, draft);
   checks.push({ scenario: 'repair-failure-success-and-original-disclosure', status: 'pass' });
+  await disclosure.scrollIntoViewIfNeeded();
   await panel.screenshot({ path: path.join(out, `${label}-repair-en.png`), fullPage: false });
+  await panel.locator('#sessionHealth').scrollIntoViewIfNeeded();
+  await panel.evaluate(() => window.scrollBy(0, -document.querySelector('header').getBoundingClientRect().height - 12));
+  await panel.screenshot({ path: path.join(out, `${label}-health-en.png`) });
   return checks;
 }
 try {

@@ -363,12 +363,24 @@
         <pre id="transcriptOutput" style="display: none;">尚未開始</pre>
       </section>
 
-      <details class="diagnostics-panel">
-        <summary>診斷資訊</summary>
+      <section id="sessionHealth" class="diagnostics-panel session-health" aria-labelledby="sessionHealthTitle">
+        <h2 id="sessionHealthTitle">本場健康摘要</h2>
+        <p id="sessionHealthStatus"></p>
+        <p id="sessionHealthCounts"></p>
+        <p id="sessionHealthHint" class="settings-note"></p>
+        <ul id="sessionHealthProviders"></ul>
+        <details class="health-history">
+          <summary>故障與修復紀錄</summary>
+          <p id="sessionHealthEmpty"></p>
+          <ol id="sessionHealthTimeline"></ol>
+        </details>
+        <details class="health-technical">
+          <summary>技術細節</summary>
         <button id="downloadDebugButton" type="button">下載偵錯紀錄</button>
         <p>包含本場故障與手動補貼紀錄，不包含提問、AI 回覆全文或分頁網址。</p>
         <pre id="diagnosticsOutput">尚未開始</pre>
-      </details>
+        </details>
+      </section>
       <p class="privacy-note">
         最新一場辯論會保存在此瀏覽器，最長 24 小時。內容只會送往你選擇的 AI 網頁，不會傳給 LLMeeting 開發者伺服器。
       </p>

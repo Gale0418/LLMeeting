@@ -9,6 +9,7 @@ import { hasMeetingContent, launchGuide, readinessRecovery } from "./experienceR
 import { appendPlayIdea, canUsePlayIdeas, playIdeas } from "./playIdeas.js";
 import { normalizeRoundNumber } from "../shared/text.js";
 import { buildDebugReport } from "../shared/debugReport.js";
+import { renderSessionHealth } from "./sessionHealth.js";
 import { isRecoverableReply, pendingReplyRepairs, MAX_MANUAL_REPLY_CHARS } from "../shared/meetingRecovery.js";
 import { uiText, translateUiMarkup } from "../shared/i18n.js";
 import { initializeLocale } from "./localeControls.js";
@@ -1056,6 +1057,7 @@ function renderProviderSummary() {
 }
 
 function renderDiagnostics(state) {
+  renderSessionHealth(document.querySelector("#sessionHealth"), state, { translate: uiText, locale: currentLocale, providerLabel });
   if (!diagnosticsOutput) {
     return;
   }
@@ -1063,6 +1065,8 @@ function renderDiagnostics(state) {
   const diagnostics = state.providerDiagnostics || {};
   const activeProviders = [
     ...(state.activeProviders || selectedProviderIds()),
+    ...(state.departedProviders || []),
+    ...Object.keys(diagnostics),
     state.sourceProvider,
     state.summaryProvider,
   ].filter((providerId, index, list) => providerId && list.indexOf(providerId) === index);
@@ -1077,7 +1081,10 @@ function renderDiagnostics(state) {
     ].filter(Boolean).join("\n");
   });
 
-  diagnosticsOutput.textContent = blocks.join("\n\n") || uiText("尚未開始");
+  const history = buildDebugReport(state);
+  diagnosticsOutput.textContent = (blocks.join("\n\n") || uiText("尚未開始"))
+    + (history.faults.length || history.manualRepairs.length || history.departures.length
+      ? `\n\n${JSON.stringify({ faults: history.faults, manualRepairs: history.manualRepairs, departures: history.departures }, null, 2)}` : "");
 }
 
 function updateProgressBar(state) {

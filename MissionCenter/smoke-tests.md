@@ -1,5 +1,12 @@
 # Smoke Tests
 
+## 2026-10-16 本場健康摘要與故障時間軸（LLM-T71／Review）
+
+- 驗證：npm test 507/507；三語來回切換、歷史故障／補入／離席、技術資訊預設收合、頁面不水平溢出、原生summary鍵盤Enter展開，獨立320/480合計62組及原生360×859共31組皆pass；pageErrors為空。
+- 沿用本機紀錄，不新增AI全文收集，不把人工補入推論為後續流程成功；ZIP CRC及測試入口排除通過。測試替身後端，不宣稱五家真實登入E2E。
+- CodeRabbit三次：首查1 minor截圖位置已修；第二次未涵蓋新增檔，第三次以追蹤baseline確認8檔包含新模組／測試，0 issues。本小時3次用滿，不再送遠端審查。大型文案表與資產排除；文案目錄完整／一致性與動態三語由本地測試覆蓋。
+- 23筆新三語文案為Codex草稿；Antigravity llmeeting-health-copy-20261016 在原cascade等待filesystem/locate_files工具授權，因此保留Review，不宣稱合作交付完成。證據：evidence/051-session-health.json。
+
 ## 2026-10-04 商店套件上傳（LLM-T36／LLM-T47）
 
 - 動作：以 stat、shasum 與 unzip 檢查既有候選 ZIP，再透過 macOS Chrome accessibility 的「上傳新套件」選取 dist/llmeeting-0.5.0.zip，完成後重新開啟套件頁。

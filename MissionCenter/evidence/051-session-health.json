@@ -1,0 +1,89 @@
+{
+  "date": "2026-10-16",
+  "task": "LLM-T71",
+  "scope": "本場健康摘要、故障時間軸、原始技術展開、三語切換",
+  "behavior": [
+    "摘要狀態與歷史分離，不以曾故障推斷目前失敗",
+    "手動補入不冒稱後續送收成功",
+    "離席者保留顯示",
+    "沿用本機事件，最近100筆合併時間軸，不新增提問或AI正文收集",
+    "未知技術原文只在技術詳情，DOM使用textContent",
+    "時間缺失明示；當地時間以Intl格式化；保留原生details開關與捲動"
+  ],
+  "unitTests": {
+    "passed": 507,
+    "failed": 0,
+    "log": "output/health-unit-tests-final.txt"
+  },
+  "browser": {
+    "report": "output/browser-acceptance/2026-10-15T19-24-50-878Z/report.json",
+    "standalone": "pass",
+    "native": "pass",
+    "standaloneGroups": 62,
+    "nativeGroups": 31,
+    "nativeViewport": {
+      "width": 360,
+      "height": 859
+    },
+    "ordinaryTab": false,
+    "pageErrors": [],
+    "personalChromeAttached": false,
+    "realProvidersContacted": false,
+    "extraAssertions": [
+      "三語健康摘要／時間軸",
+      "故障、補入、離席排序",
+      "離席者持續顯示",
+      "技術區預設收合與一般摘要不洩漏原始錯誤",
+      "頁面不水平溢出",
+      "原生summary鍵盤Enter展開"
+    ]
+  },
+  "package": {
+    "bytes": 2778605,
+    "sha256": "5cd4ea18a5da1ef0079e5e425854113d396c552d7e0902e9995269f85c77b752",
+    "CRC": "pass",
+    "testHarnessExcluded": true
+  },
+  "copy": {
+    "catalogCount": 568,
+    "newEntries": 23,
+    "author": "Codex draft",
+    "antigravityRequest": "llmeeting-health-copy-20261016",
+    "state": "Awaiting filesystem/locate_files runtime permission in existing cascade; no duplicate request or claimed completed delivery"
+  },
+  "limitations": [
+    "隔離測試替身背景，非五家真實後端驗收",
+    "未新增暫停或自動續跑事件，時間軸只呈現實際存在的故障／補入／離席證據",
+    "新文案待Antigravity協作交付，任務保留Review"
+  ],
+  "research": [
+    "https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html",
+    "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/details"
+  ],
+  "codeRabbit": {
+    "commandsThisHour": 3,
+    "initialIssues": {
+      "minor": 1
+    },
+    "fixed": "修復截圖先拍，再捲至健康摘要拍健康圖",
+    "scopeCorrection": "第一輪未包含untracked新模組；第二輪快照更新命令cwd錯誤未納入新檔；第三輪以追蹤空白baseline明確納入新增模組與測試",
+    "finalIssues": 0,
+    "finalReviewedFiles": [
+      "src/sidepanel/app.js",
+      "src/sidepanel/index.html",
+      "src/sidepanel/sessionHealth.js",
+      "src/sidepanel/styles.css",
+      "tests/browser/fixture-worker.mjs",
+      "tests/browser/fixtures.mjs",
+      "tests/browser/run.mjs",
+      "tests/sessionHealth.test.mjs"
+    ],
+    "excluded": [
+      "large generated UI catalog",
+      "assets",
+      "private output and historical evidence"
+    ],
+    "finalLog": "output/health-coderabbit-tracked.ndjson"
+  },
+  "postBrowserChange": "Only test screenshot order changed after final browser pass; node --check and diff pass. Production UI unchanged."
+}
