@@ -56,6 +56,7 @@ async function switchLocale(settings, panel, locale) {
   await panel.waitForFunction(expected => document.documentElement.lang === expected, lang[locale]);
 }
 async function inspectUi(panel, locale, scenario) {
+  assert.equal(await panel.locator('.topbar').evaluate(el => el.classList.contains('is-fault-paused')), scenario === 'fault');
   const health = await panel.locator('#sessionHealth').innerText();
   assert.ok(health.includes(uiText('本場健康摘要', locale)));
   assert.ok(health.includes(uiText('已離席', locale)), 'departed provider remains visible');
@@ -151,6 +152,7 @@ async function exercise(panel, settings, control, label) {
   await input.fill(draft);
   await panel.locator('#saveManualReplyBtn').click();
   await editor.waitFor({ state: 'hidden' });
+  assert.equal(await panel.locator('.topbar').evaluate(el => el.classList.contains('is-fault-paused')), false);
   const disclosure = panel.locator('details.reply-recovery').filter({ hasText: fault });
   await disclosure.locator('summary').click();
   assert.ok((await disclosure.innerText()).includes(fault), 'original fault was translated/changed');

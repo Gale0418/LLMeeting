@@ -1088,6 +1088,7 @@ function renderDiagnostics(state) {
 }
 
 function updateProgressBar(state) {
+  document.querySelector(".topbar")?.classList.toggle("is-fault-paused", Boolean(state.repairPause || state.status === "error"));
   if (!progressBar) return;
   let percent = 0;
   if (state.phase === "waiting_for_user") {
@@ -1121,7 +1122,7 @@ function updateProgressBar(state) {
   progressContainer?.setAttribute("aria-valuenow", String(percent));
   progressContainer?.setAttribute("aria-valuetext", `${uiText(progressStageLabel(currentStage))}：${uiText(state.message || state.status || "等待開始")}`);
   
-  if (state.status === "error") {
+  if (state.status === "error" || state.repairPause) {
     progressBar.classList.add("error");
   } else {
     progressBar.classList.remove("error");

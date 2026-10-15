@@ -1,6 +1,7 @@
 ---
 name: LLMeeting
 health-diagnostics: 摘要常駐，歷史與技術細節分層展開；狀態與證據分開，不推測修復成功。
+fault-pause: repairPause或致命error使吸頂列實心深紅並保留文字提示，歷史事件不影響樣式；暫停建立後一次定位仍待補入且網址相符的AI既有分頁，使用者可自由切頁，取消後不補做定位。
 health-history: 沿用debugEvents、manualRepairs與departures，本機最多100筆合併事件；失去時間時明示，Intl顯示當地時間。只重畫文字與清單，不取代details節點，保留開關與捲動，不新增timer或重複live播報。
 description: Holographic Dragon Command Deck for operating a private multi-AI debate.
 colors:

@@ -1,0 +1,102 @@
+{
+  "date": "2026-10-16",
+  "task": "LLM-T72",
+  "scope": "故障暫停一次定位待修復AI分頁，吸頂紅底與復原",
+  "inputEvidence": {
+    "version": "0.5.1",
+    "status": "done",
+    "geminiUnconfirmedPhases": [
+      "critique-2",
+      "critique-3",
+      "critique-4",
+      "critique-5"
+    ],
+    "manualRepairs": 4,
+    "departures": 0,
+    "allFinalProviderStages": "received",
+    "privateInputFileNotCopied": true
+  },
+  "geminiReadOnlyObservation": {
+    "inputMatchesExistingSelector": true,
+    "inputRedesignClassPresent": true,
+    "richQueryFormattingPresent": true,
+    "userQueries": 6,
+    "modelResponses": 6,
+    "emptyComposerSendButtonAbsent": "already supported by existing deferred-send behavior",
+    "rootCause": "not established; current responses cannot establish original submission timing or whether manual actions caused them",
+    "messagesSent": 0,
+    "driverChanged": false,
+    "privateChatContentNotCommitted": true
+  },
+  "focusSemantics": [
+    "pause published before focus",
+    "only pending non-departed repair slots",
+    "existing tab with matching provider URL and completed document",
+    "one successful activation and one window foreground request then return",
+    "closed/navigated-away tabs skipped; no reopen/navigation/resend",
+    "run cancellation checked after asynchronous lookup and before window focus; no continuous focus enforcement"
+  ],
+  "headerSemantics": [
+    "repairPause or fatal status error only",
+    "past debug events do not keep red",
+    "manual repair clears red after pause removed",
+    "uses existing trilingual pause guidance; no new strings"
+  ],
+  "tests": {
+    "fullPassed": 513,
+    "fullFailed": 0,
+    "targetedWithAdditionalIntegrationPassed": 11,
+    "targetedFailed": 0,
+    "fullLog": "output/fault-focus-full-final.txt",
+    "targetedLog": "output/fault-focus-targeted-final.txt"
+  },
+  "browser": {
+    "report": "output/browser-acceptance/2026-10-15T23-54-41-594Z/report.json",
+    "standalone": "pass",
+    "native": "pass",
+    "nativeViewport": {
+      "width": 360,
+      "height": 836
+    },
+    "ordinaryTab": false,
+    "pageErrors": [],
+    "realProvidersContacted": false,
+    "backend": "fixture",
+    "assertions": [
+      "fault header red in all locales",
+      "non-fault states normal",
+      "repair removes red"
+    ],
+    "limits": "real Chrome tab activation is unit/integration simulated; isolated renderer test does not claim provider E2E"
+  },
+  "review": {
+    "commands": 2,
+    "initialMinor": 1,
+    "fixed": "一次啟用tab後帶該window到前景；取消檢查及測試",
+    "finalIssues": 0,
+    "finalReviewedFiles": [
+      "src/background/repairFocus.js",
+      "src/background/service-worker.js",
+      "src/sidepanel/app.js",
+      "src/sidepanel/styles.css",
+      "tests/browser/run.mjs",
+      "tests/repairFocus.test.mjs",
+      "tests/runtimeRounds.test.mjs"
+    ],
+    "logs": [
+      "output/fault-focus-coderabbit.ndjson",
+      "output/fault-focus-coderabbit-followup.ndjson"
+    ],
+    "excluded": [
+      "assets",
+      "generated catalog",
+      "private chat and download report"
+    ]
+  },
+  "package": {
+    "bytes": 2780960,
+    "sha256": "7b1f29f0f3b2b4bb2d92a646489de4461832b34e430ad38a95b98192b60d54ee",
+    "CRC": "pass",
+    "testHarnessExcluded": true
+  }
+}

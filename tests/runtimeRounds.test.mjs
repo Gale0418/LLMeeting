@@ -32,7 +32,9 @@ test("runtime round normalization rejects invalid or unsafe numbers without capp
 test("side panel progress and active transcript round use uncapped runtime numbers", async () => {
   const source = await readFile("src/sidepanel/app.js", "utf8");
   const progressBar = { style: {}, classList: { add() {}, remove() {} } };
+  let faultPaused = false;
   const context = vm.createContext({ normalizeDebateRounds, normalizeRoundNumber, progressBar,
+    document: { querySelector: () => ({ classList: { toggle: (_name, value) => { faultPaused = value; } } }) },
     progressNodes: [], progressContainer: null, isCritiquePhase: () => true,
     progressStageForState: () => 2, progressStageLabel: () => "互評" });
   vm.runInContext(functionsBetween(source, "updateProgressBar", "progressStageForState"), context);
@@ -40,6 +42,9 @@ test("side panel progress and active transcript round use uncapped runtime numbe
   assert.equal(progressBar.style.transform, "scaleX(0.69)");
   context.updateProgressBar({status: "waiting", phase: "waiting_for_user", repairPause: {pausedPhase: "summary"}});
   assert.equal(progressBar.style.transform, "scaleX(0.85)");
+  assert.equal(faultPaused, true);
+  context.updateProgressBar({ status: "done", phase: "done", debugEvents: [{provider:'gemini'}] });
+  assert.equal(faultPaused, false, 'past faults do not keep the header red');
   context.updateProgressBar({status: "error", phase: "critique-2"});
   assert.equal(progressBar.style.transform, "scaleX(0.75)");
   assert.match(source, /const activeCritiqueRound = isCritiquePhase\(state.phase\)\s*\? normalizeRoundNumber\(/);

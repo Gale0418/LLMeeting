@@ -1,5 +1,14 @@
 # Smoke Tests
 
+## 2026-10-16 故障暫停定位與紅底（LLM-T72／Done）
+
+- CodeRabbit首查1 minor跨視窗只啟用tab未聚焦window，核對後加上一次window更新及取消檢查；7檔複查0 issues，本輪2次。Gemini根因尚未確認不包含在此Done範圍。
+
+- 全套513/513；聚焦11/11涵蓋一次啟用、關閉／離席／已修復／異站跳過、等待查詢時取消、跨視窗一次帶到前景、啟用後取消不得補做視窗聚焦，以及正式pause先publish再focus的整合順序。
+- 隔離Chrome獨立320/480共62組與原生360px共31組pass，檢查三語紅底及補入解除，pageErrors空；正式頁面不寫入或送出任何提示。實際tab/window啟用僅用模擬API／整合測試，未宣稱真實帳號故障定位端到端。
+- 唯讀Gemini原頁確認lm-input-redesign／rich-query-formatting、現有preferredInputSelector匹配、六筆user-query及六筆model-response；debug四次未確認送出均由手動補入、最後完成。無法倒推原送出時序或認定頁面改版就是根因，未放寬判定或重送。原聊天與下載JSON未提交。
+- 證據：evidence/051-fault-focus.json；候選ZIP CRC及新模組存在／測試入口排除通過。
+
 ## 2026-10-16 本場健康摘要與故障時間軸（LLM-T71／Review）
 
 後續結案：原Antigravity請求已在工具搜尋失敗後交付完整文案與完成標記，沒有另開重複請求。核對後採用17筆，修正來源摘要英文同名造成的反向翻譯衝突；全507／聚焦16通過，更新後獨立62組／原生31組與三語鍵盤複驗pass，ZIP CRC通過，T71依Review→Done結案。下列授權等待為當時歷史紀錄。

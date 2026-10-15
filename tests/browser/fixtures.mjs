@@ -26,7 +26,7 @@ export function meeting(scenario = 'critique') {
   } else if (scenario === 'fault') {
     state.busy = false;
     state.status = state.phase = 'waiting_for_user';
-    state.message = '等待使用者發言或選擇下一步...';
+    state.message = '會議已暫停：請在故障訊息下方貼上對應 AI 回覆，全部補齊後會自動繼續原流程。';
     state.summary = fault;
     state.summaries = { chatgpt: fault };
     state.repairPause = { pausedPhase: 'summary', remainingJobs: [] };

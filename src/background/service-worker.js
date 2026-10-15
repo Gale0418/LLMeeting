@@ -4,6 +4,7 @@ import { createProviderDiagnostics, updateProviderDiagnostic } from "./diagnosti
 import { RunController, isRunCancelledError } from "./runController.js";
 import { createStateStorageQueue, safePersistState } from "./statePersistence.js";
 import { isSessionExpired, recoverSession } from "./sessionRecovery.js";
+import { focusPendingRepairTab } from "./repairFocus.js";
 import {
   canUseFeature,
   ENTITLEMENT_STORAGE_KEY,
@@ -1647,6 +1648,10 @@ async function pauseForReplyRepair(remainingJobs, target, resumePlan, runToken) 
     message: "會議已暫停：請在故障訊息下方貼上對應 AI 回覆，全部補齊後會自動繼續原流程。",
   };
   await publishState(runToken);
+  await focusPendingRepairTab(runtimeState, chrome.tabs, () => {
+    runController.assertCurrent(runToken);
+    if (!runtimeState.repairPause) throw createRunCancelledError();
+  }, chrome.windows);
 }
 
 async function resumeRepairedMeeting(runToken) {

@@ -2,6 +2,7 @@
 
 | ID | 標題 | 類型 | 上層 | 優先級 | 狀態 | 負責人 | 依賴 | 下一步 | 驗證方式 | 估算 | 標籤 | 備註 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| LLM-T72 | 故障暫停定位分頁與吸頂紅底 | Task | LLM-E7 | P1 | Done | Codex | LLM-T71 | 無；Gemini送出確認根因另待重現 | 513/513、分頁／跨視窗／取消11項、三語獨立62組與原生31組、ZIP CRC、CodeRabbit複查0issues | 1 | recovery, focus, ux | 暫停後一次定位待補入AI與其視窗，不重開／重新導向／重送／持續搶焦點；紅底依目前暫停與致命error，歷史故障不觸發；兔子首查1minor跨視窗已修、本輪2次；Gemini新版輸入框仍可定位，四次未確認送出根因未證實 |
 | LLM-T71 | 本場健康摘要與故障時間軸 | Task | LLM-E7 | P1 | Done | Codex／Antigravity | LLM-T70 | 無；五家真實後端仍依原驗收邊界 | 507/507、320/480獨立62組與原生31組三語／鍵盤、ZIP CRC、CodeRabbit核心8檔0issues | 2 | diagnostics, i18n, ux | 原協作請求已交付並觀察到完成標記；核對後採用17筆文案，保留中性結果／永久離席／計數語意，修正Source Summary反向匹配歧義；三語複驗通過，不需再處理搜尋授權 |
 | LLM-E1 | LLMeeting MVP 收尾 | Epic |  | P1 | In Progress | Codex |  | 完成 Gemini Chrome 實機確認後擷取商店截圖 | 自動測試、語法檢查、Chrome 實機試跑、CodeRabbit review | 12 | chrome-extension, ai-debate | 0.4.1 候選包與 CodeRabbit follow-up 已完成，剩實機與上架素材 |
 | LLM-T1 | 多 AI 辯論基礎流程 | Task | LLM-E1 | P1 | Done | Codex |  | 無 | 使用 ChatGPT/Gemini/Grok 實際試跑，使用者回報可運行 | 2 | mvp | 已完成 |
