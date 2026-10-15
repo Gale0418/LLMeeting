@@ -85,3 +85,5 @@
 | LLM-T68 | 每波隨機與三語動態漏翻修復 | Task | LLM-E7 | P1 | Review | Codex／Antigravity | LLM-T67 | 重載確認每波間隔、英文/日文等候送出互評/手補/故障卡片與原文保留 | 499/499、529目錄、47聚焦、靜態屬性/代表動態稽核、語法/diff/ZIP CRC | 1 | motion, i18n, audit | animationend每波重抽、隱藏邊界恢復及清理；明確UI槽位翻譯/還原、互評模板限縮、兩筆新文案與同名英文拆開；兔子首查1minor已修、複查0issues；原生實機待驗 |
 
 | LLM-T69 | 進行中三語切換與故障階段完整性 | Task | LLM-E7 | P1 | Review | Codex／Antigravity | LLM-T68 | 重載進行中切換三語，驗證互評載入、故障階段與手補草稿/原文保留 | 502/502、10狀態×6切換、9故障×4語系序列、545目錄、語法/diff/CRC | 1 | i18n, live-state, recovery | 實際render與locale事件回歸、16新詞補條件分支、進度/模型/手補同步；故障只翻已知前綴，技術尾文及原故障保留；兔子2檔0issues、本輪1次；原生側欄待重載 |
+
+| LLM-T70 | 隔離Playwright雙層驗收與補回覆訊息修復 | Task | LLM-E7 | P1 | Done | Codex | LLM-T69 | 無；五家真實後端仍沿用原門檻 | 獨立頁面62項/原生31項、360px非普通tab、503/503、前端例外0、ZIP CRC/測試入口排除、兔子1minor已修/關閉失敗注入通過 | 1 | playwright, side-panel, acceptance | 新profile與測試worker，不碰現用Chrome；發現補入失敗切語言錯誤已修，原文片段重畫；原生layout等待及viewport實驗分錄；非五家真實後端E2E |

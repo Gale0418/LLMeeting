@@ -126,6 +126,7 @@ shuffleChallengesButton?.addEventListener("click", shufflePlayChallenges);
 const challengeBatchLabel = document.querySelector("#challengeBatchLabel");
 let recoveryActionPending = false;
 let manualReplyTarget = null;
+let manualReplyStatusSources = [];
 const manualReplyEditor = document.querySelector("#manualReplyEditor");
 const manualReplyInput = document.querySelector("#manualReplyInput");
 const saveManualReplyBtn = document.querySelector("#saveManualReplyBtn");
@@ -157,7 +158,7 @@ chatTranscript?.addEventListener("click", async (event) => {
   const button = event.target.closest?.("[data-depart-provider]");
   if (!button || button.disabled || latestState?.busy || recoveryActionPending) return;
   if (manualReplyTarget && !manualReplyEditor.hidden && manualReplyInput.value.trim()) {
-    manualReplyStatus.textContent = uiText("請先完成或取消目前的補回覆，再讓 AI 離席；草稿仍保留。");
+    setManualReplyStatus("請先完成或取消目前的補回覆，再讓 AI 離席；草稿仍保留。");
     return;
   }
   const provider = button.dataset.departProvider;
@@ -195,13 +196,13 @@ chatTranscript?.addEventListener("click", (event) => {
   // Keep an unfinished paste when choosing another message; never erase it silently.
   if (manualReplyTarget && !manualReplyEditor.hidden &&
       (manualReplyTarget.provider !== provider || manualReplyTarget.phase !== phase) && manualReplyInput.value.trim()) {
-    manualReplyStatus.textContent = uiText("請先完成或取消目前這段補回覆，再選擇另一格。");
+    setManualReplyStatus("請先完成或取消目前這段補回覆，再選擇另一格。");
     return;
   }
   manualReplyTarget = { provider, phase, expectedContent: content,
     sessionId: latestState.transcript.sessionId, originalQuestion: latestState.transcript.originalQuestion };
   document.querySelector("#manualReplyTarget").textContent = uiText(`${meetingSpeakerLabel(latestState, provider)} · ${manualReplyPhaseLabel(phase)} · 手動補回覆`);
-  manualReplyStatus.textContent = "";
+  setManualReplyStatus("");
   manualReplyEditor.hidden = false;
   saveManualReplyBtn.disabled = false;
   manualReplyInput.focus();
@@ -218,14 +219,14 @@ saveManualReplyBtn?.addEventListener("click", async () => {
   if (!manualReplyTarget || latestState?.busy || recoveryActionPending) return;
   const content = manualReplyInput.value;
   if (!content.trim() || content.length > MAX_MANUAL_REPLY_CHARS) {
-    manualReplyStatus.textContent = uiText("請貼上 1–12,000 字元的 AI 回覆；過長的內容請先精簡，內容不會自動截斷。");
+    setManualReplyStatus("請貼上 1–12,000 字元的 AI 回覆；過長的內容請先精簡，內容不會自動截斷。");
     return;
   }
   recoveryActionPending = true;
   setActionButtonsDisabled(true);
   saveManualReplyBtn.disabled = true;
   manualReplyInput.disabled = true;
-  manualReplyStatus.textContent = uiText("正在補入回覆…");
+  setManualReplyStatus("正在補入回覆…");
   try {
     const response = await chrome.runtime.sendMessage({ type: "aiDebate:repairReply", ...manualReplyTarget, content });
     if (!response?.ok) throw new Error(response?.error || "補入失敗，貼上的內容已保留。");
@@ -240,7 +241,7 @@ saveManualReplyBtn?.addEventListener("click", async () => {
       renderState(response.state);
     }
   } catch (error) {
-    manualReplyStatus.textContent = `${uiText(error.message)} ${uiText("貼上的內容已保留。")}`;
+    setManualReplyStatus(error.message, "貼上的內容已保留。");
   } finally {
     recoveryActionPending = false;
     manualReplyInput.disabled = false;
@@ -768,6 +769,7 @@ document.addEventListener("llmeeting:locale-changed", () => {
       renderDiagnostics(latestState);
       if (manualReplyTarget && !manualReplyEditor.hidden) {
         document.querySelector("#manualReplyTarget").textContent = uiText(`${meetingSpeakerLabel(latestState, manualReplyTarget.provider)} · ${manualReplyPhaseLabel(manualReplyTarget.phase)} · 手動補回覆`);
+        renderManualReplyStatus();
       }
     } finally {
       localeRenderPending = false;
@@ -1376,7 +1378,7 @@ function renderReplyRecoveryNotice(state) {
   if (notice.textContent !== text) notice.textContent = text;
   if (manualReplyTarget && !manualReplyEditor.hidden && manualReplyTarget.sessionId !== state.transcript?.sessionId) {
     saveManualReplyBtn.disabled = true;
-    manualReplyStatus.textContent = uiText("會議已變更；貼上的內容仍保留，請取消後重新選擇故障訊息。");
+    setManualReplyStatus("會議已變更；貼上的內容仍保留，請取消後重新選擇故障訊息。");
   }
 }
 
@@ -1397,6 +1399,15 @@ function manualReplyContent(state, provider, phase) {
     return state?.transcript?.reveal?.reactions?.[provider] || state?.reveal?.reactions?.[provider] || "";
   }
   return "";
+}
+
+function setManualReplyStatus(...sources) {
+  manualReplyStatusSources = sources;
+  renderManualReplyStatus();
+}
+
+function renderManualReplyStatus() {
+  manualReplyStatus.textContent = manualReplyStatusSources.map(source => uiText(source)).join(" ");
 }
 
 function manualReplyPhaseLabel(phase) {

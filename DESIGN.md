@@ -279,3 +279,10 @@ transcript 是主要工作面，不是裝飾卡片：使用者、各 provider、
 修正條件分支未納入文案的漏洞，加入實際卡片渲染與locale event多次切換測試。切換時從latestState更新狀態文字、模型狀態、進度可及性文字、卡片、修復通知／診斷及手動補入標題；不重新跑會議、不重填輸入、不改會議state，finally解除語言重畫旗標並保留捲動。
 
 故障卡片限定已知leading stage鏈最多四層，支援「收集 AI 回覆: …」與「[填入提示] …」等格式，僅翻UI階段，保留其後技術字串、原文證據及details原故障。匿名缺名fallback由程式建立時翻譯，實際使用者暱稱不翻。模型就緒統計用完整三參數模板，避免再把錯誤數量後綴當任意資料；連線標題只翻程式status、品牌保留。中英日自動化渲染檢查不代表原生側欄視覺驗收。
+
+
+### 2026-10-16 隔離瀏覽器驗收與修復錯誤切換
+
+新增tests/browser獨立Playwright工程，不併入一般npm test。每輪複製正式前端到output、只替換測試副本的service worker，使用真Chrome storage/runtime跨頁消息、阻擋HTTP(S)頁面請求，並在finally關閉本次瀏覽器。獨立頁面320/480與真正停靠Side Panel分開記錄；原生側欄清除viewport emulation、等待非零layout，核對不在普通tabs清單，避免把一般分頁或1280px模擬視窗說成原生排版。
+
+實測補回覆提交失敗後的英→日切換，發現合併過的已翻譯訊息無法反向識別。以manualReplyStatusSources保存原始片段，所有補回覆狀態經同一setter更新；locale事件重新翻譯各片段，未知技術訊息仍保留。草稿、會議狀態及原故障不變。UI驗收不代表五家AI與正式背景流程端到端驗收。

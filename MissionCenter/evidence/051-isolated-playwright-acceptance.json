@@ -1,0 +1,116 @@
+{
+  "date": "2026-10-16",
+  "task": "LLM-T70",
+  "scope": "isolated Playwright extension UI acceptance; native docked side panel compatibility tracked separately",
+  "isolation": {
+    "personalChromeAttached": false,
+    "personalProfileCopied": false,
+    "realProvidersContacted": false,
+    "profile": "fresh per run under output/browser-acceptance",
+    "backend": "test-only service-worker replacement in an output-only extension copy",
+    "renderer": "actual src/sidepanel and src/options, actual Chrome runtime/storage/events",
+    "cleanup": "owned browser context closed in finally; other Chrome processes untouched"
+  },
+  "environment": {
+    "playwright": "1.62.1",
+    "chromium": "151.0.7922.34",
+    "attachToOther": "1",
+    "browserCache": "output/playwright-browsers"
+  },
+  "finalRun": {
+    "path": "output\\browser-acceptance\\2026-10-15T17-56-16-713Z\\report.json",
+    "status": "pass",
+    "startedAt": "2026-10-15T17:56:17.826Z",
+    "finishedAt": "2026-10-15T17:57:53.159Z"
+  },
+  "standalone": {
+    "status": "pass",
+    "widths": [
+      320,
+      480
+    ],
+    "checks": 62,
+    "kind": "ordinary extension tab, not docked"
+  },
+  "native": {
+    "status": "pass",
+    "checks": 31,
+    "ordinaryTab": false,
+    "targetType": "page",
+    "viewport": {
+      "width": 360,
+      "height": 859
+    },
+    "method": "PW_CHROMIUM_ATTACH_TO_OTHER=1 + test-only user-gesture opener"
+  },
+  "checks": [
+    "first-round/critique/summary/fault, six locale changes each",
+    "manual reply empty validation",
+    "draft survives language changes",
+    "failed reply acknowledgement retains draft and changes language",
+    "successful repair closes editor and displays content",
+    "original fault disclosure is unchanged",
+    "page errors none"
+  ],
+  "discoveredAndFixed": {
+    "reproduction": "output/browser-acceptance/2026-10-15T17-55-03-907Z/report.json",
+    "failure": "repair error text remained English after changing to Japanese",
+    "rootCause": "two already-translated fragments concatenated into one unmatched UI string",
+    "fix": "retain original status fragments and rerender each on locale changes; raw unknown technical fragments stay unchanged"
+  },
+  "harnessCorrections": [
+    "remove artificial viewport metrics for native side panel; initial 1280px run is not native width evidence",
+    "wait for native layout because new targets can initially be 0x0",
+    "align fixture selected providers with five synthetic participants"
+  ],
+  "unitTests": {
+    "passed": 503,
+    "failed": 0
+  },
+  "pageErrors": [],
+  "blockedNetwork": [],
+  "package": {
+    "bytes": 2766859,
+    "sha256": "FBFE6EF22696012B3E27D62A103BAC47F64AFDE2BC1CECA19E3B10CC87BC22EB"
+  },
+  "review": {
+    "commandsThisTask": 1,
+    "issues": {
+      "minor": 1
+    },
+    "fixed": "context.close rejection is recorded; final status/report still written",
+    "followup": "local failure-injection validation; no second remote review",
+    "reviewedFiles": [
+      "src/sidepanel/app.js",
+      "tests/browser/README.md",
+      "tests/browser/fixture-worker.mjs",
+      "tests/browser/fixtures.mjs",
+      "tests/browser/opener.html",
+      "tests/browser/opener.mjs",
+      "tests/browser/package.json",
+      "tests/browser/run.mjs",
+      "tests/liveLocaleRendering.test.mjs",
+      "REVIEW_CONTEXT.md"
+    ],
+    "excluded": [
+      "assets",
+      "generated UI catalog",
+      "historical/private evidence",
+      "npm lockfile"
+    ]
+  },
+  "limitations": [
+    "fixture backend: no five-provider authentication/submission/real recovery end-to-end claim",
+    "experimental native attach compatibility confirmed only for recorded versions",
+    "this run does not attach to the user daily Chrome"
+  ],
+  "postRunValidation": {
+    "change": "cleanup-error reporting only; no UI or fixture logic changes after final browser pass",
+    "checks": [
+      "normal close saves passing report",
+      "rejected close saves failing report with error",
+      "runner syntax",
+      "diff"
+    ]
+  }
+}

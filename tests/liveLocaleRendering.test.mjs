@@ -25,6 +25,7 @@ function fixture(state) {
     manualReplyTarget: { provider: 'chatgpt', phase: 'first-round', sessionId: 'live' },
     manualReplyEditor: { hidden: false }, manualReplyInput: { value: '我的補回覆草稿' },
     manualReplyStatus: { textContent: '' }, saveManualReplyBtn: {}, recoveryActionPending: false,
+    manualReplyStatusSources: [],
     localeRenderPending: false, lastRenderedChatHtml: null,
     document: { querySelector: id => id === '#manualReplyTarget' ? target : id === '#replyRecoveryNotice' ? notice : null,
       addEventListener: (_type, callback) => { context.onLocale = callback; } },
@@ -37,7 +38,7 @@ function fixture(state) {
   vm.runInContext(['renderChatBubbles', 'renderRoundZeroBubbles', 'replyRecoveryControls',
     'renderReplyRecoveryNotice', 'formatReplyContent', 'translateFaultStage', 'formatContent', 'escapeHTML',
     'providerLabel', 'meetingSpeakerLabel', 'safeProviderClass', 'critiqueRoundMaps',
-    'manualReplyPhaseLabel', 'zhRoundLabel'].map(fn).join('\n'), context);
+    'manualReplyPhaseLabel', 'setManualReplyStatus', 'renderManualReplyStatus', 'zhRoundLabel'].map(fn).join('\n'), context);
   vm.runInContext(source.slice(source.indexOf('document.addEventListener("llmeeting:locale-changed"'),
     source.indexOf('async function loadState()')), context);
   return { context, notice, target };
@@ -135,6 +136,24 @@ test('localized anonymous fallback never translates a supplied nickname', () => 
       assert.equal(context.meetingSpeakerLabel(context.latestState, 'chatgpt'), uiText('匿名參與者（暱稱未取得）'));
       context.latestState.transcript.anonymousNames = { chatgpt: '評析中' };
       assert.equal(context.meetingSpeakerLabel(context.latestState, 'chatgpt'), '評析中');
+    }
+  } finally { setLocale('en'); }
+});
+
+test('composed repair errors rebuild from original parts on every locale change', () => {
+  const { context } = fixture(state({ busy: false, phase: 'waiting_for_user' }));
+  const prefix = '補入失敗，貼上的內容已保留。';
+  const suffix = '貼上的內容已保留。';
+  try {
+    for (const first of [prefix, 'provider readiness timeout: <raw>']) {
+      context.setManualReplyStatus(first, suffix);
+      for (const locale of ['en', 'ja', 'zh_TW', 'en', 'ja']) {
+        setLocale(locale);
+        context.onLocale();
+        assert.equal(context.manualReplyStatus.textContent, `${uiText(first)} ${uiText(suffix)}`);
+        assert.equal(context.manualReplyStatusSources[0], first);
+        assert.equal(context.manualReplyInput.value, '我的補回覆草稿');
+      }
     }
   } finally { setLocale('en'); }
 });

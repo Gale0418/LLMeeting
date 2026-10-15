@@ -1,0 +1,7 @@
+{
+  "name": "llmeeting-browser-acceptance",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node run.mjs" },
+  "devDependencies": { "playwright": "1.62.1" }
+}
