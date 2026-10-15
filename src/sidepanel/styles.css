@@ -947,17 +947,14 @@ body::before {
   stroke-linejoin: round;
 }
 
-/* A three-packet batch travels down each lane, then leaves a quiet gap.
-   Every dash pattern totals 2000 normalized units: one batch per cycle. */
-.circuit-route { --phase: -1.8s; }
-.circuit-route:nth-child(2n) { --phase: -2.4s; }
-.circuit-route:nth-child(3n) { --phase: -3s; }
-.circuit-route:nth-child(4n) { --phase: -3.6s; }
+/* Each lane gets its own random speed and phase when the panel opens.
+   The three layers share those values, so each packet stays intact. */
+.circuit-route { --travel: 9s; --phase: -1.8s; }
 
 .circuit-glow,
 .circuit-current,
 .circuit-head {
-  animation: circuitGlow 9s linear infinite;
+  animation: circuitGlow var(--travel) linear infinite;
   animation-delay: var(--phase);
 }
 .circuit-glow {

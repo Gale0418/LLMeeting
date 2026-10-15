@@ -30,6 +30,14 @@ export function initBackgroundControls({
   const motionToggle = document?.getElementById('circuitMotionToggle');
   if (!shell) return () => {};
 
+  // Sample once per panel: independent speeds keep the lanes from marching
+  // together, without animation timers or work on every frame.
+  for (const route of document.querySelectorAll?.('.circuit-route') || []) {
+    const travel = 7 + Math.random() * 7;
+    route.style.setProperty('--travel', `${travel.toFixed(3)}s`);
+    route.style.setProperty('--phase', `${(-Math.random() * travel).toFixed(3)}s`);
+  }
+
   if (storage === undefined) {
     try {
       storage = globalThis.localStorage;

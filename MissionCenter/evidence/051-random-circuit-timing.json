@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-15",
+  "task": "LLM-T67",
+  "followup": "Independent random lane timing replaces synchronized bursts",
+  "behavior": {
+    "sampleTime": "once per side-panel initialization",
+    "durationSeconds": [
+      7,
+      14
+    ],
+    "phase": "independent uniform point over each full cycle",
+    "resampleEachCycle": false,
+    "addedAnimationTimers": 0
+  },
+  "verification": {
+    "backgroundControls": {
+      "passed": 9,
+      "failed": 0
+    },
+    "syntax": "pass",
+    "diff": "pass",
+    "zipCRC": "pass",
+    "fullSuite": "not rerun for this small followup; prior commit passed 495",
+    "preview": "background-only 320/480 stills, using timings captured from actual initializer; not native browser verification"
+  },
+  "limitations": [
+    "Chrome native side-panel animation and performance awaiting reload",
+    "CodeRabbit not rerun"
+  ],
+  "package": {
+    "bytes": 2757699,
+    "sha256": "D99679E0AC22EBC3A763730930F426B2F42601E8F304EBFFBECA197EC3E79E56"
+  }
+}
