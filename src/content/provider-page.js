@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = "0.5.1-driver.12";
+  const CONTENT_SCRIPT_VERSION = "0.5.1-driver.13";
   const {
     assistantSnapshot,
     classifyProviderResponseError,
@@ -1772,27 +1772,33 @@
   }
 
   async function waitFor(getValue, timeoutMs, errorMessage, abortCheck = () => {}) {
-    const deadline = Date.now() + timeoutMs;
+    const startedAt = Date.now();
+    const deadline = startedAt + timeoutMs;
     while (Date.now() < deadline) {
       abortCheck();
       const value = getValue();
       if (value) {
         return value;
       }
-      await delay(250);
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await delay(Math.min(remaining, Date.now() - startedAt < 1000 ? 50 : 250));
     }
     throw new Error(errorMessage);
   }
 
   async function waitForOptional(getValue, timeoutMs, abortCheck = () => {}) {
-    const deadline = Date.now() + timeoutMs;
+    const startedAt = Date.now();
+    const deadline = startedAt + timeoutMs;
     while (Date.now() < deadline) {
       abortCheck();
       const value = getValue();
       if (value) {
         return value;
       }
-      await delay(250);
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await delay(Math.min(remaining, Date.now() - startedAt < 1000 ? 50 : 250));
     }
     return null;
   }

@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-16",
+  "task": "LLM-T75",
+  "scope": "減少頁面就緒、輸入框定位與送出前存檔等待",
+  "driver": "0.5.1-driver.13",
+  "changes": [
+    "submitProviderJob沿用既有activateProviderTabForReadiness，active與complete檢查後200ms前景繪製窗口，取代固定750ms；不變更收取回答的切頁等待",
+    "切頁過渡diagnostic在記憶體更新，連同submitting checkpoint保存；真正送出前的整場寫入從3次減為2次",
+    "opening-tab之前的完整原提示保存與submitting檢查點仍逐一等待完成；取得分頁後補保留assertCurrent再改diagnostic",
+    "waitFor及waitForOptional第一秒50ms檢查、之後250ms；新分頁前兩秒100ms、之後500ms；睡眠限制在剩餘期限內",
+    "寫入150ms焦點等待、Meta選取穩定窗口、寫入驗證、送出確認、防重複及送出後等待皆維持原設計"
+  ],
+  "validation": {
+    "full": { "passed": 534, "failed": 0, "log": "output/submission-latency-full.txt" },
+    "focused": { "passed": 36, "failed": 0, "log": "output/submission-latency-focused.txt" },
+    "regressions": [
+      "現有控制項立即回傳，不額外睡眠；75ms出現的控制項假時鐘100ms取得，舊250ms輪詢需250ms",
+      "控制項慢載入超過一秒回到250ms，timeout125ms不超時睡眠，取消立即停止",
+      "新分頁175ms就緒於假時鐘200ms取得，舊500ms輪詢需500ms；未就緒仍45秒逾時並退避",
+      "實際publishState、safePersistState、儲存佇列與送出函式整合：真正send前恰好2次存檔，保留完整原提示與submitting資料",
+      "分別阻塞第1／2次chrome.storage.local.set時不得送出；取消後釋放存檔仍不得送出",
+      "等待取得分頁時取消不得修改成activating-tab或送出"
+    ],
+    "syntaxAndDiff": "pass",
+    "boundary": "使用合成資料、假時鐘及模擬Chrome APIs，未量測真實五家網站或本機磁碟耗時。輪詢加快僅限初始一／兩秒後退避，不建立常駐計時器。沒有因UI未變而重跑測試worker側欄驗收冒充實際content driver驗證。"
+  },
+  "review": {
+    "tool": "CodeRabbit CLI",
+    "issues": 0,
+    "commandsThisTask": 1,
+    "files": ["src/background/service-worker.js", "src/content/provider-page.js", "tests/allAnonymousWorkflow.test.mjs", "tests/pageAutomation.test.mjs", "tests/serviceWorkerSafety.test.mjs", "tests/submissionLatency.test.mjs"],
+    "log": "output/submission-latency-coderabbit.ndjson",
+    "exclusions": "未變更依賴、大型文案目錄、資產與私人資料；新測試以空白tracked基準保證納入審查"
+  },
+  "package": {
+    "path": "dist/llmeeting-0.5.1.zip",
+    "bytes": 2791324,
+    "sha256": "F2103D96DF6797AA91B6EFF90194EE768E1F24A2C57807A86CCFB61845EE9A7A",
+    "crcAndTestExclusion": "pass",
+    "workerAndContentDriverVersion": "pass"
+  },
+  "rollout": "目前會議完成或保存未提交草稿後，再重新載入擴充功能；不重置會議、不自動重送。實際五家頁面耗時仍待使用者重載觀察。"
+}

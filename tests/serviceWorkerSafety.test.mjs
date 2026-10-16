@@ -41,7 +41,7 @@ test("provider readiness has a stable service-worker boundary and status mapping
 test("provider messaging repairs stale content scripts through a version handshake", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
-  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.12"/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.13"/);
   assert.match(script, /PROVIDER_DRIVER_CONTRACT_VERSION = 1/);
   assert.match(script, /"src\/content\/provider-driver\.js"/);
   assert.match(script, /type: "aiDebate:getCapabilities"/);
@@ -256,7 +256,7 @@ test("provider debug history is bounded, persisted, and keeps only approved diag
   }
   assert.match(script, /error\.debugDetails = sanitizeDebugDetails\(response\?\.debugDetails\)/);
   assert.match(script, /debugDetails: sanitizeDebugDetails\(error\.debugDetails\)/);
-  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.12"/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.13"/);
 });
 
 test("transient response read RPC failures retry the same run within the provider deadline", async () => {
@@ -699,7 +699,7 @@ test("readiness falls back to a fresh provider tab when the requested tab is sta
       async update() {},
       async sendMessage(_tabId, message) {
         if (message.type === "aiDebate:getCapabilities") {
-          return { contentScriptVersion: "0.5.1-driver.12", driverContractVersion: 1 };
+          return { contentScriptVersion: "0.5.1-driver.13", driverContractVersion: 1 };
         }
         return { ready: true, status: "ready", checks: {} };
       },

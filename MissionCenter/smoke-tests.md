@@ -1,5 +1,11 @@
 # Smoke Tests
 
+## 2026-10-16 送出前等待優化（LLM-T75／Done）
+
+- `npm test`：534/534；聚焦36/36，新增9項涵蓋快速控制項立即／50ms檢查、慢載入退避、期限與取消、新分頁檢查、實際存檔佇列與延遲閘門。必要的第1／2次存檔未完成時不得送出；取消後也不能補送。
+- Driver .13：提交前使用既有active／complete檢查及200ms前景繪製窗口；過渡diagnostic合併到submitting保存，送出前寫入3→2。初始DOM第一秒50ms、之後250ms；新分頁前兩秒100ms、之後500ms，不改寫入與送出確認。假時鐘不等於真實五家網站性能benchmark。
+- CodeRabbit六檔0 issues，本任務一次；語法／diff通過。ZIP2791324 bytes、CRC／測試入口排除／worker與content皆.13通過；SHA256與範圍見evidence/051-submission-latency.json。此變更無UI修改，不重跑測試worker側欄測試作為driver證據；仍待真實網站體感觀察。
+
 ## 2026-10-16 手補場次誤判（LLM-T74／Done）
 
 - `node --test tests/meetingRecovery.test.mjs`：16/16；新增實際存檔裁短／背景恢復雙向測試，修正前互評與兩種總結皆重現會議已變更，修正後通過；缺失ID、異場同題、已變故障、錯輪與錯AI仍拒絕且不修改狀態。

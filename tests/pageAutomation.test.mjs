@@ -733,7 +733,7 @@ test("Grok readiness recognizes the localized live composer structure", async ()
 test("provider content script uses a replaceable versioned listener after extension reload", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
 
-  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.12"/);
+  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.13"/);
   assert.match(script, /"aiDebate:getCapabilities": getCapabilities/);
   assert.match(script, /__aiDebateContentVersion/);
   assert.match(script, /onMessage\.removeListener\(globalThis\.__aiDebateContentMessageListener\)/);
@@ -754,7 +754,7 @@ test("same-version content reinjection replaces the listener without duplicating
   assert.equal(listeners.size, 1);
   assert.notEqual(context.__aiDebateContentMessageListener, previous);
   const response = await new Promise(resolve => context.__aiDebateContentMessageListener({ type: "aiDebate:getCapabilities" }, {}, resolve));
-  assert.equal(response.contentScriptVersion, "0.5.1-driver.12");
+  assert.equal(response.contentScriptVersion, "0.5.1-driver.13");
 });
 
 test("failed content initialization cannot poison the next injection", async () => {

@@ -1749,13 +1749,14 @@ async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
       error: "",
     }, runToken);
     tab = await getOrCreateProviderTab(job.provider, { forceNewTab: Boolean(job.forceNewTab) });
-    await setProviderDiagnostic(job.provider, {
-      stage: "activating-tab",
-      phase: job.phase,
-      tabId: tab.id,
+    runController.assertCurrent(runToken);
+    // This transient diagnostic is included in the next durable submission
+    // checkpoint. Avoid another full transcript write just to foreground a tab.
+    runtimeState = { ...runtimeState, providerDiagnostics: updateProviderDiagnostic(runtimeState.providerDiagnostics, job.provider, {
+      stage: "activating-tab", phase: job.phase, tabId: tab.id,
       url: tab.url || tab.pendingUrl || "",
-    }, runToken);
-    await activateProviderTab(tab);
+    }) };
+    await activateProviderTabForReadiness(tab);
     runController.assertCurrent(runToken);
 
     const runId = createRunId(job);
@@ -2067,7 +2068,8 @@ async function waitForProviderTab(tabId, provider) {
     throw new Error(`${provider.label} 新對話分頁建立失敗`);
   }
 
-  const deadline = Date.now() + 45000;
+  const startedAt = Date.now();
+  const deadline = startedAt + 45000;
   let lastUrl = "";
   while (Date.now() < deadline) {
     const tab = await chrome.tabs.get(tabId);
@@ -2075,7 +2077,9 @@ async function waitForProviderTab(tabId, provider) {
     if (isProviderTabReady(tab, provider)) {
       return tab;
     }
-    await delay(500);
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await delay(Math.min(remaining, Date.now() - startedAt < 2000 ? 100 : 500));
   }
 
   throw new Error(`${provider.label} 新對話頁面尚未就緒，目前網址：${lastUrl || "unknown"}。請確認已登入。`);
@@ -2131,7 +2135,7 @@ async function refreshMetaInputProvider(tabId, job, runToken) {
   runController.assertCurrent(runToken);
 }
 
-const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.1-driver.12";
+const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.1-driver.13";
 const PROVIDER_DRIVER_CONTRACT_VERSION = 1;
 
 function isProviderLoginTab(tab, provider) {
