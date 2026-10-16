@@ -2,6 +2,7 @@
 
 | ID | 標題 | 類型 | 上層 | 優先級 | 狀態 | 負責人 | 依賴 | 下一步 | 驗證方式 | 估算 | 標籤 | 備註 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| LLM-T79 | 代碼雨描邊與狀態呼吸色 | Task | LLM-E7 | P2 | Done | Codex | LLM-T78 | 無；重載套用新描邊與狀態光效 | 七色computed文字／描邊／邊框／狀態、reduce、獨立72組／原生37組、聚焦15項、正常／紅底截圖、CodeRabbit3檔0issues、ZIP CRC | 1 | brand, rain, status | 保留電流填色，描邊／徽章邊框／光暈與狀態改雨色4.8秒呼吸，opacity不變；故障紅底保留、狀態深色底七色對比6.26以上；未重跑全套；兔子1次；證據051-rain-outline-status.json |
 | LLM-T78 | 品牌標籤配色可見性修復 | Task | LLM-E7 | P2 | Done | Codex | LLM-T77 | 無；重載套用新增色調 | 541/541、七組computed文字／邊框、獨立72組／原生37組、截圖目視、CodeRabbit2檔0issues、ZIP CRC | 1 | brand, palette, visibility | 前版只變text-shadow，固定青白字／青色邊框讓顏色不明顯；新增標籤文字／邊框／底色跟電流色，星期五金橙已目視，不改進度與服務狀態色；兔子本任務1次；證據051-brand-color-visibility.json |
 | LLM-T77 | 排序實測、品牌呼吸光與星期日彩虹 | Task | LLM-E7 | P2 | Done | Codex | LLM-T76 | 無；新增光效需重載，現用真人側欄仍非直接驗收範圍 | 541/541、獨立70組／原生36組、真正close/open、實際Chrome開頁／重用／Meta executeScript、七色／reduce、CodeRabbit6檔0issues、ZIP CRC | 2 | acceptance, motion, rainbow | 本地開頁配置搭配正式函式原文與Chrome APIs；Meta合成HTML、七色假星期日不等於真人帳號E2E；現用Chrome工具未列出原生側欄。攔截race失敗已記錄並改初始本地頁，最終pageErrors／blockedNetwork皆0；本任務兔子1次；證據051-rainbow-acceptance.json |
 | LLM-T76 | 啟用順序與Meta對話分頁名稱 | Task | LLM-E7 | P2 | Done | Codex | LLM-T75 | 無；使用者重載套用，Meta改版時保留原標題 | 540/540、隔離獨立68組／原生34組、三語與排序／焦點／草稿／重載、CodeRabbit15檔0issues、ZIP CRC | 2 | ordering, tabs, meta | 預設英文A–Z，舊名單保留並遷移預設；v2保存啟用順序，停用再啟用排最後；引擎／舞會／提示／預檢順序驗證；Meta現場DOM確認精確active link，唯讀probe及逾時備援；本任務兔子1次；證據051-provider-order.json |

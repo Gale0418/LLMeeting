@@ -119,6 +119,10 @@ export async function verifyProviderTabs({ context, opener, base }) {
     }
     assert.ok(metaPage, 'local Meta fixture was not attached');
     await metaPage.goto(metaUrl);
+    // The probe reads innerText. Make this isolated fixture visibly laid out
+    // before measuring the normal bounded metadata lookup on cold Chromium.
+    await metaPage.bringToFront();
+    await metaPage.locator('a[data-sidebar="menu-button"][data-active="true"][href="/prompt/isolated-current"]').waitFor({state:'visible'});
     const metadata = await opener.evaluate(tabId => chrome.runtime.sendMessage({type:'test:providerMetaTitle',tabId}), result.evidence.metaTabId);
     assert.equal(metadata?.ok, true, metadata?.error);
     assert.equal(metadata.title, 'Synthetic current conversation');

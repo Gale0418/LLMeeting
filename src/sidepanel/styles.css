@@ -911,26 +911,37 @@ body::before {
 /* White has no chromatic complement; cyan stays visible on the dark board. */
 .shell[data-weekday-theme="white"] { --rain-color: #e2eaf0; --circuit-hue: 190; }
 
-/* A quiet breathing glow, sharing the circuit hue without dimming the labels. */
+/* Circuit-colored fill with a rain-colored outline; text never fades out. */
 .brand-row :is(h1, .plan-badge, .version-badge) {
   color: hsl(var(--circuit-hue) 85% 82%);
-  text-shadow: 0 0 6px hsl(var(--circuit-hue) 95% 74% / .45);
+  -webkit-text-stroke: .45px var(--rain-color);
+  paint-order: stroke fill;
+  text-shadow: 0 0 6px color-mix(in srgb, var(--rain-color) 45%, transparent);
   animation: brandBreath 4.8s ease-in-out infinite;
 }
 .brand-row :is(.plan-badge, .version-badge) {
-  border-color: hsl(var(--circuit-hue) 85% 70% / .65);
+  -webkit-text-stroke-width: .25px;
+  border-color: var(--rain-color);
   background: hsl(var(--circuit-hue) 55% 18% / .72);
-  box-shadow: 0 0 8px hsl(var(--circuit-hue) 95% 70% / .15);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--rain-color) 20%, transparent);
+  animation-name: brandBreath, badgeBorderBreath;
 }
 .brand-row .plan-badge { animation-delay: -.8s; }
 .brand-row .version-badge { animation-delay: -1.6s; }
 @keyframes brandBreath {
-  0%, 100% { text-shadow: 0 0 5px hsl(var(--circuit-hue) 95% 74% / .35); }
-  50% { text-shadow: 0 0 9px hsl(var(--circuit-hue) 95% 74% / .8), 0 0 16px hsl(var(--circuit-hue) 95% 74% / .24); }
+  0%, 100% { text-shadow: 0 0 5px color-mix(in srgb, var(--rain-color) 35%, transparent); }
+  50% { text-shadow: 0 0 9px color-mix(in srgb, var(--rain-color) 80%, transparent), 0 0 16px color-mix(in srgb, var(--rain-color) 24%, transparent); }
+}
+@keyframes badgeBorderBreath {
+  0%, 100% { box-shadow: 0 0 4px color-mix(in srgb, var(--rain-color) 16%, transparent); }
+  50% { box-shadow: 0 0 10px color-mix(in srgb, var(--rain-color) 48%, transparent); }
 }
 .shell[data-circuit-background="off"] .brand-row :is(h1, .plan-badge, .version-badge),
-.shell[data-circuit-motion="off"] .brand-row :is(h1, .plan-badge, .version-badge) { animation: none; }
-.shell[data-page-hidden="true"] .brand-row :is(h1, .plan-badge, .version-badge) { animation-play-state: paused; }
+.shell[data-circuit-motion="off"] .brand-row :is(h1, .plan-badge, .version-badge),
+.shell[data-circuit-background="off"] #statusText,
+.shell[data-circuit-motion="off"] #statusText { animation: none; }
+.shell[data-page-hidden="true"] .brand-row :is(h1, .plan-badge, .version-badge),
+.shell[data-page-hidden="true"] #statusText { animation-play-state: paused; }
 
 .circuit-backdrop {
   position: fixed;
@@ -1102,7 +1113,8 @@ body::before {
 
 #statusText {
   max-width: 100%;
-  color: var(--text-secondary);
+  color: var(--rain-color);
+  animation: brandBreath 4.8s ease-in-out infinite;
   overflow-wrap: anywhere;
   white-space: normal;
 }
@@ -1114,7 +1126,7 @@ body::before {
   --text-secondary: #ffe0e3;
   --text-primary: #ffffff;
 }
-.topbar.is-fault-paused #statusText { color: #ffe0e3; }
+.topbar.is-fault-paused #statusText { color: var(--rain-color); background: #2a1019; border-radius: 3px; }
 .recovery-prompt { margin-block: 12px; }
 .recovery-prompt .original-prompt { width: 100%; box-sizing: border-box; min-height: 130px; resize: vertical; font-size: 14px; }
 .recovery-prompt summary { min-height: 44px; padding-block: 10px; cursor: pointer; }
@@ -1849,7 +1861,7 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.98); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .brand-row :is(h1, .plan-badge, .version-badge) { animation: none !important; }
+  .brand-row :is(h1, .plan-badge, .version-badge), #statusText { animation: none !important; }
   *, *::before, *::after {
     scroll-behavior: auto !important;
     animation-duration: .001ms !important;

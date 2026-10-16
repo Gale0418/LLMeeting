@@ -1,5 +1,10 @@
 # Smoke Tests
 
+## 2026-10-16 雨色描邊／徽章／狀態（LLM-T79／Done）
+
+- 聚焦15/15、隔離獨立72組／原生37組pass，pageErrors／blockedNetwork為0。七色computed fill保留電流色，stroke／badge border／status皆雨色；brand／badge雙動畫及status呼吸、reduce通過，正常／紅底截圖已目視。紅底狀態深色底七色對比計算6.26–14.55:1，未宣稱全頁a11y稽核。
+- Meta前置假頁首輪回傳fallback，補前景／精確連結visible條件後通過；不改正式讀名規則。CodeRabbit三檔0 issues，本任務一次；語法／diff／ZIP CRC與排除測試入口通過。未重跑全套，不宣稱舊541結果為本次執行。候選2798290 bytes及SHA256見evidence/051-rain-outline-status.json；現用Chrome需重載。
+
 ## 2026-10-16 品牌配色可見性（LLM-T78／Done）
 
 - `npm test`541/541；隔離獨立320/480共72組、原生360px共37組pass，pageErrors／blockedNetwork空。新增七組computed文字與邊框色核對，確保三標籤不是僅外圍shadow換色。native-brand-palette.png目視星期五金橙文字／邊框清楚可見，保持4.8s呼吸與reduce／off規則，不改進度及狀態色。
