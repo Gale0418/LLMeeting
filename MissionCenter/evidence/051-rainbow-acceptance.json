@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-16",
+  "task": "LLM-T77",
+  "scope": "排序隔離實測、品牌三標籤微光、星期日隨機七色",
+  "personalChrome": {
+    "boundary": "唯讀瀏覽器分頁清單未列出現用原生側欄；不能宣稱已操作使用者重載後的側欄。沒有重置、重送、登入或修改使用者聊天。",
+    "meta": "既有Meta對話頁仍可由connector辨識；本次更新後的選單顯示以隔離實際Chrome APIs驗證，非現用側欄目視。"
+  },
+  "visuals": {
+    "brand": "LLMeeting、方案、版本三標籤共用電流色相作4.8秒微弱text-shadow呼吸，微錯開相位，文字色與opacity維持不變。背景／動畫關閉、prefers-reduced-motion時停止，頁面隱藏暫停。",
+    "sunday": "每波既有head animationend重抽白紅橙黃綠藍紫主題，字碼雨與互補電流／品牌光同步；無額外色彩interval，其他weekday固定。隱藏／停動畫不啟動新波，午夜回到當日規則。"
+  },
+  "tests": {
+    "unit": { "passed": 541, "failed": 0, "log": "output/rainbow-acceptance-full.txt" },
+    "background": "11/11，七色可抽取、每波重抽、hidden／motion off不運算、Sunday到Monday、午夜與destroy計時器／listener清理",
+    "browserReport": "output/browser-acceptance/2026-10-16T11-57-06-406Z/report.json",
+    "standalone": { "status": "pass", "checks": 70, "widths": [320, 480] },
+    "native": { "status": "pass", "checks": 36, "width": 360, "closeThenOpen": "實際close原生Page後由測試user gesture重新sidePanel.open，順序仍meta,grok,chatgpt,claude,gemini" },
+    "providerTabs": {
+      "status": "pass",
+      "order": ["meta", "grok", "chatgpt", "claude", "gemini"],
+      "method": "抽取正式getOrCreateProviderTab與waitForProviderTab原文，提供本地extension fixture startUrl／matchPatterns；實際chrome.tabs.create/query驗證建立位置與既有Meta分頁重用。測試配置不是正式provider網址端到端。",
+      "metaTitle": "已受控Playwright頁面goto被route.fulfill攔截的Meta合成HTML；正式hookTabTitle及實際chrome.scripting.executeScript取得Synthetic current conversation，排除另一聊天與inactive重複連結。"
+    },
+    "sundayBrowser": "僅隔離頁覆寫getDay與可注入亂數，觸發正式波動listener確認七色；實際品牌動畫與reduce media computed style驗證",
+    "pageErrors": 0,
+    "blockedNetwork": 0,
+    "cleanup": "隔離context與自建分頁均關閉，未連接日用profile；wave沿用既有listener與午夜單一timer。",
+    "discardedRuns": [
+      "11-52-28：測試worker不允許dynamic import，改測試專用static import，未進入UI驗收",
+      "11-53-07：亂數在初始化已被capture，測試改成初始化前注入wrapper；並非生產抽色失敗",
+      "11-53-55：UI與原生關開通過但整體fail；extension開頁首請求早於Playwright攔截，有外站資源載入及JS語法錯誤，外部資源請求被後續route封鎖。全新未登入profile，無AI提示送出。改為初始僅本地頁，Meta僅由已受控頁goto攔截合成內容；未把此輪算通過。"
+    ],
+    "visualInspection": ["native-reopened-brand.png", "sunday-brand-rainbow.png"],
+    "syntaxAndDiff": "pass"
+  },
+  "review": {
+    "tool": "CodeRabbit CLI",
+    "issues": 0,
+    "commandsThisTask": 1,
+    "files": 6,
+    "log": "output/rainbow-acceptance-coderabbit.ndjson",
+    "exclusions": "未變更模組、私人資料、素材及文案目錄；新測試helper以空白tracked baseline納入"
+  },
+  "package": {
+    "path": "dist/llmeeting-0.5.1.zip",
+    "bytes": 2797322,
+    "sha256": "91F63C10A84F20B2769307E027B0C961FE41F5D3CE27A6388B217067F04302E3",
+    "crcVisualChangesAndTestExclusion": "pass"
+  }
+}

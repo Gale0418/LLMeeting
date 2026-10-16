@@ -911,6 +911,21 @@ body::before {
 /* White has no chromatic complement; cyan stays visible on the dark board. */
 .shell[data-weekday-theme="white"] { --rain-color: #e2eaf0; --circuit-hue: 190; }
 
+/* A quiet breathing glow, sharing the circuit hue without dimming the labels. */
+.brand-row :is(h1, .plan-badge, .version-badge) {
+  text-shadow: 0 0 5px hsl(var(--circuit-hue) 95% 74% / .3);
+  animation: brandBreath 4.8s ease-in-out infinite;
+}
+.brand-row .plan-badge { animation-delay: -.8s; }
+.brand-row .version-badge { animation-delay: -1.6s; }
+@keyframes brandBreath {
+  0%, 100% { text-shadow: 0 0 4px hsl(var(--circuit-hue) 95% 74% / .2); }
+  50% { text-shadow: 0 0 7px hsl(var(--circuit-hue) 95% 74% / .65), 0 0 12px hsl(var(--circuit-hue) 95% 74% / .18); }
+}
+.shell[data-circuit-background="off"] .brand-row :is(h1, .plan-badge, .version-badge),
+.shell[data-circuit-motion="off"] .brand-row :is(h1, .plan-badge, .version-badge) { animation: none; }
+.shell[data-page-hidden="true"] .brand-row :is(h1, .plan-badge, .version-badge) { animation-play-state: paused; }
+
 .circuit-backdrop {
   position: fixed;
   z-index: 0;
@@ -1828,6 +1843,7 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.98); }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .brand-row :is(h1, .plan-badge, .version-badge) { animation: none !important; }
   *, *::before, *::after {
     scroll-behavior: auto !important;
     animation-duration: .001ms !important;

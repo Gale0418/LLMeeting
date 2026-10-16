@@ -42,6 +42,9 @@ export function initBackgroundControls({
   let preferences = readPreferences(storage);
   const reducedMotion = matchMedia?.('(prefers-reduced-motion: reduce)') || { matches: false };
   const weekdayThemes = ['white', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'];
+  const sampleSundayTheme = () => {
+    if (now().getDay() === 0) shell.dataset.weekdayTheme = weekdayThemes[Math.floor(random() * weekdayThemes.length)];
+  };
   let midnightTimer = null;
   const routeListeners = [];
   const resumeWaves = [];
@@ -49,6 +52,7 @@ export function initBackgroundControls({
     let alternate = false;
     let wavePending = false;
     const sampleWave = (initial = false) => {
+      sampleSundayTheme();
       const travel = 7 + random() * 7;
       route.style.setProperty('--travel', `${travel.toFixed(3)}s`);
       route.style.setProperty('--phase', `${(initial ? -random() * travel : .5 + random() * 4).toFixed(3)}s`);
@@ -95,7 +99,8 @@ export function initBackgroundControls({
     for (const resumeWave of resumeWaves) resumeWave();
   };
   const refreshWeekdayTheme = () => {
-    shell.dataset.weekdayTheme = weekdayThemes[now().getDay()];
+    if (now().getDay() === 0) sampleSundayTheme();
+    else shell.dataset.weekdayTheme = weekdayThemes[now().getDay()];
   };
   const clearMidnightTimer = () => {
     if (midnightTimer === null) return;

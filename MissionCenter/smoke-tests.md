@@ -1,5 +1,12 @@
 # Smoke Tests
 
+## 2026-10-16 排序實測／品牌微光／星期日彩虹（LLM-T77／Done）
+
+- `npm test`：541/541，背景11/11含星期日每波七色、隱藏／停動畫、午夜Monday回復及清理。品牌4.8秒text-shadow呼吸沿用電流色，不降低文字opacity；reduce／motion off停止、hidden暫停。
+- 最終隔離Chrome獨立320/480共70組、原生360px共36組pass；真正close原生Page再sidePanel.open保存順序；新Chrome APIs probe以正式函式原文搭配本地fixture網址驗證五家開頁位置／query重用，Meta正式hookTabTitle＋executeScript讀取route.fulfill假頁正確名稱。七色假Sunday與實際computed animation／reduce通過，pageErrors與blockedNetwork皆0。完整report及限制見evidence/051-rainbow-acceptance.json。
+- 丟棄三次setup／驗收失敗：worker dynamic import限制、capture亂數注入、extension首個導覽早於攔截致外站資源載入與JS錯誤；後者雖UI pass但整體fail未算通過。已改初始本地頁、Meta由受控頁goto攔截，隔離profile無登入及AI送出。現用Chrome工具不列出原生側欄，沒有宣稱真人側欄實測完成。
+- CodeRabbit六檔0 issues，本任務一次；ZIP2797322 bytes，CRC、微光／Sunday程式與測試入口排除PASS。README、DESIGN及任務中心已更新；需重新載入才套用新增光效。
+
 ## 2026-10-16 AI啟用順序與Meta標題（LLM-T76／Done）
 
 - `npm test` 540/540；預設A–Z、v1名單遷移／v2順序與空選擇、匿名提示引用／首輪／互評／續聊／總結工作／離席及預檢開分頁次序通過。Meta唯讀probe涵蓋當前精確網址、錯站／錯對話／衝突／導航及逾時備援。

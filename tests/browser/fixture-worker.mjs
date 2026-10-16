@@ -1,5 +1,6 @@
 // Only installed into an isolated test copy. Never loaded by manifest.json.
 import { meeting, providers } from './fixtures.mjs';
+import { runProviderTabsProbe, readProviderMetaProbe, closeProviderTabsProbe } from './provider-probe.mjs';
 let state = meeting();
 let rejectRepair = false;
 const ready = chrome.storage.session.get(['fixtureState', 'rejectRepair']).then(async saved => {
@@ -20,6 +21,11 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   (async () => {
     await ready;
     if (message.type === 'aiDebate:getState') return { ok: true, state };
+    if (message.type === 'test:providerTabs') {
+      return { ok: true, evidence: await runProviderTabsProbe() };
+    }
+    if (message.type === 'test:providerMetaTitle') return {ok:true,title:await readProviderMetaProbe(message.tabId)};
+    if (message.type === 'test:closeProviderTabs') { await closeProviderTabsProbe(); return {ok:true}; }
     if (message.type === 'test:scenario') {
       state = meeting(message.scenario);
       if (message.activeProviders) state.activeProviders = message.activeProviders;

@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { meeting, rawReply, fault, originalPrompt } from './fixtures.mjs';
 import { uiText } from '../../src/shared/i18n.js';
+import { prepareProviderProbe, verifyProviderTabs } from './providerTabs.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const { values } = parseArgs({ options: {
@@ -27,6 +28,7 @@ await fs.mkdir(harness);
 for (const name of ['fixtures.mjs', 'fixture-worker.mjs', 'opener.html', 'opener.mjs']) {
   await fs.copyFile(new URL(name, import.meta.url), path.join(harness, name));
 }
+await prepareProviderProbe(root, harness);
 const manifest = JSON.parse(await fs.readFile(path.join(root, 'manifest.json'), 'utf8'));
 manifest.name = 'LLMeeting — isolated UI acceptance';
 manifest.background = { service_worker: 'test-harness/fixture-worker.mjs', type: 'module' };
@@ -104,6 +106,15 @@ async function inspectUi(panel, locale, scenario) {
 }
 async function exercise(panel, settings, control, label) {
   const checks = [];
+  await panel.bringToFront();
+  await panel.emulateMedia({ reducedMotion: 'no-preference' });
+  await eventually(async () => assert.equal(await panel.locator('.brand-row h1').evaluate(el => getComputedStyle(el).animationName), 'brandBreath'), 'brand breathing light');
+  const brandNames = await panel.locator('.brand-row :is(h1,.plan-badge,.version-badge)').evaluateAll(nodes => nodes.map(el => getComputedStyle(el).animationName));
+  assert.deepEqual(brandNames, ['brandBreath','brandBreath','brandBreath']);
+  await panel.emulateMedia({ reducedMotion: 'reduce' });
+  assert.equal(await panel.locator('.brand-row h1').evaluate(el => getComputedStyle(el).animationName), 'none');
+  await panel.emulateMedia({ reducedMotion: 'no-preference' });
+  checks.push({scenario:'brand-glow-and-reduced-motion',status:'pass'});
   await control({ type: 'test:scenario', scenario: 'setup' });
   await panel.locator('[data-provider-toggle="meta"]').waitFor();
   const enabledIds = await panel.locator('[data-provider-toggle][aria-pressed="true"]').evaluateAll(nodes => nodes.map(n => n.dataset.providerToggle));
@@ -254,8 +265,36 @@ try {
   await opener.goto(`${base}/test-harness/opener.html`);
   const control = message => opener.evaluate(payload => chrome.runtime.sendMessage(payload), message);
   await control({ type: 'aiDebate:getState' });
+  report.providerTabs = { status: 'pass', ...await verifyProviderTabs({ context, opener, base }) };
   const settings = await context.newPage();
   await settings.goto(`${base}/src/options/index.html`);
+  const sunday = await context.newPage();
+  await sunday.setViewportSize({width:480,height:900});
+  await sunday.addInitScript(() => {
+    const OriginalDate = Date;
+    const originalRandom = Math.random;
+    window.Date = class extends OriginalDate { getDay() { return 0; } };
+    Math.random = () => window.fixtureRandomValue ?? originalRandom();
+  });
+  await sunday.goto(`${base}/src/sidepanel/index.html`);
+  await sunday.bringToFront();
+  await sunday.emulateMedia({ reducedMotion: 'no-preference' });
+  await sunday.waitForFunction(() => document.querySelector('.shell')?.dataset.circuitMotion === 'on' && !document.hidden);
+  const sundayColors = await sunday.evaluate(() => {
+    const colors = [];
+    try {
+      for (let i = 0; i < 7; i++) {
+        window.fixtureRandomValue = (i + .5) / 7;
+        document.querySelector('.circuit-head').dispatchEvent(new AnimationEvent('animationend', {animationName:'circuitHead',bubbles:true}));
+        colors.push(document.querySelector('.shell').dataset.weekdayTheme);
+      }
+      return colors;
+    } finally { delete window.fixtureRandomValue; }
+  });
+  assert.deepEqual(sundayColors, ['white','red','orange','yellow','green','blue','purple']);
+  report.sunday = {status:'pass',colors:sundayColors,method:'isolated page day override and actual production wave listeners'};
+  await sunday.screenshot({path:path.join(out,'sunday-brand-rainbow.png')});
+  await sunday.close();
   const page = await context.newPage();
   await page.goto(`${base}/src/sidepanel/index.html`);
   try {
@@ -299,6 +338,20 @@ try {
       assert.ok(report.native.viewport.width >= 200 && report.native.viewport.width <= 600,
         'native viewport is not a realistic docked-panel width');
       report.native.checks = await exercise(native, settings, control, 'native');
+      await native.close();
+      const reopenedPage = context.waitForEvent('page', { predicate: p => p.url().startsWith(`${base}/src/sidepanel/`), timeout: 12000 });
+      reopenedPage.catch(() => {});
+      await opener.bringToFront();
+      await opener.locator('#openPanel').click();
+      const reopened = await reopenedPage;
+      const reopenedSession = await context.newCDPSession(reopened);
+      await reopenedSession.send('Emulation.clearDeviceMetricsOverride');
+      await reopenedSession.detach();
+      await reopened.waitForFunction(() => innerWidth >= 200 && innerHeight > 0);
+      await eventually(async () => assert.deepEqual(await reopened.locator('.provider-console .provider-row').evaluateAll(nodes => nodes.map(n => n.dataset.provider)),
+        ['meta','grok','chatgpt','claude','gemini']), 'native close and reopen activation order');
+      report.native.checks.push({scenario:'actual-native-panel-close-reopen-order',status:'pass'});
+      await reopened.screenshot({path:path.join(out,'native-reopened-brand.png')});
       report.native.status = 'pass';
     } catch (error) { report.native.status = 'fail'; report.native.error = error.stack; }
   } else report.native = { status: 'skipped' };

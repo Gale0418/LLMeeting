@@ -109,7 +109,7 @@ test('maps each local weekday to its theme', () => {
   for (let weekday = 0; weekday < 7; weekday += 1) {
     const date = new Date(2026, 9, 12 + weekday, 12);
     const f = fixture({ date });
-    const destroy = initBackgroundControls({ ...f, matchMedia: () => f.media });
+    const destroy = initBackgroundControls({ ...f, matchMedia: () => f.media, random: () => 0 });
     assert.equal(f.shell.dataset.weekdayTheme, themes[weekday]);
     destroy();
   }
@@ -151,6 +151,40 @@ test('each completed packet wave gets a fresh wait and speed, with no extra time
   destroy();
   assert.equal(route.listeners.get('animationend').size, 0);
   assert.equal(f.timers.size, 0);
+});
+
+test('Sunday samples every color again per wave, freezes when hidden or disabled, and returns to Monday', () => {
+  const f = fixture({ date: new Date(2026, 9, 18, 12) });
+  const route = Object.assign(new Target(), { style: { setProperty() {} } });
+  f.document.querySelectorAll = () => [route];
+  let value = 0;
+  const destroy = initBackgroundControls({ ...f, matchMedia: () => f.media, random: () => value });
+  const colors = ['white', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'];
+  for (let i = 0; i < colors.length; i++) {
+    value = (i + .5) / colors.length;
+    route.dispatch('animationend', { animationName: 'circuitHead' });
+    assert.equal(f.shell.dataset.weekdayTheme, colors[i]);
+  }
+  assert.equal(f.timers.size, 1, 'rainbow reuses wave events, no color interval');
+  f.document.hidden = true; f.document.dispatch('visibilitychange');
+  value = .2;
+  route.dispatch('animationend', { animationName: 'circuitHead' });
+  assert.equal(f.shell.dataset.weekdayTheme, 'purple');
+  f.document.hidden = false; f.document.dispatch('visibilitychange');
+  assert.equal(f.shell.dataset.weekdayTheme, 'red');
+  f.motionToggle.checked = false; f.motionToggle.dispatch('change');
+  value = .9;
+  route.dispatch('animationend', { animationName: 'circuitHead' });
+  assert.equal(f.shell.dataset.weekdayTheme, 'red');
+  f.setNow(new Date(2026, 9, 19, 0, 0));
+  f.fireTimer();
+  assert.equal(f.shell.dataset.weekdayTheme, 'red');
+  f.motionToggle.checked = true; f.motionToggle.dispatch('change');
+  route.dispatch('animationend', { animationName: 'circuitHead' });
+  assert.equal(f.shell.dataset.weekdayTheme, 'red', 'weekday does not keep random Sunday colors');
+  destroy();
+  assert.equal(f.timers.size, 0);
+  assert.equal(route.listeners.get('animationend').size, 0);
 });
 
 test('updates at local midnight and schedules only one next refresh', () => {

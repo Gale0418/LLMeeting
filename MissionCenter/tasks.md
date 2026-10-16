@@ -2,6 +2,7 @@
 
 | ID | 標題 | 類型 | 上層 | 優先級 | 狀態 | 負責人 | 依賴 | 下一步 | 驗證方式 | 估算 | 標籤 | 備註 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| LLM-T77 | 排序實測、品牌呼吸光與星期日彩虹 | Task | LLM-E7 | P2 | Done | Codex | LLM-T76 | 無；新增光效需重載，現用真人側欄仍非直接驗收範圍 | 541/541、獨立70組／原生36組、真正close/open、實際Chrome開頁／重用／Meta executeScript、七色／reduce、CodeRabbit6檔0issues、ZIP CRC | 2 | acceptance, motion, rainbow | 本地開頁配置搭配正式函式原文與Chrome APIs；Meta合成HTML、七色假星期日不等於真人帳號E2E；現用Chrome工具未列出原生側欄。攔截race失敗已記錄並改初始本地頁，最終pageErrors／blockedNetwork皆0；本任務兔子1次；證據051-rainbow-acceptance.json |
 | LLM-T76 | 啟用順序與Meta對話分頁名稱 | Task | LLM-E7 | P2 | Done | Codex | LLM-T75 | 無；使用者重載套用，Meta改版時保留原標題 | 540/540、隔離獨立68組／原生34組、三語與排序／焦點／草稿／重載、CodeRabbit15檔0issues、ZIP CRC | 2 | ordering, tabs, meta | 預設英文A–Z，舊名單保留並遷移預設；v2保存啟用順序，停用再啟用排最後；引擎／舞會／提示／預檢順序驗證；Meta現場DOM確認精確active link，唯讀probe及逾時備援；本任務兔子1次；證據051-provider-order.json |
 | LLM-T75 | 分頁就緒與送出前等待優化 | Task | LLM-E7 | P2 | Done | Codex | LLM-T74 | 無；實際五家耗時待重載觀察 | 534/534、聚焦36、CodeRabbit6檔0issues、語法／diff／ZIP CRC | 1 | performance, readiness, persistence | Driver .13；送出前存檔3→2、就緒前景窗口750→200ms、DOM第一秒50ms與新分頁前兩秒100ms後退避；必要存檔未完成及取消不得送出；非五家實測效能數據；本任務兔子1次；證據051-submission-latency.json |
 | LLM-T74 | 手補回覆場次誤判修復 | Task | LLM-E7 | P1 | Done | Codex | LLM-T73 | 無；待使用者重載確認原場次，先備份草稿 | 525/525、隔離獨立66組／原生33組、CodeRabbit4檔0issues、ZIP CRC | 1 | recovery, persistence | 長題持久化與恢復雙向重現／修復；互評及兩種總結皆通過，異場與故障格變更仍拒絕；截圖實際狀態未取得，不斷言唯一根因；本任務兔子2次含基準未判定失敗1次；證據051-repair-identity.json |
