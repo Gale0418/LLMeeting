@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-16",
+  "task": "LLM-T78",
+  "cause": "前版僅text-shadow取電流hue，但品牌文字與徽章邊框／底仍用固定青白色，低強度微光不足以讓配色明顯。使用者截圖與CSS吻合。",
+  "fix": "三標籤文字改hsl(circuit-hue 85% 82%)，徽章邊框／深色底與小範圍陰影也沿電流hue，稍加強breath文字光暈；4.8s、固定opacity、hidden／motion off／reduce規則保留。進度、狀態及provider色不改。",
+  "validation": {
+    "unit": { "passed": 541, "failed": 0, "log": "output/brand-color-full.txt" },
+    "browserReport": "output/browser-acceptance/2026-10-16T12-06-35-424Z/report.json",
+    "standalone": { "status": "pass", "checks": 72, "widths": [320, 480] },
+    "native": { "status": "pass", "checks": 37, "width": 360 },
+    "newAssertions": "七種theme逐一核對三文字computed color與兩徽章computed border color等於依當前circuit-hue計算的參考色，七組顏色均不同；測完恢復主題。沿用品牌三動畫、reduce、排序、重開、開頁與Meta假頁讀名回歸。",
+    "pageErrors": 0,
+    "blockedNetwork": 0,
+    "visualInspection": "native-brand-palette.png目視星期五金橙文字／邊框與低亮度深色底，保留文字可讀性；未宣稱量測對比或真實現用側欄已更新。",
+    "screenshot": "output/browser-acceptance/2026-10-16T12-06-35-424Z/native-brand-palette.png",
+    "boundary": "隔離測試profile／替身worker，正式renderer及CSS；現用Chrome需重載。未消耗真實AI配額。",
+    "syntaxAndDiff": "pass"
+  },
+  "review": {
+    "tool": "CodeRabbit CLI",
+    "issues": 0,
+    "files": ["src/sidepanel/styles.css", "tests/browser/run.mjs"],
+    "commandsThisTask": 1,
+    "log": "output/brand-color-coderabbit.ndjson",
+    "exclusions": "未變更模組／文案目錄／資產與私人資料"
+  },
+  "package": {
+    "path": "dist/llmeeting-0.5.1.zip",
+    "bytes": 2797588,
+    "sha256": "0564A103301715DF8EE6D8363CF1087F407EAA10A21FA4F265B3103B85E28D12",
+    "crcAndFixAndTestExclusion": "pass"
+  }
+}

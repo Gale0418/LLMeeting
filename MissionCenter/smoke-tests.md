@@ -1,5 +1,10 @@
 # Smoke Tests
 
+## 2026-10-16 品牌配色可見性（LLM-T78／Done）
+
+- `npm test`541/541；隔離獨立320/480共72組、原生360px共37組pass，pageErrors／blockedNetwork空。新增七組computed文字與邊框色核對，確保三標籤不是僅外圍shadow換色。native-brand-palette.png目視星期五金橙文字／邊框清楚可見，保持4.8s呼吸與reduce／off規則，不改進度及狀態色。
+- CodeRabbit兩檔0 issues，本任務一次；語法／diff與ZIP CRC通過。候選2797588 bytes、SHA256與完整邊界見evidence/051-brand-color-visibility.json。隔離實測不代表現用Chrome已更新，需再重載套用。
+
 ## 2026-10-16 排序實測／品牌微光／星期日彩虹（LLM-T77／Done）
 
 - `npm test`：541/541，背景11/11含星期日每波七色、隱藏／停動畫、午夜Monday回復及清理。品牌4.8秒text-shadow呼吸沿用電流色，不降低文字opacity；reduce／motion off停止、hidden暫停。

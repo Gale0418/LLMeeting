@@ -111,9 +111,34 @@ async function exercise(panel, settings, control, label) {
   await eventually(async () => assert.equal(await panel.locator('.brand-row h1').evaluate(el => getComputedStyle(el).animationName), 'brandBreath'), 'brand breathing light');
   const brandNames = await panel.locator('.brand-row :is(h1,.plan-badge,.version-badge)').evaluateAll(nodes => nodes.map(el => getComputedStyle(el).animationName));
   assert.deepEqual(brandNames, ['brandBreath','brandBreath','brandBreath']);
+  const brandPalettes = await panel.evaluate(() => {
+    const shell = document.querySelector('.shell');
+    const original = shell.dataset.weekdayTheme;
+    const reference = document.createElement('span');
+    shell.appendChild(reference);
+    try {
+      return ['white','red','orange','yellow','green','blue','purple'].map(theme => {
+        shell.dataset.weekdayTheme = theme;
+        reference.style.color = 'hsl(var(--circuit-hue) 85% 82%)';
+        const expectedText = getComputedStyle(reference).color;
+        reference.style.color = 'hsl(var(--circuit-hue) 85% 70% / .65)';
+        const expectedBorder = getComputedStyle(reference).color;
+        return {theme,expectedText,expectedBorder,
+          labels:[...document.querySelectorAll('.brand-row :is(h1,.plan-badge,.version-badge)')].map(el => getComputedStyle(el).color),
+          borders:[...document.querySelectorAll('.brand-row :is(.plan-badge,.version-badge)')].map(el => getComputedStyle(el).borderTopColor)};
+      });
+    } finally { reference.remove(); shell.dataset.weekdayTheme = original; }
+  });
+  for (const palette of brandPalettes) {
+    assert.deepEqual(palette.labels, Array(3).fill(palette.expectedText), `brand text color/${palette.theme}`);
+    assert.deepEqual(palette.borders, Array(2).fill(palette.expectedBorder), `brand border color/${palette.theme}`);
+  }
+  assert.equal(new Set(brandPalettes.map(palette => palette.labels[0])).size, 7);
+  checks.push({scenario:'seven-brand-text-and-border-palettes',status:'pass'});
   await panel.emulateMedia({ reducedMotion: 'reduce' });
   assert.equal(await panel.locator('.brand-row h1').evaluate(el => getComputedStyle(el).animationName), 'none');
   await panel.emulateMedia({ reducedMotion: 'no-preference' });
+  await panel.locator('.topbar').screenshot({path:path.join(out,`${label}-brand-palette.png`)});
   checks.push({scenario:'brand-glow-and-reduced-motion',status:'pass'});
   await control({ type: 'test:scenario', scenario: 'setup' });
   await panel.locator('[data-provider-toggle="meta"]').waitFor();

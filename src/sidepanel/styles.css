@@ -913,14 +913,20 @@ body::before {
 
 /* A quiet breathing glow, sharing the circuit hue without dimming the labels. */
 .brand-row :is(h1, .plan-badge, .version-badge) {
-  text-shadow: 0 0 5px hsl(var(--circuit-hue) 95% 74% / .3);
+  color: hsl(var(--circuit-hue) 85% 82%);
+  text-shadow: 0 0 6px hsl(var(--circuit-hue) 95% 74% / .45);
   animation: brandBreath 4.8s ease-in-out infinite;
+}
+.brand-row :is(.plan-badge, .version-badge) {
+  border-color: hsl(var(--circuit-hue) 85% 70% / .65);
+  background: hsl(var(--circuit-hue) 55% 18% / .72);
+  box-shadow: 0 0 8px hsl(var(--circuit-hue) 95% 70% / .15);
 }
 .brand-row .plan-badge { animation-delay: -.8s; }
 .brand-row .version-badge { animation-delay: -1.6s; }
 @keyframes brandBreath {
-  0%, 100% { text-shadow: 0 0 4px hsl(var(--circuit-hue) 95% 74% / .2); }
-  50% { text-shadow: 0 0 7px hsl(var(--circuit-hue) 95% 74% / .65), 0 0 12px hsl(var(--circuit-hue) 95% 74% / .18); }
+  0%, 100% { text-shadow: 0 0 5px hsl(var(--circuit-hue) 95% 74% / .35); }
+  50% { text-shadow: 0 0 9px hsl(var(--circuit-hue) 95% 74% / .8), 0 0 16px hsl(var(--circuit-hue) 95% 74% / .24); }
 }
 .shell[data-circuit-background="off"] .brand-row :is(h1, .plan-badge, .version-badge),
 .shell[data-circuit-motion="off"] .brand-row :is(h1, .plan-badge, .version-badge) { animation: none; }
