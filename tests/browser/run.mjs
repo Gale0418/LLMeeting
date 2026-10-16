@@ -104,6 +104,39 @@ async function inspectUi(panel, locale, scenario) {
 }
 async function exercise(panel, settings, control, label) {
   const checks = [];
+  await control({ type: 'test:scenario', scenario: 'setup' });
+  await panel.locator('[data-provider-toggle="meta"]').waitFor();
+  const enabledIds = await panel.locator('[data-provider-toggle][aria-pressed="true"]').evaluateAll(nodes => nodes.map(n => n.dataset.providerToggle));
+  for (const id of enabledIds) await panel.locator(`[data-provider-toggle="${id}"]`).click();
+  const order = ['meta', 'grok', 'chatgpt', 'claude', 'gemini'];
+  const personaDraft = 'Synthetic persona draft 保留';
+  await panel.locator('.settings-panel').evaluate(el => { el.open = true; });
+  await panel.locator('#theaterSettings').evaluate(el => { el.hidden = false; el.style.display = 'block'; });
+  await panel.locator('#personaMeta').fill(personaDraft);
+  for (const id of order) await panel.locator(`[data-provider-toggle="${id}"]`).click();
+  const readOrder = () => panel.evaluate(() => ({
+    cards: [...document.querySelectorAll('.provider-console .provider-row')].map(el => el.dataset.provider),
+    hooks: [...document.querySelectorAll('.hook-stack select')].map(el => el.id.slice(4).toLowerCase()),
+    personas: [...document.querySelectorAll('.persona-stack textarea')].map(el => el.id.slice(7).toLowerCase()),
+    judges: [...document.querySelector('#summaryProviderSelect').options].map(el => el.value).filter(id => id !== 'random'),
+  }));
+  for (const ids of Object.values(await readOrder())) assert.deepEqual(ids, order);
+  assert.equal(await panel.locator('#personaMeta').inputValue(), personaDraft);
+  assert.equal(await panel.evaluate(() => document.activeElement.dataset.providerToggle), 'gemini');
+  await eventually(async () => {
+    const stored = await panel.evaluate(() => chrome.storage.local.get('aiDebate.providerSelection.v2'));
+    assert.deepEqual(stored['aiDebate.providerSelection.v2'], order);
+  }, 'saved activation order');
+  await panel.reload();
+  await eventually(async () => { for (const ids of Object.values(await readOrder())) assert.deepEqual(ids, order); }, 'reloaded activation order');
+  await control({ type: 'test:scenario', scenario: 'critique', activeProviders: order });
+  await eventually(async () => {
+    const ids = await panel.locator('.bubble-group.assistant').evaluateAll(nodes => nodes.map(n =>
+      ['meta','grok','chatgpt','claude','gemini'].find(id => n.classList.contains(id))));
+    assert.deepEqual(ids.slice(0, 5), order);
+    assert.deepEqual(ids.slice(5), order);
+  }, 'discussion provider order');
+  checks.push({scenario:'activation-order-cards-hooks-personas-focus-reload-discussion',status:'pass'});
   for (const scenario of ['first-round', 'critique', 'summary', 'fault']) {
     await control({ type: 'test:scenario', scenario });
     await panel.getByText(`[fixture:${scenario}] Public synthetic question`, { exact: true }).waitFor();

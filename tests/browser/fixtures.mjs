@@ -17,6 +17,7 @@ export function meeting(scenario = 'critique') {
       answers: Object.fromEntries(providers.map(id => [id, rawReply])), critiqueRounds: [{}],
       manualRepairs: [{ provider: 'meta', phase: 'first-round', repairedAt: 1792080001000, originalError: 'Synthetic private raw fault 原始錯誤' }] },
   };
+  if (scenario === 'setup') return { ...state, busy: false, status: 'idle', phase: 'idle', transcript: null };
   if (scenario === 'first-round') {
     state.transcript.answers = {};
     state.message = 'ChatGPT：等待回答原始問題';

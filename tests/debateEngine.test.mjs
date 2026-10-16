@@ -91,9 +91,9 @@ test("engine starts a fixed first-round debate for all providers", () => {
     jobs.map((job) => [job.provider, job.phase, job.prompt]),
     [
       ["chatgpt", "first-round", "天為什麼是藍的？"],
+      ["claude", "first-round", "天為什麼是藍的？"],
       ["gemini", "first-round", "天為什麼是藍的？"],
       ["grok", "first-round", "天為什麼是藍的？"],
-      ["claude", "first-round", "天為什麼是藍的？"],
     ],
   );
 });

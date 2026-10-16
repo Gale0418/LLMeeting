@@ -4,6 +4,8 @@ import {
   featureLabel,
 } from "../shared/entitlements.js";
 import { DEFAULT_ACTIVE_PROVIDER_IDS, PROVIDERS } from "../shared/providers.js";
+import { reorderProviderControls } from "./providerOrder.js";
+import { hookTabTitle } from "./tabTitles.js";
 import { isCritiquePhase, shouldShowChatControls } from "./modeRules.js";
 import { hasMeetingContent, launchGuide, readinessRecovery } from "./experienceRules.js";
 import { appendPlayIdea, canUsePlayIdeas, playIdeas } from "./playIdeas.js";
@@ -29,7 +31,7 @@ function localizedUnavailableMessage(featureId) {
   return t(currentLocale, "feature.proRequired", {feature: localizedFeatureLabel(featureId, currentLocale)});
 }
 
-const PROVIDER_SELECTION_STORAGE_KEY = "aiDebate.providerSelection.v1";
+const PROVIDER_SELECTION_STORAGE_KEY = "aiDebate.providerSelection.v2";
 
 const form = document.querySelector("#debateForm");
 const questionInput = document.querySelector("#questionInput");
@@ -301,8 +303,14 @@ async function bootstrap() {
 
 async function loadProviderSelection() {
   try {
-    const stored = await chrome.storage.local.get(PROVIDER_SELECTION_STORAGE_KEY);
-    const raw = stored?.[PROVIDER_SELECTION_STORAGE_KEY];
+    const stored = await chrome.storage.local.get([PROVIDER_SELECTION_STORAGE_KEY, "aiDebate.providerSelection.v1"]);
+    const savedOrder = stored?.[PROVIDER_SELECTION_STORAGE_KEY];
+    const legacy = stored?.["aiDebate.providerSelection.v1"];
+    const legacyOrder = Array.isArray(legacy) ? fallbackProviderIds.filter(id => legacy.includes(id)) : [];
+    // v1 always saved registry order, before user ordering existed. Preserve
+    // membership while adopting the new alphabetical default exactly once.
+    const raw = Array.isArray(savedOrder) ? savedOrder : Array.isArray(legacy)
+      ? legacy.length && !legacyOrder.length ? legacy : legacyOrder : undefined;
     if (Array.isArray(raw)) {
       const validIds = raw.filter((id, index) => fallbackProviderIds.includes(id) && raw.indexOf(id) === index);
       selectedProviderSet = new Set(raw.length > 0 && validIds.length === 0 ? DEFAULT_ACTIVE_PROVIDER_IDS : validIds);
@@ -342,6 +350,7 @@ async function toggleProvider(button) {
 }
 
 function renderProviderControls() {
+  reorderProviderControls(selectedProviderIds());
   for (const button of providerToggleEls) {
     const providerId = button.dataset.providerToggle;
     const enabled = selectedProviderSet.has(providerId);
@@ -408,10 +417,13 @@ async function scanAndPopulateHookTabs() {
 
         const uniqueTabs = Array.from(new Map(tabs.map((tab) => [tab.id, tab])).values());
         uniqueTabs.sort((a, b) => b.windowId - a.windowId);
-        for (const tab of uniqueTabs) {
+        const titles = await Promise.all(uniqueTabs.map(tab => hookTabTitle(tab, provider.id, chrome.scripting)));
+        for (const [index, tab] of uniqueTabs.entries()) {
           const option = document.createElement("option");
           option.value = tab.id.toString();
-          const title = tab.title ? (tab.title.length > 30 ? tab.title.substring(0, 30) + "..." : tab.title) : "未命名分頁";
+          const fullTitle = titles[index];
+          const title = fullTitle ? (fullTitle.length > 30 ? fullTitle.substring(0, 30) + "..." : fullTitle) : "未命名分頁";
+          option.title = fullTitle || "";
           option.textContent = uiText(`[分頁] ${title}`);
           selectEl.appendChild(option);
         }
@@ -895,9 +907,7 @@ function renderProviderSelectionPreview() {
 }
 
 function selectedProviderIds() {
-  return PROVIDERS
-    .map((provider) => provider.id)
-    .filter((providerId) => selectedProviderSet.has(providerId));
+  return [...selectedProviderSet].filter(providerId => fallbackProviderIds.includes(providerId));
 }
 
 function selectedDebateMode() {
@@ -1011,7 +1021,8 @@ function renderProviderRecovery(state) {
   providerRecovery.replaceChildren();
   const needed = new Set([...selectedProviderIds(), state.sourceProvider,
     ...(state.skipSummary || state.summaryStrategy === "allAnonymous" ? [] : [state.summaryProvider])]);
-  const failures = PROVIDERS.filter((provider) => needed.has(provider.id) && latestReadiness[provider.id]?.ready === false);
+  const failures = [...needed].map(id => PROVIDERS.find(provider => provider.id === id))
+    .filter(provider => provider && latestReadiness[provider.id]?.ready === false);
   providerRecovery.hidden = state.busy || failures.length === 0;
   if (providerRecovery.hidden) return;
   for (const provider of failures) {
@@ -1677,14 +1688,14 @@ function buildTranscriptText(state) {
     ...opening,
     "",
     "第一輪回答:",
-    ...PROVIDERS.map((provider) => speakerBlock(meetingSpeakerLabel(state, provider.id), transcript.answers?.[provider.id])),
+    ...(state.activeProviders || PROVIDERS.map(provider => provider.id)).map((id) => speakerBlock(meetingSpeakerLabel(state, id), transcript.answers?.[id])),
   ];
 
   critiqueRoundMaps(transcript).forEach((critiques, index) => {
     lines.push(
       "",
       `${zhRoundLabel(index + 2)}互評:`,
-      ...PROVIDERS.map((provider) => speakerBlock(meetingSpeakerLabel(state, provider.id), critiques?.[provider.id])),
+      ...(state.activeProviders || PROVIDERS.map(provider => provider.id)).map((id) => speakerBlock(meetingSpeakerLabel(state, id), critiques?.[id])),
     );
   });
 

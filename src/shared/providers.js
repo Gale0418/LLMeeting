@@ -6,6 +6,12 @@ export const PROVIDERS = [
     matchPatterns: ["https://chatgpt.com/*", "https://chat.openai.com/*"],
   },
   {
+    id: "claude",
+    label: "Claude",
+    startUrl: "https://claude.ai/",
+    matchPatterns: ["https://claude.ai/*"],
+  },
+  {
     id: "gemini",
     label: "Gemini",
     startUrl: "https://gemini.google.com/",
@@ -18,12 +24,6 @@ export const PROVIDERS = [
     matchPatterns: ["https://grok.com/*", "https://x.com/i/grok*"],
   },
   {
-    id: "claude",
-    label: "Claude",
-    startUrl: "https://claude.ai/",
-    matchPatterns: ["https://claude.ai/*"],
-  },
-  {
     id: "meta",
     label: "Meta AI",
     startUrl: "https://www.meta.ai/",
@@ -33,7 +33,11 @@ export const PROVIDERS = [
 ];
 
 export const PROVIDER_IDS = PROVIDERS.map((provider) => provider.id);
-export const DEFAULT_ACTIVE_PROVIDER_IDS = ["chatgpt", "gemini", "grok", "claude"];
+export const DEFAULT_ACTIVE_PROVIDER_IDS = ["chatgpt", "claude", "gemini", "grok"];
+
+export function providersInOrder(providerIds) {
+  return normalizeProviderIds(providerIds, []).map(providerById);
+}
 
 export function providerById(providerId) {
   return PROVIDERS.find((item) => item.id === providerId) || null;

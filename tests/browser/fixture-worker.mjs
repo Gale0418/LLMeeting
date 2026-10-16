@@ -22,6 +22,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (message.type === 'aiDebate:getState') return { ok: true, state };
     if (message.type === 'test:scenario') {
       state = meeting(message.scenario);
+      if (message.activeProviders) state.activeProviders = message.activeProviders;
       rejectRepair = Boolean(message.rejectRepair);
       await saveAndBroadcast();
       return { ok: true, state };

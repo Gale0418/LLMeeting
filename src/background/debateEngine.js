@@ -15,6 +15,7 @@ import {
   PROVIDER_IDS,
   isProviderId,
   normalizeProviderIds,
+  providersInOrder,
 } from "../shared/providers.js";
 import { contextBlockCharLimit, formatSpeakerBlock, normalizeText } from "../shared/text.js";
 import { isRecoverableReply, MAX_MANUAL_REPLY_CHARS } from "../shared/meetingRecovery.js";
@@ -222,7 +223,7 @@ export class DebateEngine {
         : null;
     }
 
-    return PROVIDERS.filter((p) => this.activeProviders.includes(p.id)).map((provider) => {
+    return providersInOrder(this.activeProviders).map((provider) => {
       let prompt = this.anonymous
         ? buildAnonymousFirstRoundPrompt(question)
         : buildFirstRoundPrompt(question);
@@ -347,7 +348,7 @@ ${rawProviderContent}`
       ]))
       : {};
 
-    return PROVIDERS.filter((p) => this.participatingProviders.includes(p.id)).map((provider) => {
+    return providersInOrder(this.participatingProviders).map((provider) => {
       let prompt = buildInteractionPrompt({
         recipient: provider.id,
         originalQuestion: this.state.originalQuestion,
@@ -416,7 +417,7 @@ ${rawProviderContent}`
       ]))
       : {};
 
-    return PROVIDERS.filter((p) => this.participatingProviders.includes(p.id)).map((provider) => {
+    return providersInOrder(this.participatingProviders).map((provider) => {
       let prompt = buildInteractionPrompt({
         recipient: provider.id,
         originalQuestion: this.state.originalQuestion,

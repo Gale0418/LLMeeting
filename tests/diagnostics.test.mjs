@@ -138,7 +138,7 @@ test("side panel persists physical provider activation buttons while idle", asyn
   const app = await readFile("src/sidepanel/app.js", "utf8");
   const html = await readFile("src/sidepanel/index.html", "utf8");
 
-  assert.match(app, /const PROVIDER_SELECTION_STORAGE_KEY = "aiDebate\.providerSelection\.v1"/);
+  assert.match(app, /const PROVIDER_SELECTION_STORAGE_KEY = "aiDebate\.providerSelection\.v2"/);
   assert.match(app, /providerToggleEls\.forEach\(\(el\) => el\.addEventListener\("click", \(\) => toggleProvider\(el\)\)\)/);
   assert.match(app, /function renderProviderSelectionPreview\(\)/);
   assert.match(app, /activeProviders: selectedProviderIds\(\)/);

@@ -9,7 +9,7 @@ import {
 } from "../src/shared/providers.js";
 
 test("default active providers keep the proven four while Meta AI stays opt-in beta", () => {
-  assert.deepEqual(DEFAULT_ACTIVE_PROVIDER_IDS, ["chatgpt", "gemini", "grok", "claude"]);
+  assert.deepEqual(DEFAULT_ACTIVE_PROVIDER_IDS, ["chatgpt", "claude", "gemini", "grok"]);
   assert.ok(PROVIDER_IDS.includes("meta"));
   assert.equal(DEFAULT_ACTIVE_PROVIDER_IDS.includes("meta"), false);
 });

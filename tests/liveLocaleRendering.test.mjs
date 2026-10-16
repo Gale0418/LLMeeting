@@ -105,7 +105,7 @@ test('provider readiness failures, counts and accessible toggle labels follow ev
   const summary = { textContent: '' };
   const context = vm.createContext({ uiText, PROVIDERS, latestState: { busy: false }, latestReadiness: {},
     selectedProviderSet: new Set(['chatgpt']), providerToggleEls: [button], providerStateEls: { chatgpt: { id: 'chatgpt-state' } },
-    providerSummaryText: summary, providerRecovery: recovery, selectedProviderIds: () => ['chatgpt'],
+    providerSummaryText: summary, providerRecovery: recovery, selectedProviderIds: () => ['chatgpt'], reorderProviderControls() {},
     document: { createElement: makeElement }, readinessRecovery: () => '開啟此 AI 網頁並登入，再重新檢查。LLMeeting 不會代你登入。' });
   vm.runInContext(['renderProviderControls', 'renderProviderSummary', 'renderProviderRecovery', 'readinessFailureLabel'].map(fn).join('\n'), context);
   try {

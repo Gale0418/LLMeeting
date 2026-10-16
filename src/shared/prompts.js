@@ -1,4 +1,4 @@
-import { PROVIDERS } from "./providers.js";
+import { PROVIDERS, providersInOrder } from "./providers.js";
 import {
   clipText,
   contextBlockCharLimit,
@@ -199,7 +199,7 @@ export function buildConversationSummaryPrompt(userNote = "") {
 
 function resolveProviders(activeProviders) {
   if (Array.isArray(activeProviders) && activeProviders.length > 0) {
-    return PROVIDERS.filter((p) => activeProviders.includes(p.id));
+    return providersInOrder(activeProviders);
   }
   return PROVIDERS;
 }

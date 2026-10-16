@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-16",
+  "task": "LLM-T76",
+  "scope": "啟用順序、預設英文A–Z與Meta對話標題",
+  "defaultOrder": ["chatgpt", "claude", "gemini", "grok", "meta"],
+  "ordering": [
+    "Meta仍為預設未啟用；啟用順序使用Set insertion order，停用再啟用排最後，未啟用者按A–Z排後方",
+    "v1舊名單只有registry順序，保留membership改採A–Z；v2保存自訂順序與全未啟用，無效名單安全fallback",
+    "移動既有DOM使卡片、指定分頁、人設欄位與裁判選單同步；保留草稿、select value及focus，不僅CSS視覺重排",
+    "引擎首輪、互評、續聊、提示引用、舞會匿名暱稱、全匿名總結及文字匯出使用activeProviders順序；舊場次維持原順序",
+    "正式預檢依啟用次序建立或重用分頁；不呼叫tabs.move改動已開分頁位置"
+  ],
+  "metaTitle": {
+    "liveObservation": "Chrome唯讀DOM確認Meta的瀏覽器title仍為通用品牌名；頁面有data-sidebar=menu-button且data-active=true的當前對話連結，href與location精確匹配並含對話名稱。未保存私人聊天正文或網址。",
+    "behavior": "僅complete Meta通用標題分頁執行獨立唯讀probe，核對host、prompt route、active link及相同origin/path，衝突／缺少名稱則null。掃描以並行查詢及1秒逾時備援，回傳網址與原tab.url不同則丟棄。",
+    "boundary": "不從其他聊天、任意h1或回答內容猜標題，不改document.title、不觸發AI、不切頁／重載、不新增權限；改版或sidebar未載入時仍用原tab.title。真實擴充功能UI更新待使用者重載，未宣稱該原生側欄現場已驗。"
+  },
+  "validation": {
+    "unit": { "passed": 540, "failed": 0, "log": "output/provider-order-full-verified.txt" },
+    "regression": "自訂順序、重啟保存、舊偏好遷移、空選擇、匿名互評文字次序、離席、恢復、最終工作及預檢分頁呼叫次序；標題精確匹配／跨站／衝突／導頁／錯誤／逾時",
+    "browserReport": "output/browser-acceptance/2026-10-16T04-33-45-982Z/report.json",
+    "standalone": { "status": "pass", "checks": 68, "widths": [320, 480] },
+    "native": { "status": "pass", "checks": 34, "width": 360 },
+    "pageErrors": 0,
+    "blockedNetwork": 0,
+    "browserBoundary": "隔離profile與測試worker，卡片／hooks／personas／judges順序、草稿／焦點／重載、首輪／互評及三語驗收；沒有真實AI送出。首次測試用nth locator因DOM重排而點錯模型，改以穩定provider ID定位後通過。",
+    "syntaxAndDiff": "pass"
+  },
+  "review": {
+    "tool": "CodeRabbit CLI",
+    "issues": 0,
+    "files": 15,
+    "commandsThisTask": 1,
+    "log": "output/provider-order-coderabbit.ndjson",
+    "exclusions": "未變更模組、大型文案目錄、資產、私人證據；四個新檔以空白tracked基準確保納入"
+  },
+  "package": {
+    "path": "dist/llmeeting-0.5.1.zip",
+    "bytes": 2796106,
+    "sha256": "47E8A20B95F32910EA7F8970BBD170DA63B49C16F9179EDC832813A46D1D8575",
+    "crcNewModulesAndTestExclusion": "pass"
+  }
+}
