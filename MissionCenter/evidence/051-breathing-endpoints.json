@@ -1,0 +1,27 @@
+{
+  "task": "LLM-T80",
+  "date": "2026-10-16",
+  "productionChanges": false,
+  "standaloneChecks": 76,
+  "nativeChecks": 39,
+  "focusedTests": 15,
+  "pageErrors": 0,
+  "blockedNetwork": 0,
+  "verification": "Actual text-shadow and badge box-shadow low/high endpoints for all seven rain palettes, normal and fault red headers; stable fill/opacity; exact rain outline/border/status colors. Reduced-motion and locale/recovery regressions pass.",
+  "boundary": "Isolated test extension worker and profile. Not the daily Chrome side panel or real AI backends.",
+  "review": {
+    "tool": "CodeRabbit",
+    "issues": 0,
+    "files": 5,
+    "commandsThisTask": 1,
+    "rollingHourCommands": 2,
+    "baseline": "389451e",
+    "scope": [
+      "src/sidepanel/backgroundControls.js",
+      "src/sidepanel/styles.css",
+      "tests/backgroundControls.test.mjs",
+      "tests/browser/providerTabs.mjs",
+      "tests/browser/run.mjs"
+    ]
+  }
+}

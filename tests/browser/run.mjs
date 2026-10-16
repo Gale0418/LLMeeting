@@ -104,6 +104,62 @@ async function inspectUi(panel, locale, scenario) {
   if (scenario !== 'first-round') assert.ok(result.transcript.includes(rawReply.split('\n')[0]), 'AI fixture text changed');
   return result;
 }
+async function verifyBreathingEndpoints(panel, fault) {
+  await panel.bringToFront();
+  const samples = await panel.evaluate(() => {
+    const shell = document.querySelector('.shell');
+    const original = shell.dataset.weekdayTheme;
+    const reference = document.createElement('span');
+    shell.appendChild(reference);
+    const nodes = [...document.querySelectorAll('.brand-row :is(h1,.plan-badge,.version-badge), #statusText')];
+    const animations = nodes.flatMap(node => node.getAnimations());
+    const saved = animations.map(animation => ({animation, time:animation.currentTime, state:animation.playState}));
+    try {
+      animations.forEach(animation => animation.pause());
+      return ['white','red','orange','yellow','green','blue','purple'].map(theme => {
+        shell.dataset.weekdayTheme = theme;
+        reference.style.color = 'var(--rain-color)';
+        const rain = getComputedStyle(reference).color;
+        const phases = [0, .5].map(progress => {
+          animations.forEach(animation => {
+            const timing = animation.effect.getTiming();
+            // The badges have negative delays; sample the same effect phase explicitly.
+            animation.currentTime = timing.delay + Number(timing.duration) * (1 + progress);
+          });
+          return nodes.map(node => {
+            const style = getComputedStyle(node);
+            return {text:style.textShadow, box:style.boxShadow, color:style.color,
+              outline:style.webkitTextStrokeColor, border:style.borderTopColor, opacity:style.opacity};
+          });
+        });
+        return {theme,rain,phases,header:getComputedStyle(document.querySelector('.topbar')).backgroundColor};
+      });
+    } finally {
+      reference.remove();
+      shell.dataset.weekdayTheme = original;
+      for (const {animation,time,state} of saved) {
+        animation.currentTime = time;
+        if (state === 'running') animation.play();
+      }
+    }
+  });
+  for (const {theme,rain,phases,header} of samples) {
+    const [dim,bright] = phases;
+    for (let index=0; index<4; index++) {
+      assert.notEqual(dim[index].text,bright[index].text, `actual text breathing/${fault}/${theme}/${index}`);
+      assert.equal(dim[index].opacity,bright[index].opacity, 'text opacity must remain stable');
+      assert.equal(dim[index].color,bright[index].color, 'text fill must remain stable');
+      if (index<3) assert.equal(dim[index].outline,rain, 'outline must follow rain');
+      if (index===1 || index===2) {
+        assert.equal(dim[index].border,rain, 'badge border must follow rain');
+        assert.notEqual(dim[index].box,bright[index].box, 'actual badge halo breathing');
+      }
+    }
+    assert.equal(dim[3].color,rain, 'status must follow rain');
+    if (fault) assert.equal(header,'rgb(100, 31, 41)', 'fault header must stay red');
+  }
+  return {scenario:`seven-palette-actual-breathing-${fault?'fault':'normal'}`,status:'pass',samples};
+}
 async function exercise(panel, settings, control, label) {
   const checks = [];
   await panel.bringToFront();
@@ -140,6 +196,7 @@ async function exercise(panel, settings, control, label) {
   }
   assert.equal(new Set(brandPalettes.map(palette => palette.labels[0])).size, 7);
   checks.push({scenario:'seven-brand-text-and-border-palettes',status:'pass'});
+  checks.push(await verifyBreathingEndpoints(panel, false));
   await panel.emulateMedia({ reducedMotion: 'reduce' });
   assert.equal(await panel.locator('.brand-row h1').evaluate(el => getComputedStyle(el).animationName), 'none');
   assert.equal(await panel.locator('#statusText').evaluate(el => getComputedStyle(el).animationName), 'none');
@@ -182,6 +239,7 @@ async function exercise(panel, settings, control, label) {
   for (const scenario of ['first-round', 'critique', 'summary', 'fault']) {
     await control({ type: 'test:scenario', scenario });
     await panel.getByText(`[fixture:${scenario}] Public synthetic question`, { exact: true }).waitFor();
+    if (scenario === 'fault') checks.push(await verifyBreathingEndpoints(panel, true));
     for (const locale of ['zh_TW', 'en', 'ja', 'zh_TW', 'ja', 'en']) {
       await switchLocale(settings, panel, locale);
       await eventually(() => inspectUi(panel, locale, scenario), `${label}/${scenario}/${locale}`);

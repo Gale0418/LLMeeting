@@ -1,5 +1,10 @@
 # Smoke Tests
 
+## 2026-10-16 七色實際呼吸端點（LLM-T80／Done）
+
+- 指令：`node tests/browser/run.mjs --playwright-module <已驗證bundled Playwright> --browser-cache output/playwright-browsers`；預期正常與故障紅底的七色描邊／邊框／狀態一致，亮暗text-shadow及徽章box-shadow確實不同、opacity及填色不變。觀察獨立320/480共76組、真正原生360px共39組通過，紅底維持rgb(100,31,41)，減少動效停止動畫；正常與故障截圖目視通過，前端例外及外部網路請求0。
+- 聚焦`node --test tests/backgroundControls.test.mjs tests/liveLocaleRendering.test.mjs`15/15；`node --check tests/browser/run.mjs`及diff檢查通過。CodeRabbit含近期相關歷史變更5檔0 issues，本任務1次／滾動小時2次。未修改正式程式、未重跑全套、沒有新候選封裝或重載需求。隔離profile／測試worker不等於現用Chrome或五家真實登入整場驗收。
+
 ## 2026-10-16 雨色描邊／徽章／狀態（LLM-T79／Done）
 
 - 聚焦15/15、隔離獨立72組／原生37組pass，pageErrors／blockedNetwork為0。七色computed fill保留電流色，stroke／badge border／status皆雨色；brand／badge雙動畫及status呼吸、reduce通過，正常／紅底截圖已目視。紅底狀態深色底七色對比計算6.26–14.55:1，未宣稱全頁a11y稽核。
