@@ -2,6 +2,7 @@
 
 | ID | 標題 | 類型 | 上層 | 優先級 | 狀態 | 負責人 | 依賴 | 下一步 | 驗證方式 | 估算 | 標籤 | 備註 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| LLM-T74 | 手補回覆場次誤判修復 | Task | LLM-E7 | P1 | Done | Codex | LLM-T73 | 無；待使用者重載確認原場次，先備份草稿 | 525/525、隔離獨立66組／原生33組、CodeRabbit4檔0issues、ZIP CRC | 1 | recovery, persistence | 長題持久化與恢復雙向重現／修復；互評及兩種總結皆通過，異場與故障格變更仍拒絕；截圖實際狀態未取得，不斷言唯一根因；本任務兔子2次含基準未判定失敗1次；證據051-repair-identity.json |
 | LLM-T73 | 故障卡複製原提示與唯讀備援 | Task | LLM-E7 | P1 | Done | Codex／Antigravity | LLM-T72 | 無；舊故障未保存原提示無法精確還原 | 521/521、聚焦61、隔離獨立64組／原生32組、ZIP CRC、CodeRabbit11檔0issues | 2 | recovery, clipboard, i18n | 送出前保存每家目前工作原文；成功／手補／離席清除，不重建／截斷／重送；舊故障無副本明示，原文不進debug；8筆文案Antigravity已交付；Windows CRLF與textarea首行LF已驗；本輪兔子1次，滾動小時含前輪共3次 |
 | LLM-T72 | 故障暫停定位分頁與吸頂紅底 | Task | LLM-E7 | P1 | Done | Codex | LLM-T71 | 無；Gemini送出確認根因另待重現 | 513/513、分頁／跨視窗／取消11項、三語獨立62組與原生31組、ZIP CRC、CodeRabbit複查0issues | 1 | recovery, focus, ux | 暫停後一次定位待補入AI與其視窗，不重開／重新導向／重送／持續搶焦點；紅底依目前暫停與致命error，歷史故障不觸發；兔子首查1minor跨視窗已修、本輪2次；Gemini新版輸入框仍可定位，四次未確認送出根因未證實 |
 | LLM-T71 | 本場健康摘要與故障時間軸 | Task | LLM-E7 | P1 | Done | Codex／Antigravity | LLM-T70 | 無；五家真實後端仍依原驗收邊界 | 507/507、320/480獨立62組與原生31組三語／鍵盤、ZIP CRC、CodeRabbit核心8檔0issues | 2 | diagnostics, i18n, ux | 原協作請求已交付並觀察到完成標記；核對後採用17筆文案，保留中性結果／永久離席／計數語意，修正Source Summary反向匹配歧義；三語複驗通過，不需再處理搜尋授權 |

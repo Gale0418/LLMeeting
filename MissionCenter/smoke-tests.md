@@ -1,5 +1,12 @@
 # Smoke Tests
 
+## 2026-10-16 手補場次誤判（LLM-T74／Done）
+
+- `node --test tests/meetingRecovery.test.mjs`：16/16；新增實際存檔裁短／背景恢復雙向測試，修正前互評與兩種總結皆重現會議已變更，修正後通過；缺失ID、異場同題、已變故障、錯輪與錯AI仍拒絕且不修改狀態。
+- `npm test`：525/525；語法與diff檢查通過。隔離Playwright獨立320/480共66組、原生360px共33組pass；題目改變後草稿保留、補入成功，三語及原故障揭露正常，pageErrors及blockedNetwork皆空。測試worker不等於真實五家後端驗收。
+- CodeRabbit四檔0 issues；本任務兩次命令，第一次基準未判定未啟動，指定main後完成。候選ZIP2790534 bytes，CRC、測試入口排除與修正內容檢查通過；SHA256及範圍見evidence/051-repair-identity.json。
+- 現場截圖缺少完整runtime，只確認拒絕位置及可重現根因，不宣稱唯一原因。重載前先備份未提交草稿；保持原會議，不重置或自動重送。
+
 ## 2026-10-16 複製原提示與剪貼簿備援（LLM-T73／Done）
 
 - 全套521/521、聚焦61通過；原文JSON／保存降級／恢復／24h清除、階段與provider配對、超額不截斷、穩定容量排序、debug匯出排除、HTML escape及首行換行、剪貼簿成功與拒絕皆覆蓋。

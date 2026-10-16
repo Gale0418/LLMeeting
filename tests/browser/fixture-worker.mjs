@@ -27,9 +27,15 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       return { ok: true, state };
     }
     if (message.type === 'test:inspect') return { ok: true, state };
+    if (message.type === 'test:compactQuestion') {
+      state.transcript.originalQuestion = '[fixture] Compacted question…';
+      await saveAndBroadcast();
+      return { ok: true, state };
+    }
     if (message.type === 'aiDebate:repairReply') {
       if (rejectRepair) return { ok: false, error: '補入失敗，貼上的內容已保留。' };
-      if (message.sessionId !== state.transcript.sessionId || message.expectedContent !== state.summary) {
+      if (typeof message.sessionId !== 'string' || !message.sessionId.trim()
+          || message.sessionId !== state.transcript.sessionId || message.expectedContent !== state.summary) {
         return { ok: false, error: 'Fixture repair target mismatch' };
       }
       state.transcript.manualRepairs.push({ provider: message.provider, phase: message.phase,

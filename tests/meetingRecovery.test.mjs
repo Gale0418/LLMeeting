@@ -4,9 +4,10 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { DebateEngine } from "../src/background/debateEngine.js";
 import { buildContinuationDraft, isRecoverableReply, MAX_MANUAL_REPLY_CHARS, pendingReplyRepairs } from "../src/shared/meetingRecovery.js";
-import { PROVIDERS, normalizeProviderIds, providerLabel } from "../src/shared/providers.js";
+import { PROVIDERS, isProviderId, normalizeProviderIds, providerLabel } from "../src/shared/providers.js";
 import { shouldShowChatControls } from "../src/sidepanel/modeRules.js";
-import { forgetRecoveryPrompt } from "../src/shared/recoveryPrompts.js";
+import { boundRecoveryPrompts, forgetRecoveryPrompt } from "../src/shared/recoveryPrompts.js";
+import { recoverSession } from "../src/background/sessionRecovery.js";
 
 test("departure resolves every fault slot for only that provider without deleting history", () => {
   const state = {departedProviders: ["grok"], transcript: {answers: {grok: "[錯誤：額度用完]", meta: "[錯誤：寫入失敗]"},
@@ -136,7 +137,7 @@ test("reading state cannot overwrite a completed auto-resume with an older busy 
 
 function runtimeHarness(overrides = {}) {
   const context = vm.createContext({
-    DebateEngine, PROVIDERS, normalizeProviderIds, providerLabel, isRecoverableReply, MAX_MANUAL_REPLY_CHARS, pendingReplyRepairs, forgetRecoveryPrompt,
+    DebateEngine, PROVIDERS, isProviderId, normalizeProviderIds, providerLabel, isRecoverableReply, MAX_MANUAL_REPLY_CHARS, pendingReplyRepairs, forgetRecoveryPrompt,
     runtimeState: { transcript: failedMeeting().snapshot(), errors: [], busy: false, mode: "fast", summary: "舊總結", summaries: { chatgpt: "舊總結" } },
     runController: { assertCurrent() {} },
     getCurrentActiveTab: async () => ({ id: 99 }),
@@ -184,6 +185,55 @@ test("manual repair updates runtime, invalidates the old summary, and opens cont
   assert.equal(shouldShowChatControls("fast", context.runtimeState), true);
   const stale = { ...before, sessionId: "wrong" };
   await assert.rejects(context.repairMeetingReply({ sessionId: stale.sessionId }, 1), /會議已變更/);
+});
+
+function persistedSnapshot(state) {
+  const context = vm.createContext({ boundRecoveryPrompts, isProviderId });
+  for (const name of ["MAX_PERSISTED_TRANSCRIPT_CHARS", "MAX_PERSISTED_TEXT_CHARS", "MAX_DEBUG_EVENTS"]) {
+    vm.runInContext(source.match(new RegExp(`const ${name} = \\d+;`))[0], context);
+  }
+  vm.runInContext(source.slice(source.indexOf("export function createBoundedPersistedState"),
+    source.indexOf("async function setProviderDiagnostic")).replace("export function", "function"), context);
+  return JSON.parse(JSON.stringify(context.createBoundedPersistedState(state)));
+}
+
+for (const phase of ["critique-7", "summary", "source-summary"]) {
+  test(`manual ${phase} repair survives persisted question compaction in either direction`, async () => {
+    const transcript = failedMeeting().snapshot();
+    transcript.originalQuestion = "公開合成長題目".repeat(3000);
+    const fault = "[服務狀態：總結讀取失敗]";
+    const full = { transcript, errors: [], busy: false, mode: "fast", savedAt: Date.now(),
+      summaries: { chatgpt: fault }, sourceProvider: "chatgpt", sourceSummary: fault };
+    const persisted = persistedSnapshot(full);
+    assert.notEqual(persisted.transcript.originalQuestion, transcript.originalQuestion);
+    assert.equal(persisted.transcript.sessionId, transcript.sessionId);
+    const restored = recoverSession(persisted, () => ({})).state;
+    for (const [visible, runtime] of [[full, restored], [persisted, full]]) {
+      const context = runtimeHarness({ runtimeState: structuredClone(runtime) });
+      const expectedContent = phase === "critique-7" ? visible.transcript.critiqueRounds[6].chatgpt : fault;
+      const result = await context.repairMeetingReply({ sessionId: visible.transcript.sessionId,
+        originalQuestion: visible.transcript.originalQuestion, provider: "chatgpt", phase,
+        expectedContent, content: "完整補回內容" }, 1);
+      assert.equal(result.ok, true);
+      const current = context.runtimeState;
+      assert.equal(phase === "critique-7" ? current.transcript.critiqueRounds[6].chatgpt :
+        phase === "source-summary" ? current.sourceSummary : current.summaries.chatgpt, "完整補回內容");
+      assert.equal(current.transcript.sessionId, transcript.sessionId);
+    }
+  });
+}
+
+test("runtime repair rejects missing identity, a different meeting with the same question, and changed fault slots", async () => {
+  for (const override of [{ sessionId: undefined }, { sessionId: "" }, { sessionId: "other-meeting" },
+    { expectedContent: "[錯誤：另一段故障]" }, { phase: "critique-6" }, { provider: "grok" }]) {
+    const context = runtimeHarness();
+    const before = structuredClone(context.runtimeState);
+    const transcript = before.transcript;
+    await assert.rejects(context.repairMeetingReply({ sessionId: transcript.sessionId,
+      originalQuestion: transcript.originalQuestion, provider: "chatgpt", phase: "critique-7",
+      expectedContent: transcript.critiqueRounds[6].chatgpt, content: "必須保留的草稿", ...override }, 1));
+    assert.equal(JSON.stringify(context.runtimeState), JSON.stringify(before));
+  }
 });
 
 test("repairing a historical fault during a summary pause preserves collected judge replies", async () => {

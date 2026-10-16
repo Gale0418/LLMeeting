@@ -179,6 +179,10 @@ async function exercise(panel, settings, control, label) {
   await control({ type: 'test:scenario', scenario: 'fault' });
   await repair.click();
   await input.fill(draft);
+  // The editor's target still has the original question; a saved/restored copy
+  // may have shorter display text while retaining the same meeting and fault.
+  await control({ type: 'test:compactQuestion' });
+  assert.equal(await input.inputValue(), draft);
   await panel.locator('#saveManualReplyBtn').click();
   await editor.waitFor({ state: 'hidden' });
   assert.equal(await panel.locator('.topbar').evaluate(el => el.classList.contains('is-fault-paused')), false);
@@ -188,6 +192,7 @@ async function exercise(panel, settings, control, label) {
   assert.ok((await panel.locator('#chatTranscript').innerText()).includes(draft));
   const saved = await control({ type: 'test:inspect' });
   assert.equal(saved.state.summary, draft);
+  checks.push({ scenario: 'repair-after-question-compaction', status: 'pass' });
   checks.push({ scenario: 'repair-failure-success-and-original-disclosure', status: 'pass' });
   await disclosure.scrollIntoViewIfNeeded();
   await panel.screenshot({ path: path.join(out, `${label}-repair-en.png`), fullPage: false });

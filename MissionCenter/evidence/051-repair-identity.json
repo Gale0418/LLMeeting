@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-16",
+  "task": "LLM-T74",
+  "scope": "手動補入被會議已變更檢查誤擋",
+  "observation": "使用者截圖顯示textarea已有內容，後端repairMeetingReply的場次檢查拒絕。未取得該時刻完整runtime，不能斷言唯一原因。",
+  "reproducedCause": "createBoundedPersistedState裁短originalQuestion；repairMeetingReply卻比較題目全文，完整側欄對恢復背景或裁短側欄對完整背景均會誤擋。修正前三種階段回歸皆出現相同會議已變更錯誤。",
+  "fix": "以非空字串sessionId核對會議，不使用可裁短的顯示題目識別場次；既有provider、phase、expectedContent精確故障格檢查保留；拒絕時草稿仍保留。",
+  "tests": {
+    "full": { "passed": 525, "failed": 0, "log": "output/repair-identity-full.txt" },
+    "productionRegression": "實際持久化函式與recoverSession、repairMeetingReply；互評第7輪、summary、source-summary各雙向驗證；缺失ID、異場同題、故障格已變、錯輪與錯AI不得修改狀態。",
+    "browserReport": "output/browser-acceptance/2026-10-16T01-16-47-258Z/report.json",
+    "standalone": { "status": "pass", "checks": 66, "widths": [320, 480] },
+    "native": { "status": "pass", "checks": 33, "width": 360 },
+    "pageErrors": 0,
+    "blockedNetwork": 0,
+    "boundary": "瀏覽器使用隔離profile與測試worker；補入前變更題目文字，確認草稿保留與提交成功。非五家真實登入後端端到端驗收。",
+    "syntaxAndDiff": "pass"
+  },
+  "review": {
+    "tool": "CodeRabbit CLI",
+    "issues": 0,
+    "files": ["src/background/service-worker.js", "tests/meetingRecovery.test.mjs", "tests/browser/fixture-worker.mjs", "tests/browser/run.mjs"],
+    "commandsThisTask": 2,
+    "firstAttempt": "基準分支無法判定，尚未進入審查；明確指定--base main後完成",
+    "log": "output/repair-identity-coderabbit-final.ndjson",
+    "exclusions": "未變更模組、大型文案目錄、資產與私人資料；實際審查四檔"
+  },
+  "package": {
+    "path": "dist/llmeeting-0.5.1.zip",
+    "bytes": 2790534,
+    "sha256": "22FD41DD969D9E04A5677E6C1AD85699A148E6D31E0A14F38EF5671BCE07BADB",
+    "crcAndTestExclusion": "pass"
+  },
+  "rollout": "重載前先複製目前手補草稿備份；重載擴充功能後重新選擇原故障格並補入，不重置會議、不重送提示。"
+}

@@ -2737,7 +2737,10 @@ async function captureLinkedReplies(message, token) {
 async function repairMeetingReply(message, token) {
   runController.assertCurrent(token);
   const transcript = runtimeState.transcript;
-  if (!transcript || message.sessionId !== transcript.sessionId || message.originalQuestion !== transcript.originalQuestion) {
+  // The question is display content and may be compacted in persisted snapshots.
+  // Match the stable meeting identity; the exact provider/phase fault is checked below.
+  if (!transcript || typeof message.sessionId !== "string" || !message.sessionId.trim()
+      || message.sessionId !== transcript.sessionId) {
     throw new Error("會議已變更，請重新選擇要補回覆的訊息。");
   }
   const repairedEngine = DebateEngine.restore(transcript);
