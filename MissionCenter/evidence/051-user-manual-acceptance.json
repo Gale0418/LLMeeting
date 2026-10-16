@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-17",
+  "source": "Direct user confirmation in this chat",
+  "kind": "user-reported manual acceptance",
+  "statement": "使用者確認先前列出的人工測試沒有問題，並指出先前提供的截圖是實際運行中發生故障的紀錄。",
+  "accepted": "Existing real-account operation, multi-round execution and manual-reply recovery are accepted as user-tested, supported by prior running/fault/completed transcript reports.",
+  "notInferred": [
+    "An independent agent-run exhaustive provider/mode matrix",
+    "A separate manual rerun of the three latest fb8ede8 fixes or a fresh reload",
+    "Screen-reader testing or performance benchmark",
+    "Chrome Web Store submission or publication"
+  ],
+  "tasksClosed": [
+    "LLM-T51",
+    "LLM-T53"
+  ],
+  "newTestsRun": 0,
+  "newCodeRabbitRuns": 0
+}
