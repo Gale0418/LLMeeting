@@ -29,6 +29,8 @@ node tests/browser/run.mjs --playwright-module <playwright/index.mjs的絕對路
 
 ## 測試邊界
 
+原提示驗收另含：切中英日後readonly原文不變、最前空白行與HTML字元保留、側欄reload後可複製、真正剪貼簿內容讀回、注入writeText拒絕後展開並全選、語言切換保留展開。剪貼簿讀寫授權只給本次隔離context，正式manifest沒有增加權限；Windows讀回的CRLF只於測試比較時正規化。
+
 診斷驗收另含：健康狀態及時間軸三語切換、保留離席者、故障／手動補入／離席順序、技術原文預設收合、一般摘要不洩漏原始錯誤、頁面沒有水平溢出，以及歷史展開可使用鍵盤 Enter。這些斷言併入既有每個狀態／語言檢查，並非額外五家後端驗收。
 
 前端、CSS、語言模組、設定頁和Chrome runtime／storage都使用專案實作。只有背景service worker在隔離副本換成測試替身，透過固定合成資料模擬狀態與修復回執；**不是五家AI或正式背景修復流程的端到端驗收**。

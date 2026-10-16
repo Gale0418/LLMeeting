@@ -1,5 +1,12 @@
 # Smoke Tests
 
+## 2026-10-16 複製原提示與剪貼簿備援（LLM-T73／Done）
+
+- 全套521/521、聚焦61通過；原文JSON／保存降級／恢復／24h清除、階段與provider配對、超額不截斷、穩定容量排序、debug匯出排除、HTML escape及首行換行、剪貼簿成功與拒絕皆覆蓋。
+- 隔離Chrome獨立320/480共64組／原生360px共32組pass，pageErrors空；reload原提示仍在、實際clipboard讀回僅Windows CRLF差異、拒絕後全選，三語切換保留原文與展開。正式manifest不加權限；沒有向真實AI送出新提問。
+- CodeRabbit11檔0 issues，本任務1次，含前一任務本滾動小時共3次；文案目錄、資產與私人資料排除。8筆三語由Antigravity原請求llmeeting-original-prompt-copy-20261016交付完成並核對，未發生額外工具授權。
+- 候選ZIP2790344 bytes、CRC／新模組／測試入口排除PASS；SHA256 4A97F7A914922144E6B722AA1A8847FF085025DDD5EED791ADC903DDD560F4F2。證據evidence/051-original-prompt-recovery.json。舊場次無原提示不可還原；不承諾儲存完全失敗仍能保留。
+
 ## 2026-10-16 故障暫停定位與紅底（LLM-T72／Done）
 
 - CodeRabbit首查1 minor跨視窗只啟用tab未聚焦window，核對後加上一次window更新及取消檢查；7檔複查0 issues，本輪2次。Gemini根因尚未確認不包含在此Done範圍。

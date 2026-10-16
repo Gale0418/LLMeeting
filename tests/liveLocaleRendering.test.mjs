@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import { uiText, setLocale } from '../src/shared/i18n.js';
+import { recoveryPromptControls } from '../src/sidepanel/recoveryPrompt.js';
 import { PROVIDERS } from '../src/shared/providers.js';
 import { normalizeRoundNumber } from '../src/shared/text.js';
 import { isCritiquePhase } from '../src/sidepanel/modeRules.js';
@@ -19,7 +20,7 @@ function fixture(state) {
   const notice = { textContent: '', hidden: true };
   const target = { textContent: '' };
   const context = vm.createContext({
-    uiText, PROVIDERS, normalizeRoundNumber, isCritiquePhase, isRecoverableReply,
+    uiText, recoveryPromptControls, PROVIDERS, normalizeRoundNumber, isCritiquePhase, isRecoverableReply,
     pendingReplyRepairs, fallbackProviderIds: ids, latestState: state,
     chatTranscript: { scrollTop: 137 }, statusText: { textContent: '' },
     manualReplyTarget: { provider: 'chatgpt', phase: 'first-round', sessionId: 'live' },

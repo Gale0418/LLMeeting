@@ -1,6 +1,7 @@
 export const providers = ['chatgpt', 'gemini', 'grok', 'claude', 'meta'];
 export const rawReply = 'Synthetic AI reply — 原文保持不變 OWO\nNo real provider was contacted.';
 export const fault = '[服務狀態：收集 AI 回覆: provider readiness timeout] 這位裁判未能完成總結。';
+export const originalPrompt = '\nExact synthetic prompt 原提示\n<script>literal</script>\n  Keep whitespace.  ';
 
 export function meeting(scenario = 'critique') {
   const state = {
@@ -24,6 +25,7 @@ export function meeting(scenario = 'critique') {
     state.message = '彙整總結';
     state.summaries = {};
   } else if (scenario === 'fault') {
+    state.recoveryPrompts = { chatgpt: { phase: 'summary', prompt: originalPrompt } };
     state.busy = false;
     state.status = state.phase = 'waiting_for_user';
     state.message = '會議已暫停：請在故障訊息下方貼上對應 AI 回覆，全部補齊後會自動繼續原流程。';

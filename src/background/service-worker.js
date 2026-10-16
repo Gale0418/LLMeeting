@@ -5,6 +5,7 @@ import { RunController, isRunCancelledError } from "./runController.js";
 import { createStateStorageQueue, safePersistState } from "./statePersistence.js";
 import { isSessionExpired, recoverSession } from "./sessionRecovery.js";
 import { focusPendingRepairTab } from "./repairFocus.js";
+import { rememberRecoveryPrompt, forgetRecoveryPrompt, boundRecoveryPrompts } from "../shared/recoveryPrompts.js";
 import {
   canUseFeature,
   ENTITLEMENT_STORAGE_KEY,
@@ -146,6 +147,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         runtimeState = {
           ...runtimeState,
           departedProviders,
+          recoveryPrompts: forgetRecoveryPrompt(runtimeState.recoveryPrompts, message.provider, runtimeState.recoveryPrompts?.[message.provider]?.phase),
           summaryProvider: nextSummaryProvider || runtimeState.summaryProvider,
           transcript: nextTranscript,
           repairPause,
@@ -609,6 +611,7 @@ function createIdleState(providerIds = DEFAULT_ACTIVE_PROVIDER_IDS, entitlements
     skipSummary: false,
     workflowCheckpoint: null,
     repairPause: null,
+    recoveryPrompts: {},
     repairDiscarded: false,
     preflightResults: [],
     savedAt: Date.now(),
@@ -1739,6 +1742,7 @@ async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
   let tab;
   try {
     runController.assertCurrent(runToken);
+    runtimeState = { ...runtimeState, recoveryPrompts: rememberRecoveryPrompt(runtimeState.recoveryPrompts, job) };
     await setProviderDiagnostic(job.provider, {
       stage: "opening-tab",
       phase: job.phase,
@@ -1901,7 +1905,9 @@ async function collectProviderJob(submitted, runToken, overloadRetryCount = 0) {
       tabId: submitted.tabId,
       url: tab.url || tab.pendingUrl || "",
     }, runToken);
-    runtimeState = { ...runtimeState, workflowCheckpoint: null };
+    runtimeState = { ...runtimeState, workflowCheckpoint: null,
+      recoveryPrompts: isRecoverableReply(response.content) ? runtimeState.recoveryPrompts
+        : forgetRecoveryPrompt(runtimeState.recoveryPrompts, submitted.provider, submitted.phase) };
     await publishState(runToken);
     return {
       ok: true,
@@ -2408,6 +2414,7 @@ async function publishState(runToken, operation) {
 
 export function createBoundedPersistedState(state) {
   const bounded = JSON.parse(JSON.stringify(state));
+  bounded.recoveryPrompts = boundRecoveryPrompts(bounded.recoveryPrompts);
   bounded.debugEvents = (Array.isArray(bounded.debugEvents) ? bounded.debugEvents : [])
     .slice(-MAX_DEBUG_EVENTS)
     .map((event) => ({
@@ -2784,6 +2791,7 @@ async function repairMeetingReply(message, token) {
       stage: "manual-recovered", error: "", phase: message.phase,
     });
   }
+  runtimeState = { ...runtimeState, recoveryPrompts: forgetRecoveryPrompt(runtimeState.recoveryPrompts, message.provider, message.phase) };
   await publishState(token);
   return { ok: true, state: runtimeState };
 }

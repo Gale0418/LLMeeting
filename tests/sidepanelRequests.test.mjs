@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+import { recoveryPromptControls } from "../src/sidepanel/recoveryPrompt.js";
 import { shouldShowChatControls } from "../src/sidepanel/modeRules.js";
 import { uiText, setLocale, t } from "../src/shared/i18n.js";
 import { localizedFeatureLabel } from "../src/shared/i18n-catalog.js";
@@ -57,7 +58,7 @@ test("badge and feature-unavailable messages stay in the selected language", () 
 
 test("fault controls offer departure and departed faults have no repeat actions", () => {
   const body = source.slice(source.indexOf("function replyRecoveryControls"), source.indexOf("function renderReplyRecoveryNotice"));
-  const context = {isRecoverableReply: s => /^\[錯誤/.test(s), escapeHTML: s => s, recoveryActionPending: false};
+  const context = {isRecoverableReply: s => /^\[錯誤/.test(s), escapeHTML: s => s, recoveryActionPending: false, recoveryPromptControls, uiText};
   vm.createContext(context);
   vm.runInContext(`${body}\nglobalThis.controls = replyRecoveryControls;`, context);
   assert.match(context.controls({}, "grok", "critique", "[錯誤：額度用完]"), /data-depart-provider="grok"/);
@@ -133,6 +134,7 @@ test("recovery controls preserve summary and reveal phase identifiers", () => {
   const body = source.slice(source.indexOf("function replyRecoveryControls"), source.indexOf("function renderReplyRecoveryNotice"));
   const context = {
     recoveryActionPending: false,
+    recoveryPromptControls, uiText,
     isRecoverableReply: (text) => typeof text === "string" && text.startsWith("[錯誤："),
     escapeHTML: (text) => String(text),
   };

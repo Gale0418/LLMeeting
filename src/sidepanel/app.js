@@ -10,6 +10,7 @@ import { appendPlayIdea, canUsePlayIdeas, playIdeas } from "./playIdeas.js";
 import { normalizeRoundNumber } from "../shared/text.js";
 import { buildDebugReport } from "../shared/debugReport.js";
 import { renderSessionHealth } from "./sessionHealth.js";
+import { recoveryPromptControls, copyOriginalPrompt, restoreOriginalPromptFields } from "./recoveryPrompt.js";
 import { isRecoverableReply, pendingReplyRepairs, MAX_MANUAL_REPLY_CHARS } from "../shared/meetingRecovery.js";
 import { uiText, translateUiMarkup } from "../shared/i18n.js";
 import { initializeLocale } from "./localeControls.js";
@@ -188,6 +189,11 @@ chatTranscript?.addEventListener("click", async (event) => {
 });
 
 chatTranscript?.addEventListener("click", (event) => {
+  const copyButton = event.target.closest?.("[data-copy-prompt-provider]");
+  if (copyButton) {
+    void copyOriginalPrompt(copyButton, latestState, { clipboard: navigator.clipboard, translate: uiText });
+    return;
+  }
   const button = event.target.closest?.("[data-repair-provider]");
   if (!button || button.disabled || latestState?.busy || recoveryActionPending) return;
   const provider = button.dataset.repairProvider;
@@ -1352,7 +1358,15 @@ function replaceChatTranscriptHTML(html) {
   if (!chatTranscript || html === lastRenderedChatHtml) {
     return;
   }
+  const openPrompts = [...(chatTranscript.querySelectorAll?.(".recovery-prompt details[open]") || [])]
+    .map(details => ({ button: details.parentElement.querySelector("[data-copy-prompt-provider]"), prompt: details.querySelector("textarea")?.value }))
+    .map(({button, prompt}) => ({ provider: button?.dataset.copyPromptProvider, phase: button?.dataset.copyPromptPhase, prompt }));
   transcriptReader.render(translateUiMarkup(html), {announce: !localeRenderPending});
+  restoreOriginalPromptFields(chatTranscript, latestState);
+  for (const details of chatTranscript.querySelectorAll?.(".recovery-prompt details") || []) {
+    const button = details.parentElement.querySelector("[data-copy-prompt-provider]");
+    if (openPrompts.some(item => item.provider === button?.dataset.copyPromptProvider && item.phase === button?.dataset.copyPromptPhase && item.prompt === details.querySelector("textarea")?.value)) details.open = true;
+  }
   lastRenderedChatHtml = html;
 }
 
@@ -1364,12 +1378,13 @@ function replyRecoveryControls(state, provider, phase, content) {
   if (repaired) return `<p class="reply-recovery-note">已手動補入 AI 回覆</p>${repaired.originalError
     ? `<details class="reply-recovery"><summary>查看原故障</summary><p>${escapeHTML(repaired.originalError)}</p></details>` : ""}`;
   if (!isRecoverableReply(content)) return "";
+  const promptControls = recoveryPromptControls(state, provider, phase, { translate: uiText, escape: escapeHTML });
   const hint = /未確認送出/.test(content)
     ? "送出尚未確認；AI 可能已回答，請先查看 AI 分頁，避免重複送出。"
     : (phase === "summary" ? "這位裁判的總結未取得；若 AI 分頁已完成，可手動補入。"
       : phase === "reveal" ? "這位 AI 的揭曉反應未取得；若 AI 分頁已回答，可手動補入。"
         : "未取得這段 AI 回覆；若 AI 分頁已回答，可手動補入。");
-  return `<div class="reply-recovery"><p>${hint}</p><button type="button" class="secondary-action" data-repair-provider="${escapeHTML(provider)}" data-repair-phase="${escapeHTML(phase)}" ${state.busy || recoveryActionPending ? "disabled" : ""}>貼上 AI 回覆</button><button type="button" class="secondary-action" data-depart-provider="${escapeHTML(provider)}" data-depart-phase="${escapeHTML(phase)}" ${state.busy || recoveryActionPending ? "disabled" : ""}>讓 AI 離席</button><p>離席後，本場不再請它發言；先前內容保留。</p>${state.busy ? "<p>目前流程結束後即可處理。</p>" : ""}</div>`;
+  return `<div class="reply-recovery"><p>${hint}</p>${promptControls}<button type="button" class="secondary-action" data-repair-provider="${escapeHTML(provider)}" data-repair-phase="${escapeHTML(phase)}" ${state.busy || recoveryActionPending ? "disabled" : ""}>貼上 AI 回覆</button><button type="button" class="secondary-action" data-depart-provider="${escapeHTML(provider)}" data-depart-phase="${escapeHTML(phase)}" ${state.busy || recoveryActionPending ? "disabled" : ""}>讓 AI 離席</button><p>離席後，本場不再請它發言；先前內容保留。</p>${state.busy ? "<p>目前流程結束後即可處理。</p>" : ""}</div>`;
 }
 
 function renderReplyRecoveryNotice(state) {

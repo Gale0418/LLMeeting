@@ -2,6 +2,14 @@
 // health.* copy reviewed against Antigravity delivery; neutral outcome and count labels retained by Codex.
 // Dynamic parameters are plain text; rendering boundaries own HTML escaping.
 export const UI_COPY = [
+{"id":"recoveryPrompt.0","source":"複製原提示","zh_TW":"複製原提示","en":"Copy original prompt","ja":"元のプロンプトをコピー"},
+{"id":"recoveryPrompt.1","source":"查看原提示","zh_TW":"查看原提示","en":"View original prompt","ja":"元のプロンプトを表示"},
+{"id":"recoveryPrompt.2","source":"原提示已複製","zh_TW":"已複製原提示","en":"Prompt copied","ja":"プロンプトをコピーしました"},
+{"id":"recoveryPrompt.3","source":"無法自動複製，請在下方選取原提示後手動複製。","zh_TW":"無法自動複製，請在下方選取原提示後手動複製。","en":"Couldn't copy automatically. Please select and copy the prompt below manually.","ja":"自動でコピーできませんでした。下のプロンプトを選んで手動でコピーしてください。"},
+{"id":"recoveryPrompt.4","source":"這段原提示未保存，無法完整還原。","zh_TW":"這段原提示未保存，無法完整還原。","en":"This prompt wasn't saved and can't be fully restored.","ja":"このプロンプトは保存されていないため、完全には復元できません。"},
+{"id":"recoveryPrompt.5","source":"先確認原分頁沒有已完成的回答，避免重複送出。","zh_TW":"請先確認原分頁沒有已完成的回答，避免重複送出。","en":"Please check the original tab first to make sure it wasn't already answered, so you don't resend it twice.","ja":"重複送信を防ぐため、元のタブで回答が完了していないか先にご確認ください。"},
+{"id":"recoveryPrompt.6","source":"這份提示包含本輪對話內容，只會在你按下複製時寫入剪貼簿。","zh_TW":"這份提示包含本輪對話內容，只會在點選複製時寫入剪貼簿。","en":"This prompt includes this turn's content and is only copied when you click the button.","ja":"このプロンプトには今回のやり取りが含まれており、コピーを押した時のみクリップボードに保存されます。"},
+{"id":"recoveryPrompt.7","source":"原提示過大，未保存完整副本，請勿使用不完整內容重送。","zh_TW":"原提示過大且未保存完整副本，請勿使用不完整內容重送。","en":"The prompt was too large to save completely. Please avoid resending incomplete content.","ja":"プロンプトが大きすぎるため完全なコピーが残っていません。不完全な内容で再送しないでください。"},
 {"id":"health.verdict","source":"最終裁決","zh_TW":"最終裁決","en":"Final Verdict","ja":"最終判断"},
 {"id":"health.0","source":"本場健康摘要","zh_TW":"本場健康摘要","en":"Session Health Summary","ja":"セッション健康サマリー"},
 {"id":"health.1","source":"故障與修復紀錄","zh_TW":"故障與修復紀錄","en":"Issue & Recovery Log","ja":"エラーと復旧の記録"},

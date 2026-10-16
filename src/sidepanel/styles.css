@@ -1094,6 +1094,9 @@ body::before {
   --text-primary: #ffffff;
 }
 .topbar.is-fault-paused #statusText { color: #ffe0e3; }
+.recovery-prompt { margin-block: 12px; }
+.recovery-prompt .original-prompt { width: 100%; box-sizing: border-box; min-height: 130px; resize: vertical; font-size: 14px; }
+.recovery-prompt summary { min-height: 44px; padding-block: 10px; cursor: pointer; }
 .topbar.is-fault-paused .reactor-route { background: #3d1820; }
 
 #resetButton.icon-action,

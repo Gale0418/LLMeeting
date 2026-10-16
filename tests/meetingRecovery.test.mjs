@@ -6,6 +6,7 @@ import { DebateEngine } from "../src/background/debateEngine.js";
 import { buildContinuationDraft, isRecoverableReply, MAX_MANUAL_REPLY_CHARS, pendingReplyRepairs } from "../src/shared/meetingRecovery.js";
 import { PROVIDERS, normalizeProviderIds, providerLabel } from "../src/shared/providers.js";
 import { shouldShowChatControls } from "../src/sidepanel/modeRules.js";
+import { forgetRecoveryPrompt } from "../src/shared/recoveryPrompts.js";
 
 test("departure resolves every fault slot for only that provider without deleting history", () => {
   const state = {departedProviders: ["grok"], transcript: {answers: {grok: "[錯誤：額度用完]", meta: "[錯誤：寫入失敗]"},
@@ -135,7 +136,7 @@ test("reading state cannot overwrite a completed auto-resume with an older busy 
 
 function runtimeHarness(overrides = {}) {
   const context = vm.createContext({
-    DebateEngine, PROVIDERS, normalizeProviderIds, providerLabel, isRecoverableReply, MAX_MANUAL_REPLY_CHARS, pendingReplyRepairs,
+    DebateEngine, PROVIDERS, normalizeProviderIds, providerLabel, isRecoverableReply, MAX_MANUAL_REPLY_CHARS, pendingReplyRepairs, forgetRecoveryPrompt,
     runtimeState: { transcript: failedMeeting().snapshot(), errors: [], busy: false, mode: "fast", summary: "舊總結", summaries: { chatgpt: "舊總結" } },
     runController: { assertCurrent() {} },
     getCurrentActiveTab: async () => ({ id: 99 }),

@@ -3,7 +3,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { meeting, rawReply, fault } from './fixtures.mjs';
+import { meeting, rawReply, fault, originalPrompt } from './fixtures.mjs';
 import { uiText } from '../../src/shared/i18n.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -89,6 +89,10 @@ async function inspectUi(panel, locale, scenario) {
       assert.ok(result.loading.some(text => text.startsWith('Writing peer reviews')));
     }
     if (scenario === 'fault') {
+      const promptField = panel.locator('.original-prompt');
+      assert.equal(await promptField.inputValue(), originalPrompt, 'raw original prompt changed with locale');
+      const copyButton = panel.locator('[data-copy-prompt-provider="chatgpt"]');
+      assert.equal(await copyButton.innerText(), uiText('複製原提示', locale));
       assert.ok(result.transcript.includes('Collecting AI Responses: provider readiness timeout'));
       assert.doesNotMatch(result.transcript, /這位裁判未能完成總結|收集 AI 回覆/);
     }
@@ -115,6 +119,31 @@ async function exercise(panel, settings, control, label) {
     }
   }
   const repair = panel.locator('[data-repair-provider="chatgpt"][data-repair-phase="summary"]');
+  await panel.reload();
+  await panel.getByText('[fixture:fault] Public synthetic question', {exact:true}).waitFor();
+  await panel.locator('[data-copy-prompt-provider="chatgpt"]').click();
+  await eventually(async () => {
+    const text = await panel.locator('[data-copy-prompt-status]').innerText();
+    assert.equal(text, uiText('原提示已複製','en'));
+  }, 'copy original success');
+  // Windows clipboard exposes CRLF; verify text without treating OS newline conversion as data loss.
+  assert.equal((await panel.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g,'\n'), originalPrompt);
+  await panel.evaluate(() => {
+    window.savedClipboardWrite = navigator.clipboard.writeText.bind(navigator.clipboard);
+    navigator.clipboard.writeText = async () => { throw new Error('Synthetic clipboard denial'); };
+  });
+  await panel.locator('[data-copy-prompt-provider="chatgpt"]').click();
+  await eventually(async () => assert.equal(await panel.locator('[data-copy-prompt-status]').innerText(), uiText('無法自動複製，請在下方選取原提示後手動複製。','en')), 'manual copy fallback');
+  const promptText = panel.locator('.original-prompt');
+  assert.equal(await promptText.inputValue(), originalPrompt);
+  assert.deepEqual(await promptText.evaluate(el => [el.selectionStart, el.selectionEnd]), [0, originalPrompt.length]);
+  for (const locale of ['ja','zh_TW','en']) {
+    await switchLocale(settings,panel,locale);
+    assert.equal(await promptText.inputValue(), originalPrompt);
+    assert.equal(await panel.locator('.recovery-prompt details').evaluate(el => el.open), true);
+  }
+  await panel.evaluate(() => { navigator.clipboard.writeText = window.savedClipboardWrite; delete window.savedClipboardWrite; });
+  checks.push({scenario:'original-prompt-copy-reload-fallback-locales',status:'pass'});
   await repair.click();
   const editor = panel.locator('#manualReplyEditor');
   const input = panel.locator('#manualReplyInput');
@@ -182,6 +211,7 @@ try {
   const id = new URL(worker.url()).host;
   report.extensionId = id;
   const base = `chrome-extension://${id}`;
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const opener = await context.newPage();
   await opener.goto(`${base}/test-harness/opener.html`);
   const control = message => opener.evaluate(payload => chrome.runtime.sendMessage(payload), message);

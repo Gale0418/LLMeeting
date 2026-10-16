@@ -1,0 +1,96 @@
+{
+  "date": "2026-10-16",
+  "task": "LLM-T73",
+  "scope": "故障卡複製原提示、完整副本本機保存與唯讀備援；沒有自動重送",
+  "capture": [
+    "submitProviderJob開始後、opening-tab診斷publish之前記錄job.prompt",
+    "每家只留當前工作，phase精確匹配並將critique-1正規化為critique",
+    "全部原文共600000 UTF16字元上限；超額標unavailable、不截斷或重建",
+    "成功且非recoverable正文、人工補入、離席清理；createIdleState重置及24h期限沿用",
+    "debugReport白名單不匯出recoveryPrompts"
+  ],
+  "ui": [
+    "原提示按鈕只有精確保存原文時出現；舊故障／超額明確說明",
+    "顯示前HTML escaping，readonly欄位後填值修正HTML首行換行移除",
+    "剪貼簿只在使用者點擊後writeText；不讀取使用者剪貼簿",
+    "剪貼簿拒絕展開並選取，三語切換保留開啟與原文",
+    "未擴大manifest權限"
+  ],
+  "copy": {
+    "author": "Antigravity delivery reviewed by Codex",
+    "request": "llmeeting-original-prompt-copy-20261016",
+    "cascade": "8534c323-301a-4c36-b38b-0c8650c09d7e",
+    "status": "COMPLETED",
+    "newEntries": 8,
+    "catalogCount": 576
+  },
+  "unitTests": {
+    "passed": 521,
+    "failed": 0,
+    "log": "output/recovery-prompt-full-verified.txt",
+    "focused": 61
+  },
+  "browser": {
+    "report": "output/browser-acceptance/2026-10-16T00-34-49-210Z/report.json",
+    "standalone": "pass",
+    "native": "pass",
+    "standaloneGroups": 64,
+    "nativeGroups": 32,
+    "viewport": {
+      "width": 360,
+      "height": 836
+    },
+    "ordinaryTab": false,
+    "pageErrors": [],
+    "assertions": [
+      "三語原提示按鈕",
+      "原文特殊字元與最前換行",
+      "側欄reload保留原文",
+      "真剪貼簿讀回內容，僅正規化Windows CRLF差異",
+      "注入剪貼簿拒絕並驗證選取範圍",
+      "開啟原提示後切語言仍保留展開／原文",
+      "手動補回覆仍正常"
+    ],
+    "isolation": "全新Chrome profile／測試worker，未接觸每日Chrome；只複製合成測試提示"
+  },
+  "limitations": [
+    "舊故障在此功能加入前未存原提示，無法承諾補回當時精確原文",
+    "儲存API或額度全面失敗時，既有安全保存會保護較早快照；不承諾所有情況均可保存",
+    "瀏覽器fixture驗收非五家真實服務端到端"
+  ],
+  "package": {
+    "bytes": 2790344,
+    "sha256": "4a97f7a914922144e6b722aa1a8847ff085025ddd5eed791adc903ddd560f4f2",
+    "CRC": "pass",
+    "testsExcluded": true
+  },
+  "harnessRepairs": [
+    "擴充功能opaque origin不能使用指定origin的grantPermissions；改為僅本次隔離context授權",
+    "HTML兩次解析會移除textarea初始換行，正式renderer在建立後還原精確value",
+    "Windows clipboard讀回CRLF；測試區分OS換行轉換與內容遺失"
+  ],
+  "codeRabbit": {
+    "commandsThisTask": 1,
+    "rollingHourCommandsIncludingPriorTask": 3,
+    "issues": 0,
+    "reviewedFiles": [
+      "src/background/service-worker.js",
+      "src/shared/recoveryPrompts.js",
+      "src/sidepanel/app.js",
+      "src/sidepanel/recoveryPrompt.js",
+      "src/sidepanel/styles.css",
+      "tests/browser/fixtures.mjs",
+      "tests/browser/run.mjs",
+      "tests/liveLocaleRendering.test.mjs",
+      "tests/meetingRecovery.test.mjs",
+      "tests/recoveryPrompts.test.mjs",
+      "tests/sidepanelRequests.test.mjs"
+    ],
+    "log": "output/recovery-prompt-coderabbit.ndjson",
+    "excluded": [
+      "generated locale catalog",
+      "large assets",
+      "private output and conversation evidence"
+    ]
+  }
+}
