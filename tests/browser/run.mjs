@@ -6,6 +6,7 @@ import { parseArgs } from 'node:util';
 import { meeting, rawReply, fault, originalPrompt } from './fixtures.mjs';
 import { uiText } from '../../src/shared/i18n.js';
 import { prepareProviderProbe, verifyProviderTabs } from './providerTabs.mjs';
+import { verifyExperience } from './experienceChecks.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const { values } = parseArgs({ options: {
@@ -162,6 +163,7 @@ async function verifyBreathingEndpoints(panel, fault) {
 }
 async function exercise(panel, settings, control, label) {
   const checks = [];
+  checks.push(...await verifyExperience({panel, settings, control, eventually, uiText}));
   await panel.bringToFront();
   await panel.emulateMedia({ reducedMotion: 'no-preference' });
   await eventually(async () => assert.equal(await panel.locator('.brand-row h1').evaluate(el => getComputedStyle(el).animationName), 'brandBreath'), 'brand breathing light');

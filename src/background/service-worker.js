@@ -29,6 +29,8 @@ import {
 const STORAGE_KEY = "aiDebate.currentState";
 const PROVIDER_TIMEOUT_MS = 240000; // 4分鐘，防話癆
 const SUMMARY_PROVIDER_TIMEOUT_MS = 480000; // 8分鐘，給長篇總結更多時間
+// Match the content driver's fixed cap; phase timeouts remain inactivity limits.
+const PROVIDER_RESPONSE_HARD_CAP_MS = 12 * 60 * 1000;
 // A provider fault now waits for a manual reply; never refresh and resend it.
 const OVERLOAD_REFRESH_RETRIES = 0;
 const META_INPUT_REFRESH_RETRIES = 0;
@@ -1332,7 +1334,7 @@ async function startSummaryDebate(userNote, options = {}) {
   const sourceResult = await sendJob({
     provider: sourceProvider,
     phase: "source-summary",
-    prompt: buildConversationSummaryPrompt(userNote),
+    prompt: buildConversationSummaryPrompt(options.roundZero?.userText ?? userNote),
   }, runToken);
   if (!sourceResult.ok) {
     runtimeState = { ...runtimeState, sourceSummary: `[服務狀態：${sourceResult.error || "無法取得來源總結"}]`,
@@ -1882,7 +1884,7 @@ async function collectProviderJob(submitted, runToken, overloadRetryCount = 0) {
     });
     await publishState(runToken);
 
-    const deadline = Date.now() + getProviderTimeoutMs(submitted.phase);
+    const deadline = Date.now() + PROVIDER_RESPONSE_HARD_CAP_MS;
     let response;
     do {
       runController.assertCurrent(runToken);

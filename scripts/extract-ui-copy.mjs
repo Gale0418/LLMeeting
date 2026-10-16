@@ -349,6 +349,7 @@ if (process.argv.includes('--gaps')) {
     },
     entries,
   };
+  fs.mkdirSync(path.join(root, 'output'), { recursive: true });
   fs.writeFileSync(path.join(root, 'output/ui-copy-render-gaps.json'), `${JSON.stringify(result, null, 2)}\n`, 'utf8');
   console.log(JSON.stringify(result.summary, null, 2));
   process.exit(0);

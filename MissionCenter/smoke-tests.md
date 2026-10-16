@@ -1,5 +1,11 @@
 # Smoke Tests
 
+## 2026-10-16 歷史驗收盤點與隔離缺口（LLM-T81／Done）
+
+- 指令`npm test`：修補前541/541、修補後544/544；新增helper後執行既有雙層browser指令：獨立320/480共100組、真正原生360px共51組，前端例外及外部網路請求0。設定背景／動畫跨頁同步、停啟及reload保存、auto依Chrome UI語言、三語九個新手範例只填草稿，會議維持idle且拒絕的背景操作清單為空；不使用真實AI或日常Chrome。
+- `node --check`核對run、fixture-worker及experienceChecks。修補後重封裝57個entry，與目前正式程式完整檔案名單／逐檔內容及CRC核對通過，2798451 bytes、SHA256 AC94866F73CFDD5677537133079ACF0F4EB45AAE0F38B5A161AD1D53C652C70A；測試入口／私人資料排除。完整真人剩餘門檻見acceptance-audit.md；本輪未做讀屏器、網站登入E2E或效能benchmark。
+- CodeRabbit有效範圍110檔，含舊核心程式，排除純文案大表、lock、素材、私人資料及任務回執；本輪review一次，滾動小時第3次。完整審查110檔、5 issues；3項先失敗重現後修復，2項經查證不適用（快照缺目錄／預設語言誤認）。未再第三方複查，沒有宣稱0 issues。修補為gaps自建output、來源摘要只用使用者補充、長回覆背景固定上限與content同為12分鐘；模擬時鐘驗證10分鐘可完成、12分鐘截止、同runId且無submit路徑。3項新增回歸修前0/3、修後3/3。
+
 ## 2026-10-16 七色實際呼吸端點（LLM-T80／Done）
 
 - 指令：`node tests/browser/run.mjs --playwright-module <已驗證bundled Playwright> --browser-cache output/playwright-browsers`；預期正常與故障紅底的七色描邊／邊框／狀態一致，亮暗text-shadow及徽章box-shadow確實不同、opacity及填色不變。觀察獨立320/480共76組、真正原生360px共39組通過，紅底維持rgb(100,31,41)，減少動效停止動畫；正常與故障截圖目視通過，前端例外及外部網路請求0。

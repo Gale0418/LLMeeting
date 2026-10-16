@@ -3,6 +3,7 @@ import { meeting, providers } from './fixtures.mjs';
 import { runProviderTabsProbe, readProviderMetaProbe, closeProviderTabsProbe } from './provider-probe.mjs';
 let state = meeting();
 let rejectRepair = false;
+const rejectedRequests = [];
 const ready = chrome.storage.session.get(['fixtureState', 'rejectRepair']).then(async saved => {
   state = saved.fixtureState || state;
   rejectRepair = saved.rejectRepair || false;
@@ -33,7 +34,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       await saveAndBroadcast();
       return { ok: true, state };
     }
-    if (message.type === 'test:inspect') return { ok: true, state };
+    if (message.type === 'test:inspect') return { ok: true, state, rejectedRequests };
     if (message.type === 'test:compactQuestion') {
       state.transcript.originalQuestion = '[fixture] Compacted question…';
       await saveAndBroadcast();
@@ -64,6 +65,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       return { ok: true, state };
     }
     // No imports from the production backend and no network/provider calls.
+    rejectedRequests.push(message.type);
     return { ok: false, error: `Unsupported fixture request: ${message.type}` };
   })().then(respond, error => respond({ ok: false, error: error.message }));
   return true;
