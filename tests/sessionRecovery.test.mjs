@@ -148,6 +148,17 @@ test("interrupted critique-2 pauses for manual recovery and queues providers sti
   assert.match(result.state.message, /不會自動重送/);
 });
 
+test("an interrupted user turn rebuilds unsent jobs with the original interjection", () => {
+  const state = interruptedCritiqueState();
+  state.mode = "chat";
+  state.transcript.critiqueRounds[1].USER = "這是這一輪的完整插話🚀";
+  const result = recoverSession(state, mockCreateIdleState);
+  assert.ok(result.state.repairPause.remainingJobs.length > 0);
+  for (const job of result.state.repairPause.remainingJobs) {
+    assert.match(job.prompt, /【來自使用者的插話 \/ 補充】\n這是這一輪的完整插話🚀/u);
+  }
+});
+
 test("interrupted collecting marks every submitted missing critique as a manual repair", () => {
   const interrupted = interruptedCritiqueState({ allSubmitted: true });
   interrupted.providerDiagnostics.gemini.stage = "error";

@@ -73,6 +73,7 @@ function submissionHarness({ holdWrite, cancelOnTab = false } = {}) {
     JSON, Number, isProviderId, updateProviderDiagnostic, rememberRecoveryPrompt, boundRecoveryPrompts,
     enqueueStateStorage: createStateStorageQueue(), safePersistState,
     STORAGE_KEY: "test-state", MAX_DEBUG_EVENTS: 100, MAX_PERSISTED_TEXT_CHARS: 12000, MAX_PERSISTED_TRANSCRIPT_CHARS: 120000,
+    meetingArchive: { available: false }, archiveStatus: "saved", pendingArchiveEvents: [],
     lifecycleRevision: 0,
     runtimeState: { recoveryPrompts: {}, providerDiagnostics: {}, providerTabs: {}, errors: [], savedAt: 1 },
     runController: { assertCurrent() { if (cancelled) throw Object.assign(new Error("cancelled"), { code: "RUN_CANCELLED" }); }, isCurrent: () => !cancelled },
@@ -81,6 +82,7 @@ function submissionHarness({ holdWrite, cancelOnTab = false } = {}) {
     createWorkflowCheckpoint: (stage, job, extra) => ({ stage, ...job, ...extra }),
     sendProviderMessage: async (...args) => { sequence.push("send"); sends.push(args); return { ok: true, runId: "test-run" }; },
     isRunCancelledError: error => error.code === "RUN_CANCELLED",
+    shouldRefreshMetaInput: () => false, sanitizeDebugDetails: () => undefined,
     chrome: {
       tabs: { update: async () => {}, get: async id => ({ id, active: true, status: "complete" }) },
       runtime: { sendMessage: async message => { broadcasts.push(message); } },
@@ -94,8 +96,8 @@ function submissionHarness({ holdWrite, cancelOnTab = false } = {}) {
   vm.runInContext([
     section(source, "async function submitProviderJob(", "async function collectProviderJob("),
     section(source, "async function activateProviderTabForReadiness(", "async function restoreActiveTab("),
-    section(source, "async function publishState(", "async function setProviderDiagnostic(").replace("export function", "function"),
-    section(source, "async function setProviderDiagnostic(", "async function getRuntimeState("),
+    section(source, "async function publishState(", "function setProviderDiagnostic(").replace("export function", "function"),
+    section(source, "function setProviderDiagnostic(", "async function getRuntimeState("),
   ].join("\n"), context);
   return { context, clock, job, writes, sends, broadcasts, sequence, release, cancel: () => { cancelled = true; } };
 }
@@ -111,6 +113,17 @@ test("ready tab submission uses two durable writes before sending and retains ex
   assert.equal(h.writes[1].providerDiagnostics.chatgpt.tabId, 7);
   assert.equal(h.clock.delays[0], 200); // Foreground paint window, previously 750ms.
   assert.equal(h.sends.length, 1);
+});
+
+test("an archive write failure never dispatches the prompt", async () => {
+  const h = submissionHarness();
+  h.context.runtimeState.transcript = { sessionId: "archive-write-failure" };
+  h.context.meetingArchive.available = true;
+  h.context.meetingArchive.save = async () => { throw new Error("storage unavailable"); };
+  const result = await h.context.submitProviderJob(h.job, 1);
+  assert.equal(result.code, "MEETING_ARCHIVE_UNAVAILABLE");
+  assert.equal(h.sends.length, 0);
+  assert.equal(h.context.pendingArchiveEvents[0].event.prompt, h.job.prompt);
 });
 
 for (const holdWrite of [1, 2]) {

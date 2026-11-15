@@ -7,6 +7,7 @@ import vm from 'node:vm';
 import {DebateEngine} from '../src/background/debateEngine.js';
 import {buildConversationSummaryPrompt} from '../src/shared/prompts.js';
 import {buildRoundZero} from '../src/shared/roundZero.js';
+import {isProviderId} from '../src/shared/providers.js';
 
 const worker = await readFile('src/background/service-worker.js', 'utf8');
 
@@ -36,7 +37,7 @@ test('source-summary sends only the new user note, keeping linked quotations in 
     const jobs = [];
     const userNote = roundZero ? linked.question : 'Plain note without linked pages';
     const context = {
-      DebateEngine, runtimeState:{busy:false}, engine:null,
+      DebateEngine, isProviderId, runtimeState:{busy:false}, engine:null,
       requireProFeature:async () => {}, requireSummaryStrategyFeature:async () => {},
       normalizeSummaryStrategy:value => value, normalizeProviderIds:value => value, normalizeDebateRounds:() => 2,
       getActiveProviderTab:async () => ({tab:{id:10}, provider:{id:'chatgpt'}}),
@@ -48,7 +49,8 @@ test('source-summary sends only the new user note, keeping linked quotations in 
     };
     vm.runInNewContext(source+'\nglobalThis.start = startSummaryDebate;', context);
     await context.start(userNote, {runToken:1, activeProviders:['chatgpt','gemini','grok'],
-      preflight:{providerTabs:{chatgpt:10}, results:[]}, roundZero});
+      preflight:{sourceProvider:'chatgpt', sourceTabId:10, sourceUrl:'https://chatgpt.com/c/fixture',
+        providerTabs:{chatgpt:10}, results:[]}, roundZero});
     assert.equal(jobs.length, 1);
     assert.equal(jobs[0].prompt, buildConversationSummaryPrompt(roundZero?.userText ?? userNote));
     assert.ok(!jobs[0].prompt.includes('PRIVATE_LINKED_QUOTATION'));
@@ -71,10 +73,14 @@ test('continuous response collection crosses phase timeouts but stops at the fix
         Date:{now:() => now}, PROVIDER_RESPONSE_HARD_CAP_MS:hardCap,
         getProviderTimeoutMs:stage => stage==='first-round' ? 240000 : 480000,
         runController:{assertCurrent() {}}, chrome:{tabs:{get:async () => ({id:7})}},
-        setProviderDiagnostic:async () => {}, activateProviderTab:async () => {},
-        runtimeState:{providerDiagnostics:{}, recoveryPrompts:{}}, createWorkflowCheckpoint:() => ({}),
+        setProviderDiagnostic:async (provider, patch) => {
+          if (patch.stage === 'activating-tab') assert.deepEqual(
+            { ...context.runtimeState.workflowCheckpoint }, { stage: 'collecting', provider, runId: 'one-submission' });
+        }, activateProviderTab:async () => {},
+        runtimeState:{providerDiagnostics:{}, recoveryPrompts:{}},
+        createWorkflowCheckpoint:(stage, job, extra) => ({ stage, provider: job.provider, runId: extra.runId }),
         providerLabel:value => value, phaseLabel:value => value, updateProviderDiagnostic:state => state,
-        publishState:async () => {}, isRecoverableReply:() => false, forgetRecoveryPrompt:() => ({}),
+        publishState:async () => {}, appendArchiveEvent() {}, isRecoverableReply:() => false, forgetRecoveryPrompt:() => ({}),
         isRunCancelledError:() => false, formatProviderFailure:error => error.message, sanitizeDebugDetails:() => ({}),
         readSubmittedResponseWithRetry:async (job, tabId, deadline) => {
           calls.push({runId:job.runId, deadline});

@@ -26,7 +26,7 @@ await fs.mkdir(extension);
 for (const name of ['src', 'assets', '_locales']) await fs.cp(path.join(root, name), path.join(extension, name), { recursive: true });
 const harness = path.join(extension, 'test-harness');
 await fs.mkdir(harness);
-for (const name of ['fixtures.mjs', 'fixture-worker.mjs', 'opener.html', 'opener.mjs']) {
+for (const name of ['fixtures.mjs', 'archive-fixture.mjs', 'fixture-worker.mjs', 'opener.html', 'opener.mjs']) {
   await fs.copyFile(new URL(name, import.meta.url), path.join(harness, name));
 }
 await prepareProviderProbe(root, harness);
@@ -334,6 +334,46 @@ async function exercise(panel, settings, control, label) {
   await panel.locator('#sessionHealth').scrollIntoViewIfNeeded();
   await panel.evaluate(() => window.scrollBy(0, -document.querySelector('header').getBoundingClientRect().height - 12));
   await panel.screenshot({ path: path.join(out, `${label}-health-en.png`) });
+  if (label === 'standalone-480') {
+    const archiveResult = await control({ type: 'test:archiveRegression' });
+    assert.equal(archiveResult.ok, true, archiveResult.error);
+    assert.equal(archiveResult.details.rounds, 18);
+    assert.ok(archiveResult.details.persistedBytes > 120_000, 'synthetic archive exceeds 120 KB');
+    assert.equal(archiveResult.details.reopened, true);
+    assert.equal(archiveResult.details.switchClearedOldEvents, true);
+    assert.equal(archiveResult.details.clearRemovedStateAndEvents, true);
+    await eventually(async () => assert.equal(await panel.locator('#downloadMeetingButton').isDisabled(), false),
+      'archive fixture enabled meeting export');
+    assert.match(await panel.locator('#chatTranscript').innerText(), /Round 18 reply for grok/);
+    const downloadPromise = panel.waitForEvent('download');
+    await panel.locator('#downloadMeetingButton').click();
+    const download = await downloadPromise;
+    assert.match(download.suggestedFilename(), /^llmeeting-meeting-.*\.json$/);
+    const downloadedPath = path.join(out, download.suggestedFilename());
+    await download.saveAs(downloadedPath);
+    const exported = JSON.parse(await fs.readFile(downloadedPath, 'utf8'));
+    assert.equal(exported.transcript.sessionId, 'isolated-archive-18-rounds');
+    assert.equal(exported.transcript.critiqueRounds.length, 18);
+    assert.ok(Buffer.byteLength(JSON.stringify(exported.transcript)) > 120_000);
+    assert.equal(exported.status, 'done');
+    assert.equal(exported.mode, 'chat');
+    assert.equal(exported.completeness.providerEventsComplete, true);
+    assert.equal(exported.providerEvents.length, 18 * 5 * 2);
+    assert.deepEqual(exported.providerEvents.map(event => event.sequence),
+      Array.from({ length: 180 }, (_, index) => index + 1));
+    for (const provider of ['chatgpt', 'gemini', 'grok', 'claude', 'meta']) {
+      assert.ok(exported.providerEvents.some(event => event.provider === provider && event.stage === 'prepared'
+        && event.prompt.includes(`Round 18 prompt for ${provider}`)));
+      assert.ok(exported.providerEvents.some(event => event.provider === provider && event.stage === 'received'
+        && event.response === exported.transcript.critiqueRounds[17][provider]));
+      assert.ok(exported.transcript.answers[provider].includes(`Final response for ${provider}`));
+    }
+    assert.ok((await fs.readFile(downloadedPath)).includes(Buffer.from('合成提示')),
+      'download JSON is UTF-8 encoded');
+    checks.push({ scenario: 'indexeddb-18-round-reopen-switch-clear-and-sidebar-utf8-download',
+      status: 'pass', persistedBytes: archiveResult.details.persistedBytes,
+      events: exported.providerEvents.length, downloadedFile: download.suggestedFilename() });
+  }
   return checks;
 }
 try {

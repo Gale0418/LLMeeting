@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DebateEngine } from "../src/background/debateEngine.js";
 
-const PROVIDER_CONTENT_VERSION = "0.5.1-driver.13";
+const PROVIDER_CONTENT_VERSION = "0.5.1-driver.14";
 
 function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [], serverOverload = [], pendingReads = [], pauseFirstRead, initialUrl = "chrome://newtab/", initialCurrentState, conversationReplies = {} } = {}) {
   const tabs = new Map();
@@ -212,20 +212,37 @@ test('explicit tabs automatically share round zero before any prompt and keep it
   });
 });
 
-test('failed or oversized linked context stops before new prompts or fresh tabs are created', async () => {
-  for (const [id, reply] of [
-    ['failed', { ok: false, error: 'AI 還在生成' }],
-    ['oversize', { ok: true, content: 'a'.repeat(60000), messageCount: 1 }],
-  ]) await quickly(async () => {
+test('failed linked context stops before new prompts or fresh tabs are created', async () => {
+  await quickly(async () => {
+    const reply = { ok: false, error: 'AI 還在生成' };
     const mock = createChromeMock({ initialUrl: 'https://chatgpt.com/c/old', conversationReplies: { chatgpt: reply } });
-    await loadWorker(mock, `linked-context-${id}`);
+    await loadWorker(mock, 'linked-context-failed');
     const response = await mock.dispatch({ type: 'aiDebate:start', mode: 'chat', question: '補充',
       activeProviders: ['chatgpt', 'gemini'], hookedTabs: { chatgpt: 1 } });
     assert.equal(response.ok, false);
-    assert.match(response.error, id === 'failed' ? /尚未送出新提示/ : /60,000/);
-    if (id === 'failed') assert.ok(response.state.debugEvents.some(event => event.phase === 'round-zero'));
+    assert.match(response.error, /尚未送出新提示/);
+    assert.ok(response.state.debugEvents.some(event => event.phase === 'round-zero'));
     assert.equal(mock.sent.filter(m => m.type === 'aiDebate:submitPrompt').length, 0);
     assert.equal(mock.getTabs().length, 1);
+  });
+});
+
+test('oversized Round 0 archives the source while sending a marked excerpt and the full new question', async () => {
+  await quickly(async () => {
+    const text = '舊'.repeat(75000) + '原文尾端';
+    const content = `AI:\n${text}`;
+    const mock = createChromeMock({ initialUrl: 'https://chatgpt.com/c/old', conversationReplies: {
+      chatgpt: { ok: true, content, messageCount: 1, loadedMessageCount: 1, messages: [{ role: 'AI', text }] },
+    } });
+    await loadWorker(mock, 'linked-context-long');
+    const response = await dispatchAndWait(mock, { type: 'aiDebate:start', mode: 'chat', question: '完整補充🎉',
+      activeProviders: ['chatgpt', 'gemini'], hookedTabs: { chatgpt: 1 } }, '長版第 0 輪');
+    assert.equal(response.state.transcript.roundZero.sources[0].content, content);
+    for (const job of mock.sent.filter(m => m.type === 'aiDebate:submitPrompt')) {
+      assert.match(job.prompt, /已省略/);
+      assert.match(job.prompt, /原文尾端[\s\S]*完整補充🎉/);
+      assert.ok(job.prompt.length < 60000);
+    }
   });
 });
 
@@ -745,6 +762,86 @@ test("summary mode also sends an anonymous final prompt to its separate source p
   });
 });
 
+test("summary mode keeps the source tab selected before preflight despite a later active-tab switch", async () => {
+  await quickly(async () => {
+    const mock = createChromeMock({ initialUrl: "https://chatgpt.com/" });
+    const sourceTab = mock.getTabs()[0];
+    const switchedTab = await mock.chrome.tabs.create({ url: "https://claude.ai/", active: false });
+    const originalSendMessage = mock.chrome.tabs.sendMessage.bind(mock.chrome.tabs);
+    const originalUpdate = mock.chrome.tabs.update.bind(mock.chrome.tabs);
+    let readinessFinished = false;
+    let switched = false;
+    mock.chrome.tabs.sendMessage = async (tabId, message) => {
+      const result = await originalSendMessage(tabId, message);
+      if (message.type === "aiDebate:checkReadiness" && message.provider === "grok") {
+        readinessFinished = true;
+      }
+      return result;
+    };
+    mock.chrome.tabs.update = async (tabId, patch) => {
+      const result = await originalUpdate(tabId, patch);
+      if (readinessFinished && !switched && tabId === sourceTab.id && patch.active) {
+        switched = true;
+        await originalUpdate(switchedTab.id, { active: true });
+      }
+      return result;
+    };
+    await loadWorker(mock, "source-tab-binding");
+
+    const response = await dispatchAndWait(mock, {
+      type: "aiDebate:start", mode: "summary", question: "來源分頁應沿用預檢時的頁面",
+      activeProviders: ["gemini", "grok"], skipSummary: true,
+    }, "來源分頁固定後完成");
+
+    assert.equal(switched, true, "測試期間需在預檢結束時切換目前分頁");
+    assert.equal(response.state.sourceProvider, "chatgpt");
+    const sourceSummary = mock.sent.find((message) =>
+      message.type === "aiDebate:submitPrompt" && message.phase === "source-summary");
+    assert.equal(sourceSummary.provider, "chatgpt");
+    assert.equal(sourceSummary.tabId, sourceTab.id);
+    assert.equal(sourceSummary.expectedSourceUrl, sourceTab.url);
+    assert.deepEqual(response.state.activeProviders, ["gemini", "grok"]);
+  });
+});
+
+test("summary mode never writes a prompt if the source tab changes to another conversation", async () => {
+  await quickly(async () => {
+    const mock = createChromeMock({ initialUrl: "https://chatgpt.com/c/original" });
+    const sourceTabId = mock.getTabs()[0].id;
+    const send = mock.chrome.tabs.sendMessage.bind(mock.chrome.tabs);
+    mock.chrome.tabs.sendMessage = async (tabId, message) => {
+      const result = await send(tabId, message);
+      if (message.type === "aiDebate:checkReadiness" && message.provider === "grok") {
+        await mock.chrome.tabs.update(sourceTabId, { url: "https://chatgpt.com/c/different" });
+      }
+      return result;
+    };
+    await loadWorker(mock, "source-conversation-changed");
+    const result = await dispatchAndWait(mock, { type: "aiDebate:start", mode: "summary",
+      question: "來源對話不應被替換", activeProviders: ["gemini", "grok"], skipSummary: true }, "來源更換暫停");
+    assert.equal(result.state.repairPause.target, "source-summary");
+    assert.ok(result.state.debugEvents.some((event) => event.code === "PROVIDER_CONVERSATION_CHANGED"));
+    assert.ok(!mock.sent.some((message) => message.type === "aiDebate:submitPrompt"));
+  });
+});
+
+test("only an accepted next-round request updates the request correlation in meeting state", async () => {
+  await quickly(async () => {
+    const mock = createChromeMock();
+    await loadWorker(mock, "next-round-request-correlation");
+    await dispatchAndWait(mock, { type: "aiDebate:start", mode: "chat", question: "多側欄同步",
+      activeProviders: ["chatgpt", "gemini"], skipSummary: true }, "第一輪已收齊");
+    const accepted = await mock.dispatch({ type: "aiDebate:nextRound", action: "user_message",
+      text: "第一個側欄送出", requestId: "panel-a" });
+    assert.equal(accepted.requestId, "panel-a");
+    assert.equal(accepted.state.lastNextRoundRequestId, "panel-a");
+    const rejected = await mock.dispatch({ type: "aiDebate:nextRound", action: "invalid", requestId: "panel-b" });
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.state.lastNextRoundRequestId, "panel-a");
+    await waitForState(mock, (state) => !state.busy, "第二輪已收齊");
+  });
+});
+
 test("pending source-summary reads poll one submitted run until completion", async () => {
   await quickly(async () => {
     const mock = createChromeMock({
@@ -811,6 +908,10 @@ test("source summary failure automatically continues without resending source co
 
     const finished = await waitForState(mock, (state) => state.status === "done", "來源摘要修補後辯論完成");
     assert.equal(finished.sourceSummary, "ChatGPT 人工補回的來源摘要");
+    assert.equal(finished.transcript.sessionId, start.state.transcript.sessionId,
+      "辯論應沿用來源摘要修補時的會議 session");
+    assert.ok(finished.transcript.manualRepairs.some((repair) =>
+      repair.provider === "chatgpt" && repair.phase === "source-summary"));
     assert.equal(finished.transcript.roundZero.sources[0].content, "AI:\n修復後仍需共享的第0輪");
     assert.ok(submissions("first-round").every(job => job.prompt.includes("修復後仍需共享的第0輪")));
     assert.equal(sourceRequests().length, 1, "resume must not resend the successful or repaired source-summary job");

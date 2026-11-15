@@ -61,11 +61,16 @@ test("fault controls offer departure and departed faults have no repeat actions"
   const context = {isRecoverableReply: s => /^\[錯誤/.test(s), escapeHTML: s => s, recoveryActionPending: false, recoveryPromptControls, uiText};
   vm.createContext(context);
   vm.runInContext(`${body}\nglobalThis.controls = replyRecoveryControls;`, context);
-  assert.match(context.controls({}, "grok", "critique", "[錯誤：額度用完]"), /data-depart-provider="grok"/);
-  const departed = context.controls({departedProviders: ["grok"]}, "grok", "critique", "[錯誤：額度用完]");
-  assert.match(departed, /已離席/);
-  assert.doesNotMatch(departed, /data-depart|data-repair/);
-  assert.match(context.controls({busy: true}, "grok", "critique", "[錯誤：額度用完]"), /data-depart-phase="critique" disabled/);
+  try {
+    for (const locale of ["zh_TW", "en", "ja"]) {
+      setLocale(locale);
+      assert.match(context.controls({}, "grok", "critique", "[錯誤：額度用完]"), /data-depart-provider="grok"/);
+      const departed = context.controls({departedProviders: ["grok"]}, "grok", "critique", "[錯誤：額度用完]");
+      assert.ok(departed.includes(uiText("已離席；本場不再參與後續討論，先前發言仍保留。")));
+      assert.doesNotMatch(departed, /data-depart|data-repair/);
+      assert.match(context.controls({busy: true}, "grok", "critique", "[錯誤：額度用完]"), /data-depart-phase="critique" disabled/);
+    }
+  } finally { setLocale("en"); }
 });
 const section = source.slice(source.indexOf("let chatActionPending"), source.indexOf("chatSendBtn?.addEventListener"));
 
@@ -289,6 +294,7 @@ function harness(sendMessage) {
   const context = {
     recoveryActionPending: false,
     latestState: { busy: false },
+    crypto: { randomUUID: () => "task-local-request" },
     hasPendingReplyRepairs: () => false,
     chatInput: { value: "保留這段插話" },
     chatControls: { style: {} },
@@ -315,6 +321,42 @@ test("a lost receipt reconciles the running meeting without sending the action t
   assert.equal(result.transportRecovered, true);
   assert.equal(result.state, state);
   assert.deepEqual(sent, ["aiDebate:start", "aiDebate:getState"]);
+});
+
+test("a lost next-round receipt is recovered only by its matching request id", async () => {
+  const state = { busy: true, phase: "critique", lastNextRoundRequestId: "other-panel-request" };
+  const { context } = harness(async (message) => {
+    if (message.type === "aiDebate:getState") return { ok: true, state };
+    throw new Error("The message channel closed before a response was received");
+  });
+  const unrelated = await context.sendControlRequest({ type: "aiDebate:nextRound", requestId: "this-panel-request", action: "critique" });
+  assert.equal(unrelated.ok, false);
+
+  state.lastNextRoundRequestId = "this-panel-request";
+  const matching = await context.sendControlRequest({ type: "aiDebate:nextRound", requestId: "this-panel-request", action: "critique" });
+  assert.equal(matching.ok, true);
+  assert.equal(matching.transportRecovered, true);
+
+  let submitted;
+  const actionHarness = harness(async (message) => {
+    if (message.type === "aiDebate:nextRound") submitted = message;
+    return { ok: true, accepted: true, state: { busy: true } };
+  });
+  await actionHarness.context.send("critique");
+  assert.equal(submitted.requestId, "task-local-request");
+});
+
+test("source-summary repair remains available when its original question is empty", () => {
+  const controlsBody = source.slice(source.indexOf("function replyRecoveryControls"), source.indexOf("function renderReplyRecoveryNotice"));
+  const lookupBody = source.slice(source.indexOf("function manualReplyContent"), source.indexOf("function setManualReplyStatus"));
+  const context = vm.createContext({ recoveryActionPending: false, escapeHTML: text => text,
+    isRecoverableReply: text => typeof text === "string" && text.startsWith("[錯誤："),
+    recoveryPromptControls: () => "", uiText: text => text, isCritiquePhase: () => false });
+  vm.runInContext(`${controlsBody}\n${lookupBody}\nglobalThis.render = replyRecoveryControls; globalThis.lookup = manualReplyContent;`, context);
+  const state = { sourceProvider: "chatgpt", sourceSummary: "[錯誤：來源總結失敗]",
+    transcript: { sessionId: "s1", originalQuestion: "" } };
+  assert.equal(context.lookup(state, "chatgpt", "source-summary"), state.sourceSummary);
+  assert.match(context.render(state, "chatgpt", "source-summary", state.sourceSummary), /data-repair-phase="source-summary"/);
 });
 
 test("accepted receipts refresh state instead of replacing a newer completion with busy state", async () => {

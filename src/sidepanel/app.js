@@ -22,6 +22,7 @@ import { attachPlayScenes } from "./playScenes.js";
 import { extraChallenges } from "./playChallenges.js";
 import { createChallengeDeck } from "./challengeDeck.js";
 import { createUiDialogs } from "./uiDialogs.js";
+import { attachMeetingExport } from "./meetingExport.js";
 import { currentLocale, t } from "../shared/i18n.js";
 import { localizedFeatureLabel } from "../shared/i18n-catalog.js";
 
@@ -99,6 +100,10 @@ const providerStateEls = {
 };
 
 let latestState = null;
+const updateMeetingExportAvailability = attachMeetingExport({
+  button: document.querySelector("#downloadMeetingButton"),
+  onError: (error) => renderMessage(uiText("整場對話下載失敗：") + uiText(error.message)),
+});
 let hookScanPending = false;
 document.querySelector("#downloadDebugButton")?.addEventListener("click", async () => {
   try {
@@ -629,9 +634,11 @@ async function sendControlRequest(message) {
     // A closed receipt channel is ambiguous. Reconcile state, never repeat the action.
     const current = await chrome.runtime.sendMessage({ type: "aiDebate:getState" }).catch(() => null);
     const state = current?.state;
-    const sameMeeting = message.type === "aiDebate:nextRound" ||
-      (state?.mode === message.mode && state?.question === String(message.question || "").trim());
-    if (sameMeeting && (state?.busy || state?.repairPause)) {
+    const sameRequest = message.type === "aiDebate:nextRound"
+      ? Boolean(message.requestId) && state?.lastNextRoundRequestId === message.requestId
+      : state?.mode === message.mode && state?.question === String(message.question || "").trim() &&
+        (state?.busy || state?.repairPause);
+    if (sameRequest) {
       return { ok: true, accepted: true, transportRecovered: true, state };
     }
     return { ok: false, error: state?.message || error.message || "無法取得操作結果", ...(state ? { state } : {}) };
@@ -652,7 +659,8 @@ async function sendChatAction(action, text = "") {
   chatControls.style.display = "none";
   try {
     const response = await sendControlRequest({
-      type: "aiDebate:nextRound", action, ...(action === "user_message" ? { text } : {}),
+      type: "aiDebate:nextRound", requestId: globalThis.crypto.randomUUID(), action,
+      ...(action === "user_message" ? { text } : {}),
     });
     if (response?.ok && action === "user_message" && chatInput.value.trim() === text) {
       chatInput.value = "";
@@ -821,6 +829,7 @@ function renderState(state) {
 
   const wasWaiting = latestState?.phase === "waiting_for_user";
   latestState = state;
+  updateMeetingExportAvailability(state);
   playScenes.render();
   starterQuestions.render();
   currentEntitlements = entitlementsForPlan(state.entitlements?.plan, state.entitlements?.sheepMode ?? state.entitlements?.isPro);
@@ -1383,7 +1392,7 @@ function replaceChatTranscriptHTML(html) {
 
 function replyRecoveryControls(state, provider, phase, content) {
   if (isRecoverableReply(content) && [...(state.departedProviders || []), ...(state.transcript?.departedProviders || [])].includes(provider)) {
-    return '<p class="reply-recovery-note">已離席；本場不再參與後續討論，先前發言仍保留。</p>';
+    return `<p class="reply-recovery-note">${escapeHTML(uiText("已離席；本場不再參與後續討論，先前發言仍保留。"))}</p>`;
   }
   const repaired = state.transcript?.manualRepairs?.findLast((entry) => entry.provider === provider && entry.phase === phase);
   if (repaired) return `<p class="reply-recovery-note">已手動補入 AI 回覆</p>${repaired.originalError

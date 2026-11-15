@@ -18,7 +18,7 @@ import {
   providersInOrder,
 } from "../shared/providers.js";
 import { contextBlockCharLimit, formatSpeakerBlock, normalizeText } from "../shared/text.js";
-import { isRecoverableReply, MAX_MANUAL_REPLY_CHARS } from "../shared/meetingRecovery.js";
+import { isRecoverableReply, MAX_MANUAL_REPLY_CHARS, normalizePastedReply } from "../shared/meetingRecovery.js";
 
 function emptyProviderMap(providerIds = PROVIDER_IDS) {
   return Object.fromEntries(providerIds.map((providerId) => [providerId, ""]));
@@ -205,14 +205,24 @@ export class DebateEngine {
     return engine;
   }
 
-  start(originalQuestion, { roundZero = null } = {}) {
+  start(originalQuestion, { roundZero = null, reuseSession = false } = {}) {
     const question = normalizeText(originalQuestion);
-    this.state = createEngineState(this, {
-      phase: "first-round",
-      originalQuestion: question,
-      ...(roundZero ? { roundZero: structuredClone(roundZero) } : {}),
-      status: "running",
-    });
+    if (reuseSession && this.state.phase !== "idle") {
+      this.state = {
+        ...this.state,
+        phase: "first-round",
+        originalQuestion: question,
+        ...(roundZero ? { roundZero: structuredClone(roundZero) } : {}),
+        status: "running",
+      };
+    } else {
+      this.state = createEngineState(this, {
+        phase: "first-round",
+        originalQuestion: question,
+        ...(roundZero ? { roundZero: structuredClone(roundZero) } : {}),
+        status: "running",
+      });
+    }
 
     // Imposter logic
     if (this.interactionStyle === "imposter") {
@@ -305,8 +315,8 @@ ${rawProviderContent}`
     if (typeof content !== "string" || !content.trim() || content.length > MAX_MANUAL_REPLY_CHARS) {
       throw new Error(`請貼上完整 AI 回覆（1–${MAX_MANUAL_REPLY_CHARS.toLocaleString("en-US")} 字元）。`);
     }
-    const text = normalizeText(content);
-    if (isRecoverableReply(text)) throw new Error("請貼上 AI 的回答，不能貼上 LLMeeting 錯誤訊息。");
+    const text = normalizePastedReply(provider, content);
+    if (!text || isRecoverableReply(text)) throw new Error("請貼上 AI 的回答，不能貼上 LLMeeting 錯誤訊息。");
     if (phase === "first-round") this.recordAnswer(provider, text);
     else if (phase === "reveal") this.recordReveal(provider, text);
     else this.recordCritique(provider, text, round);
@@ -335,8 +345,7 @@ ${rawProviderContent}`
 
   buildCritiqueJobs(roundNumber = 1) {
     const round = parseExistingRound(roundNumber, this.state.critiqueRounds.length);
-    const lastCompleted = this.getLastCompletedRoundData();
-    this.requireComplete(lastCompleted.data, lastCompleted.phase);
+    if (round === 1) this.requireComplete(this.state.answers, "first-round");
     const phase = critiquePhase(round);
     this.state.phase = phase;
     this.state.currentCritiqueRound = round;
@@ -353,7 +362,7 @@ ${rawProviderContent}`
         recipient: provider.id,
         originalQuestion: this.state.originalQuestion,
         answers: this.state.answers,
-        previousCritiques: lastCompleted.data,
+        previousCritiques: this.state.critiqueRounds[round - 2] || {},
         roundNumber: round,
         activeProviders: this.participatingProviders,
         interactionStyle: this.interactionStyle,
@@ -405,7 +414,6 @@ ${rawProviderContent}`
 
   buildUserMessageJobs(text, roundNumber) {
     const round = parseExistingRound(roundNumber, this.state.critiqueRounds.length);
-    const lastCompleted = this.getLastCompletedRoundData();
     const phase = critiquePhase(round);
     this.state.phase = phase;
     this.state.currentCritiqueRound = round;
@@ -422,7 +430,7 @@ ${rawProviderContent}`
         recipient: provider.id,
         originalQuestion: this.state.originalQuestion,
         answers: this.state.answers,
-        previousCritiques: lastCompleted.data,
+        previousCritiques: this.state.critiqueRounds[round - 2] || {},
         roundNumber: round,
         activeProviders: this.participatingProviders,
         interactionStyle: this.interactionStyle,

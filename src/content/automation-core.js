@@ -167,7 +167,7 @@
           /\bserver(?:s)?\b.*\b(?:reached|exceeded|at)\b.*\bcapacity\b/,
           /\bserver(?:s)?\b.*\bcapacity\b.*\b(?:reached|exceeded|full)\b/,
           /service (?:is )?(?:overloaded|temporarily unavailable)/,
-          /too many requests/,
+          /^(?:error:\s*)?(?:too many requests|we(?:'re| are) receiving too many requests|the server is receiving too many requests)(?:[.!]|\s+(?:please\s+)?(?:try|retry) again(?: later)?[.!]?)?$/,
           /\b(?:temporary|temporarily)\s+high demand\b/,
           /\bhigh demand\b.*(?:try|retry|again|later|unavailable|capacity)/,
           /(?:something went wrong|temporary error).*(?:try|retry|again)/,

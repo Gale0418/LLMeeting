@@ -415,6 +415,22 @@ test("failed critique replies are omitted from later-round and final-summary quo
   assert.match(summary, /沒有可供評估的立場/);
 });
 
+test("the next round never substitutes an older complete round for a missing reply", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 3);
+  engine.start("原問題");
+  engine.recordAnswer("chatgpt", "開始 A");
+  engine.recordAnswer("gemini", "開始 B");
+  engine.recordCritique("chatgpt", "第一輪 A", 1);
+  engine.recordCritique("gemini", "第一輪 B 舊稿", 1);
+  engine.recordCritique("chatgpt", "第二輪 A", 2);
+
+  for (const jobs of [engine.buildCritiqueJobs(3), engine.buildUserMessageJobs("繼續", 3)]) {
+    const prompt = jobs.find((job) => job.provider === "chatgpt").prompt;
+    assert.match(prompt, /Gemini:\n\[沒有取得上一輪發言\]/);
+    assert.doesNotMatch(prompt, /舊稿/);
+  }
+});
+
 test("engine supports optional Claude as a participant", () => {
   const engine = new DebateEngine(["chatgpt", "gemini", "grok", "claude"]);
   const jobs = engine.start("比較四個 AI 的觀點");

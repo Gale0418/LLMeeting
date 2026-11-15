@@ -340,6 +340,10 @@
 
       <section class="output glass-surface">
         <div class="section-heading"><div><h2>即時會議紀錄</h2><p>每一輪輸出與人類補充都保留在本機。</p></div><span class="signal-chip">LIVE</span></div>
+        <div class="meeting-export">
+          <button id="downloadMeetingButton" class="secondary-action" type="button" aria-describedby="downloadMeetingHint" disabled>下載整場對話</button>
+          <p id="downloadMeetingHint" class="settings-note">此下載檔包含對話原文與提示內容，請妥善保管。</p>
+        </div>
         <!-- 氣泡對話框 Transcript -->
         <p id="replyRecoveryNotice" class="reply-recovery" role="status" hidden></p>
          <div id="chatTranscript" class="chat-transcript" role="region" aria-label="即時會議紀錄" aria-live="off" tabindex="0">

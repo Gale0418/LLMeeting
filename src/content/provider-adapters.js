@@ -66,6 +66,9 @@
     },
     gemini: {
       hosts: ["gemini.google.com"],
+      // Read the message body subtree when present so composer/history chrome
+      // around <model-response> cannot become part of the captured answer.
+      captureResponseSelector: "[id^='model-response-message-content']",
       preferredInputSelector: "div.ql-editor[contenteditable='true'][role='textbox']",
       composerRootSelectors: ["input-area-v2", "[data-node-type='input-area']", "rich-textarea"],
       sendControlDeferredWhenEmpty: true,
@@ -123,6 +126,8 @@
       preferredInputSelector: "[data-testid='chat-input'] div[contenteditable='true'][role='textbox']",
       composerRootSelectors: ["[data-testid='chat-input']", ".query-bar", "form"],
       generatingStableFallbackMs: 30000,
+      captureResponseSelector: "[data-testid='assistant-message'], [data-testid='message-bubble'][data-message-author='assistant']",
+      completionQuietMs: 3500,
       inputSelectors: [
         "[data-testid='chat-input'] div[contenteditable='true']",
         "div[aria-label='Ask Grok anything']",
@@ -219,6 +224,8 @@
       composerRootSelectors: ["[data-testid='composer-input']", "form"],
       generatingStableFallbackMs: 30000,
       preferredResponseSelector: "[data-testid='assistant-message']",
+      captureResponseSelector: "[data-testid='assistant-message'], [role='article'][aria-label='Meta AI 回覆'], [role='article'][aria-label='Meta AI reply' i], [role='article'][aria-label='Meta AI response' i]",
+      completionQuietMs: 3500,
       inputSelectors: [
         "[data-testid='composer-input'][data-lexical-editor='true']",
         "div[data-lexical-editor='true'][contenteditable='true'][role='textbox']",
@@ -245,6 +252,9 @@
       loginSelectors: commonLoginSelectors,
       responseSelectors: [
         "[data-message-author='assistant']",
+        "[role='article'][aria-label='Meta AI 回覆']",
+        "[role='article'][aria-label='Meta AI reply' i]",
+        "[role='article'][aria-label='Meta AI response' i]",
         "[data-testid*='assistant']",
         "[data-testid*='message'] [dir='auto']",
         "main [role='article']",
@@ -253,6 +263,8 @@
       ],
       userMessageSelectors: [
         "[class*='group/user-message']",
+        "[role='article'][aria-label='你的訊息']",
+        "[role='article'][aria-label='Your message' i]",
       ],
     },
   });

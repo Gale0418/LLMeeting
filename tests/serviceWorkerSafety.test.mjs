@@ -41,7 +41,7 @@ test("provider readiness has a stable service-worker boundary and status mapping
 test("provider messaging repairs stale content scripts through a version handshake", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
-  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.13"/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.14"/);
   assert.match(script, /PROVIDER_DRIVER_CONTRACT_VERSION = 1/);
   assert.match(script, /"src\/content\/provider-driver\.js"/);
   assert.match(script, /type: "aiDebate:getCapabilities"/);
@@ -197,7 +197,7 @@ test("runtime state refreshes entitlements even after a completed debate", async
   const script = await readFile("src/background/service-worker.js", "utf8");
 
   assert.doesNotMatch(script, /if \(runtimeState\.status !== "idle" \|\| runtimeState\.busy\) \{\s+return runtimeState;\s+\}/);
-  assert.match(script, /const entitlements = await getEntitlements\(\);\s*runtimeState = \{\s*\.\.\.runtimeState,\s*entitlements,/);
+  assert.match(script, /const entitlements = await getEntitlements\(\);\s*await ensureRuntimeStateRetention\(\);\s*runtimeState = \{\s*\.\.\.runtimeState,\s*entitlements,/);
 });
 
 test("service worker restores stored state once before handling messages", async () => {
@@ -256,7 +256,7 @@ test("provider debug history is bounded, persisted, and keeps only approved diag
   }
   assert.match(script, /error\.debugDetails = sanitizeDebugDetails\(response\?\.debugDetails\)/);
   assert.match(script, /debugDetails: sanitizeDebugDetails\(error\.debugDetails\)/);
-  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.13"/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.14"/);
 });
 
 test("transient response read RPC failures retry the same run within the provider deadline", async () => {
@@ -413,7 +413,7 @@ test("runtime retention and entitlement fallback are explicit", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
   assert.ok(script.includes("await ensureRuntimeStateRetention();"));
-  assert.ok(script.includes("if (!Number.isFinite(runtimeState.savedAt))"));
+  assert.ok(script.includes("if (!Number.isFinite(state.savedAt)) state.savedAt = Date.now();"));
   assert.equal(script.includes("savedAt: Date.now(),\n  };\n  let stateToPublish"), false);
   assert.ok(script.includes("return entitlementsForPlan(previous?.plan, previous?.sheepMode ?? previous?.isPro)"));
   assert.ok(script.includes("createIdleState(undefined, runtimeState.entitlements)"));
@@ -699,7 +699,7 @@ test("readiness falls back to a fresh provider tab when the requested tab is sta
       async update() {},
       async sendMessage(_tabId, message) {
         if (message.type === "aiDebate:getCapabilities") {
-          return { contentScriptVersion: "0.5.1-driver.13", driverContractVersion: 1 };
+          return { contentScriptVersion: "0.5.1-driver.14", driverContractVersion: 1 };
         }
         return { ready: true, status: "ready", checks: {} };
       },

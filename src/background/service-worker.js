@@ -3,6 +3,7 @@ import { isProviderTabReady, setSidePanelOpenOnActionClick } from "./chromeCompa
 import { createProviderDiagnostics, updateProviderDiagnostic } from "./diagnostics.js";
 import { RunController, isRunCancelledError } from "./runController.js";
 import { createStateStorageQueue, safePersistState } from "./statePersistence.js";
+import { buildMeetingExport, createMeetingArchive } from "./meetingArchive.js";
 import { isSessionExpired, recoverSession } from "./sessionRecovery.js";
 import { focusPendingRepairTab } from "./repairFocus.js";
 import { rememberRecoveryPrompt, forgetRecoveryPrompt, boundRecoveryPrompts } from "../shared/recoveryPrompts.js";
@@ -54,6 +55,9 @@ let initializationPromise;
 let lifecycleRevision = 0;
 let controlOperation = null;
 const enqueueStateStorage = createStateStorageQueue();
+const meetingArchive = createMeetingArchive();
+let pendingArchiveEvents = [];
+let archiveStatus = "saved";
 
 function beginControlOperation(kind) {
   if (controlOperation) {
@@ -93,8 +97,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "aiDebate:getState") {
     ensureRuntimeInitialized()
       .then(() => getRuntimeState())
+      .catch((error) => readLegacyMeetingForDisplay(error))
       .then((state) => sendResponse({ ok: true, state }))
       .catch((error) => sendResponse({ ok: false, error: error.message, state: runtimeState }));
+    return true;
+  }
+
+  if (message.type === "aiDebate:exportMeeting") {
+    if (_sender.url !== chrome.runtime.getURL("src/sidepanel/index.html")) return false;
+    ensureRuntimeInitialized()
+      .then(() => exportCurrentMeeting())
+      .catch(async (error) => {
+        const legacy = await readLegacyMeetingForDisplay(error);
+        return buildMeetingExport(legacy, [], "read-failed", chrome.runtime.getManifest().version);
+      })
+      .then((meeting) => sendResponse({ ok: true, export: meeting }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
 
@@ -267,6 +285,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         assertCurrentControlOperation(operation);
         await notifyProviderAbortOperations({ tabIds: Object.values(runtimeState.providerTabs || {}) });
         assertCurrentControlOperation(operation);
+        if (meetingArchive.available) await clearStoredMeeting();
+        assertCurrentControlOperation(operation);
         await chrome.storage.local.remove(ENTITLEMENT_STORAGE_KEY);
         await chrome.storage.local.remove(SHEEP_MODE_STORAGE_KEY);
         cachedEntitlements = entitlementsForPlan();
@@ -296,10 +316,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         assertCurrentControlOperation(operation);
         await notifyProviderAbortOperations({ clearSubmittedRuns: true });
         assertCurrentControlOperation(operation);
+        await clearStoredMeeting();
+        assertCurrentControlOperation(operation);
         engine = new DebateEngine();
         runtimeState = createIdleState(undefined, runtimeState.entitlements);
-        await enqueueStateStorage(() => chrome.storage.local.remove(STORAGE_KEY));
-        assertCurrentControlOperation(operation);
+        pendingArchiveEvents = [];
         chrome.runtime.sendMessage({
           type: "aiDebate:stateChanged",
           state: runtimeState,
@@ -488,6 +509,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "aiDebate:nextRound") {
+    const requestId = typeof message.requestId === "string" ? message.requestId.slice(0, 80) : null;
     let responseSent = false;
     const replyNextRound = (response) => {
       if (responseSent) return;
@@ -505,8 +527,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
         runToken = runController.start();
         runRevision = lifecycleRevision;
+        runtimeState = { ...runtimeState, lastNextRoundRequestId: requestId };
         const execution = handleNextRound(message.action, message.text, runToken);
-        replyNextRound({ ok: true, accepted: true, state: runtimeState });
+        replyNextRound({ ok: true, accepted: true, requestId, state: runtimeState });
         return execution;
       })
       .then((state) => replyNextRound({ ok: state.status !== "error", state }))
@@ -704,6 +727,7 @@ async function checkReadinessForProvider(providerId, requestedTabId) {
 async function preflightStartRequest(message = {}, runToken) {
   const providerIds = requiredProviderIdsForMessage(message, true);
   const hookedTabs = { ...(message.hookedTabs || {}) };
+  let sourceBinding = null;
 
   if (message.mode === "summary") {
     const { tab: sourceTab, provider } = await getActiveProviderTab();
@@ -715,14 +739,16 @@ async function preflightStartRequest(message = {}, runToken) {
     }
     providerIds.unshift(sourceProvider);
     hookedTabs[sourceProvider] = sourceTab.id;
+    sourceBinding = { sourceProvider, sourceTabId: sourceTab.id, sourceUrl: sourceTab.url || sourceTab.pendingUrl };
   }
 
-  return preflightProviderTabs(
+  const preflight = await preflightProviderTabs(
     [...new Set(providerIds)],
     hookedTabs,
     runToken,
     { forceNewTabs: true },
   );
+  return sourceBinding ? { ...preflight, ...sourceBinding } : preflight;
 }
 
 async function validateStartRequestBeforePreflight(message = {}) {
@@ -1284,9 +1310,11 @@ async function startSummaryDebate(userNote, options = {}) {
     throw new Error("目前已有辯論正在進行");
   }
 
-  const { tab: sourceTab, provider: sourceProviderInfo } = await getActiveProviderTab();
-  runController.assertCurrent(runToken);
-  const sourceProvider = sourceProviderInfo.id;
+  const sourceProvider = options.preflight?.sourceProvider;
+  const sourceTabId = options.preflight?.sourceTabId;
+  if (!isProviderId(sourceProvider) || !Number.isInteger(sourceTabId)) {
+    throw new Error("來源對話分頁已變更，請重新啟動總結辯論。");
+  }
   const requestedProviders = normalizeProviderIds(options.activeProviders);
   const debateProviders = requestedProviders.filter((providerId) => providerId !== sourceProvider);
   const entitlements = await getEntitlements();
@@ -1295,12 +1323,8 @@ async function startSummaryDebate(userNote, options = {}) {
   if (debateProviders.length < 2) {
     throw new Error(`總結辯論至少需要目前頁面以外的 2 家 AI。現在目前頁面是 ${providerLabel(sourceProvider)}，請再勾選兩家其他 AI。`);
   }
-  const preflight = options.preflight || await preflightProviderTabs(
-    [sourceProvider, ...debateProviders],
-    { ...(options.hookedTabs || {}), [sourceProvider]: sourceTab.id },
-    runToken,
-  );
-  const providerTabs = { ...(options.hookedTabs || {}), ...preflight.providerTabs };
+  const preflight = options.preflight;
+  const providerTabs = { ...(options.hookedTabs || {}), ...preflight.providerTabs, [sourceProvider]: sourceTabId };
 
   engine = new DebateEngine(debateProviders, sourceProvider, debateRounds, {
     interactionStyle: options.interactionStyle,
@@ -1334,6 +1358,7 @@ async function startSummaryDebate(userNote, options = {}) {
   const sourceResult = await sendJob({
     provider: sourceProvider,
     phase: "source-summary",
+    sourceTab: { id: sourceTabId, url: preflight.sourceUrl },
     prompt: buildConversationSummaryPrompt(options.roundZero?.userText ?? userNote),
   }, runToken);
   if (!sourceResult.ok) {
@@ -1368,7 +1393,10 @@ async function runDebateRounds(originalQuestion, options = {}) {
   const sharedQuestion = runtimeState.mode === "summary" && roundZero
     ? `${buildRoundZero(roundZero.sources.map((source) => ({ ...source, ok: true })), roundZero.userText).question}\n\n【來源對話總結】\n${originalQuestion}`
     : originalQuestion;
-  const firstRoundJobs = engine.start(sharedQuestion, { roundZero });
+  const firstRoundJobs = engine.start(sharedQuestion, {
+    roundZero,
+    reuseSession: runtimeState.mode === "summary",
+  });
   runtimeState = {
     ...runtimeState,
     phase: "first-round",
@@ -1742,15 +1770,21 @@ function recordProviderResult(result, target, runToken) {
 
 async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
   let tab;
+  const runId = createRunId(job);
+  const attempt = { provider: job.provider, phase: job.phase, round: job.round ?? 0, attemptId: runId };
   try {
     runController.assertCurrent(runToken);
+    appendArchiveEvent({ ...attempt, stage: "prepared", prompt: job.prompt,
+      ...(Number.isInteger(job.round) ? { sourceRound: job.round - 1 } : {}) });
     runtimeState = { ...runtimeState, recoveryPrompts: rememberRecoveryPrompt(runtimeState.recoveryPrompts, job) };
     await setProviderDiagnostic(job.provider, {
       stage: "opening-tab",
       phase: job.phase,
       error: "",
     }, runToken);
-    tab = await getOrCreateProviderTab(job.provider, { forceNewTab: Boolean(job.forceNewTab) });
+    tab = job.sourceTab
+      ? await chrome.tabs.get(job.sourceTab.id)
+      : await getOrCreateProviderTab(job.provider, { forceNewTab: Boolean(job.forceNewTab) });
     runController.assertCurrent(runToken);
     // This transient diagnostic is included in the next durable submission
     // checkpoint. Avoid another full transcript write just to foreground a tab.
@@ -1761,7 +1795,6 @@ async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
     await activateProviderTabForReadiness(tab);
     runController.assertCurrent(runToken);
 
-    const runId = createRunId(job);
     runtimeState = {
       ...runtimeState,
       message: `${providerLabel(job.provider)}：${phaseLabel(job.phase, job.round)}送出中`,
@@ -1777,17 +1810,22 @@ async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
       tabId: tab.id,
       url: tab.url || tab.pendingUrl || "",
     });
-    await publishState(runToken);
+    appendArchiveEvent({ ...attempt, stage: "dispatching" });
+    const saved = await publishState(runToken);
+    if (meetingArchive.available && !saved) {
+      throw Object.assign(new Error("無法保存會議進度，這則提示尚未送出。"), { code: "MEETING_ARCHIVE_UNAVAILABLE" });
+    }
 
-    const response = await sendProviderMessage(tab.id, job, "aiDebate:submitPrompt", { runId });
+    const response = await sendProviderMessage(tab.id, job, "aiDebate:submitPrompt", {
+      runId,
+      ...(job.sourceTab ? { expectedSourceUrl: job.sourceTab.url } : {}),
+    });
     runController.assertCurrent(runToken);
     if (!response?.ok) {
       throw providerResponseError(response, "provider submit failed");
     }
 
-    await delay(500);
-    runController.assertCurrent(runToken);
-
+    appendArchiveEvent({ ...attempt, stage: "submitted", driverRunId: response.runId || runId });
     await setProviderDiagnostic(job.provider, {
       stage: "submitted",
       phase: job.phase,
@@ -1802,6 +1840,8 @@ async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
       }),
     };
     await publishState(runToken);
+    await delay(500);
+    runController.assertCurrent(runToken);
     return {
       ok: true,
       provider: job.provider,
@@ -1809,12 +1849,15 @@ async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
       round: job.round,
       prompt: job.prompt,
       tabId: tab.id,
+      attemptId: runId,
       runId: response.runId || runId,
     };
   } catch (error) {
     if (isRunCancelledError(error)) {
       throw error;
     }
+    runController.assertCurrent(runToken);
+    appendArchiveEvent({ ...attempt, stage: "submit-error", code: error.code, error: error.message });
     if (shouldRefreshMetaInput(error, job, tab, metaInputRetryCount)) {
       try {
         await refreshMetaInputProvider(tab.id, job, runToken);
@@ -1854,9 +1897,19 @@ async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
 }
 
 async function collectProviderJob(submitted, runToken, overloadRetryCount = 0) {
+  const attempt = { provider: submitted.provider, phase: submitted.phase,
+    round: submitted.round ?? 0, attemptId: submitted.attemptId || submitted.runId };
   try {
     runController.assertCurrent(runToken);
     const tab = await chrome.tabs.get(submitted.tabId);
+    runController.assertCurrent(runToken);
+    runtimeState = {
+      ...runtimeState,
+      workflowCheckpoint: createWorkflowCheckpoint("collecting", submitted, {
+        tabId: submitted.tabId,
+        runId: submitted.runId,
+      }),
+    };
     await setProviderDiagnostic(submitted.provider, {
       stage: "activating-tab",
       phase: submitted.phase,
@@ -1870,10 +1923,6 @@ async function collectProviderJob(submitted, runToken, overloadRetryCount = 0) {
     runtimeState = {
       ...runtimeState,
       message: `${providerLabel(submitted.provider)}：等待${phaseLabel(submitted.phase, submitted.round)}`,
-      workflowCheckpoint: createWorkflowCheckpoint("collecting", submitted, {
-        tabId: submitted.tabId,
-        runId: submitted.runId,
-      }),
     };
     runtimeState.providerDiagnostics = updateProviderDiagnostic(runtimeState.providerDiagnostics, submitted.provider, {
       stage: "waiting-response",
@@ -1902,16 +1951,16 @@ async function collectProviderJob(submitted, runToken, overloadRetryCount = 0) {
       throw providerResponseError(response, "provider returned empty response");
     }
 
-    await setProviderDiagnostic(submitted.provider, {
+    appendArchiveEvent({ ...attempt, stage: "received", response: response.content });
+    setProviderDiagnostic(submitted.provider, {
       stage: "received",
       phase: submitted.phase,
       tabId: submitted.tabId,
       url: tab.url || tab.pendingUrl || "",
-    }, runToken);
-    runtimeState = { ...runtimeState, workflowCheckpoint: null,
+    }, runToken, { publish: false });
+    runtimeState = { ...runtimeState,
       recoveryPrompts: isRecoverableReply(response.content) ? runtimeState.recoveryPrompts
         : forgetRecoveryPrompt(runtimeState.recoveryPrompts, submitted.provider, submitted.phase) };
-    await publishState(runToken);
     return {
       ok: true,
       provider: submitted.provider,
@@ -1923,6 +1972,9 @@ async function collectProviderJob(submitted, runToken, overloadRetryCount = 0) {
     if (isRunCancelledError(error)) {
       throw error;
     }
+    runController.assertCurrent(runToken);
+    appendArchiveEvent({ ...attempt, stage: "collect-error", code: error.code, error: error.message,
+      response: error.providerContent || undefined });
     if (error.code === "PROVIDER_OVERLOADED" && overloadRetryCount < OVERLOAD_REFRESH_RETRIES) {
       try {
         await refreshOverloadedProvider(
@@ -2137,7 +2189,7 @@ async function refreshMetaInputProvider(tabId, job, runToken) {
   runController.assertCurrent(runToken);
 }
 
-const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.1-driver.13";
+const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.1-driver.14";
 const PROVIDER_DRIVER_CONTRACT_VERSION = 1;
 
 function isProviderLoginTab(tab, provider) {
@@ -2276,6 +2328,12 @@ async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", ex
   try {
     tab = await chrome.tabs.get(tabId);
     await ensureProviderContentScript(tabId, options);
+    if (type === "aiDebate:submitPrompt" && job.sourceTab) {
+      tab = await chrome.tabs.get(tabId);
+      if (tab.id !== job.sourceTab.id || !job.sourceTab.url || tab.url !== job.sourceTab.url || tab.status !== "complete") {
+        throw Object.assign(new Error("來源對話分頁已變更，請重新啟動總結辯論。"), { code: "PROVIDER_CONVERSATION_CHANGED" });
+      }
+    }
     if (type === "aiDebate:checkReadiness") {
       const remaining = (options.deadline ?? Infinity) - Date.now();
       if (remaining <= 0) {
@@ -2384,29 +2442,43 @@ async function finishWithError(result, runToken) {
   return runtimeState;
 }
 
-async function publishState(runToken, operation) {
+async function publishState(runToken, operation, { nextState, archiveEvent } = {}) {
   if (runToken !== undefined) {
     runController.assertCurrent(runToken);
   }
   if (operation) assertCurrentControlOperation(operation);
 
-  if (!Number.isFinite(runtimeState.savedAt)) {
-    runtimeState = {
-      ...runtimeState,
-      savedAt: Date.now(),
-    };
-  }
-  const stateToPublish = JSON.parse(JSON.stringify(runtimeState));
-  const persistedState = createBoundedPersistedState(stateToPublish);
+  const state = nextState || runtimeState;
+  if (!Number.isFinite(state.savedAt)) state.savedAt = Date.now();
+  const stateToPublish = JSON.parse(JSON.stringify(state));
+  const sessionId = stateToPublish.transcript?.sessionId;
+  const canAdoptCandidate = () => !nextState || (sessionId === runtimeState.transcript?.sessionId
+    && !isSessionExpired(runtimeState));
   const persistenceRevision = lifecycleRevision;
+  const isCurrent = () => persistenceRevision === lifecycleRevision
+    && (runToken === undefined || runController.isCurrent(runToken))
+    && (!operation || isCurrentControlOperation(operation))
+    && canAdoptCandidate();
+  let saved = false;
   try {
-    await enqueueStateStorage(() => safePersistState(chrome.storage, persistedState, STORAGE_KEY, {
-      isCurrent: () => persistenceRevision === lifecycleRevision
-        && (runToken === undefined || runController.isCurrent(runToken))
-        && (!operation || isCurrentControlOperation(operation)),
-    }));
+    saved = await enqueueStateStorage(async () => {
+      if (!isCurrent()) return false;
+      if (!meetingArchive.available) {
+        archiveStatus = "unavailable";
+        const persistedState = createBoundedPersistedState(stateToPublish);
+        return safePersistState(chrome.storage, persistedState, STORAGE_KEY, { isCurrent });
+      }
+      const batch = pendingArchiveEvents.filter((entry) => entry.sessionId === sessionId);
+      const events = batch.map((entry) => entry.event);
+      if (archiveEvent) events.push({ ...archiveEvent, timestamp: Date.now() });
+      await meetingArchive.save(stateToPublish, events);
+      archiveStatus = "saved";
+      const committed = new Set(batch);
+      pendingArchiveEvents = pendingArchiveEvents.filter((entry) => entry.sessionId === sessionId && !committed.has(entry));
+      return true;
+    });
   } catch (_error) {
-    // Quota or storage availability must not make the active in-memory run fail.
+    archiveStatus = "write-failed";
   }
 
   if (persistenceRevision !== lifecycleRevision) return;
@@ -2415,7 +2487,68 @@ async function publishState(runToken, operation) {
     runController.assertCurrent(runToken);
   }
   if (operation) assertCurrentControlOperation(operation);
+  if (nextState) {
+    if (!canAdoptCandidate()) {
+      await ensureRuntimeStateRetention();
+      throw createRunCancelledError();
+    }
+    if (!saved) return false;
+    runtimeState = nextState;
+  }
   chrome.runtime.sendMessage({ type: "aiDebate:stateChanged", state: stateToPublish }).catch(() => {});
+  return saved;
+}
+
+function appendArchiveEvent(event) {
+  const sessionId = runtimeState.transcript?.sessionId;
+  if (sessionId) pendingArchiveEvents.push({ sessionId, event: { ...event, timestamp: Date.now() } });
+}
+
+function clearStoredMeeting() {
+  return enqueueStateStorage(async () => {
+    await chrome.storage.local.remove(STORAGE_KEY);
+    if (meetingArchive.available) await meetingArchive.clear();
+  });
+}
+
+async function readLegacyMeetingForDisplay(error) {
+  if (error.code !== "MEETING_ARCHIVE_READ_FAILED" || controlOperation) throw error;
+  const legacy = (await chrome.storage.local.get(STORAGE_KEY))?.[STORAGE_KEY];
+  if (!legacy?.transcript || isSessionExpired(legacy) || controlOperation) throw error;
+  return {
+    ...legacy,
+    archiveLegacy: true,
+    busy: false,
+    status: "error",
+    phase: "done",
+    message: "無法讀取完整會議，僅顯示舊版保留的紀錄。",
+  };
+}
+
+async function exportCurrentMeeting() {
+  await ensureRuntimeStateRetention();
+  const meeting = await enqueueStateStorage(async () => {
+    if (controlOperation || !runtimeState.transcript) throw new Error("目前沒有可下載的會議。");
+    const state = structuredClone(runtimeState);
+    const revision = lifecycleRevision;
+    const sessionId = state.transcript.sessionId;
+    const pending = pendingArchiveEvents.filter((entry) => entry.sessionId === sessionId).map((entry) => entry.event);
+    let providerEvents = [];
+    let exportStatus = archiveStatus;
+    if (meetingArchive.available) {
+      try { providerEvents = await meetingArchive.readEvents(sessionId); }
+      catch (_error) { exportStatus = "read-failed"; }
+    }
+    if (revision !== lifecycleRevision || sessionId !== runtimeState.transcript?.sessionId) {
+      throw new Error("會議已變更，請重新下載。");
+    }
+    if (isSessionExpired(state)) return null;
+    if (pending.length && exportStatus === "saved") exportStatus = "pending";
+    return buildMeetingExport(state, [...providerEvents, ...pending], exportStatus, chrome.runtime.getManifest().version);
+  });
+  if (meeting) return meeting;
+  await ensureRuntimeStateRetention();
+  throw new Error("目前沒有可下載的會議。");
 }
 
 export function createBoundedPersistedState(state) {
@@ -2550,7 +2683,7 @@ function boundText(value, limit) {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }
 
-async function setProviderDiagnostic(providerId, patch, runToken) {
+function setProviderDiagnostic(providerId, patch, runToken, { publish = true } = {}) {
   if (runToken !== undefined) {
     runController.assertCurrent(runToken);
   }
@@ -2573,12 +2706,12 @@ async function setProviderDiagnostic(providerId, patch, runToken) {
       }].slice(-MAX_DEBUG_EVENTS),
     };
   }
-  await publishState(runToken);
+  if (publish) return publishState(runToken);
 }
 
 async function getRuntimeState() {
-  await ensureRuntimeStateRetention();
   const entitlements = await getEntitlements();
+  await ensureRuntimeStateRetention();
   runtimeState = {
     ...runtimeState,
     entitlements,
@@ -2607,16 +2740,26 @@ function resumeCompletedRepairIfReady() {
 async function ensureRuntimeInitialized() {
   if (!initializationPromise) {
     initializationPromise = (async () => {
-      const stored = await chrome.storage.local.get(STORAGE_KEY);
-      const recovered = recoverSession(stored?.[STORAGE_KEY], createIdleState);
+      let archived;
+      if (meetingArchive.available) {
+        try { archived = await meetingArchive.load(); }
+        catch (cause) {
+          throw Object.assign(new Error("無法讀取本機會議紀錄。", { cause }), { code: "MEETING_ARCHIVE_READ_FAILED" });
+        }
+      }
+      const legacy = archived ? null : (await chrome.storage.local.get(STORAGE_KEY))?.[STORAGE_KEY];
+      const recovered = recoverSession(archived || legacy, createIdleState);
       runtimeState = recovered.state;
+      if (legacy?.transcript && runtimeState.transcript) runtimeState.archiveLegacy = true;
       runtimeState.departedProviders = Array.isArray(runtimeState.departedProviders)
         ? runtimeState.departedProviders
         : (Array.isArray(runtimeState.transcript?.departedProviders) ? runtimeState.transcript.departedProviders : []);
       cachedEntitlements = runtimeState.entitlements || cachedEntitlements;
       engine = recovered.engine || new DebateEngine();
-      if (recovered.shouldPersist || !Number.isFinite(runtimeState.savedAt)) {
-        await publishState();
+      if (recovered.shouldPersist || (legacy && meetingArchive.available) || !Number.isFinite(runtimeState.savedAt)) {
+        if (await publishState() && legacy && meetingArchive.available) {
+          await chrome.storage.local.remove(STORAGE_KEY);
+        }
       }
       if (recovered.engine) resumeCompletedRepairIfReady();
     })().catch((error) => {
@@ -2651,6 +2794,10 @@ async function ensureRuntimeStateRetention() {
     return;
   }
 
+  if (runtimeState.busy && !controlOperation) {
+    ++lifecycleRevision;
+    runController.cancel();
+  }
   const recovered = recoverSession(runtimeState, createIdleState);
   runtimeState = recovered.state;
   cachedEntitlements = runtimeState.entitlements || cachedEntitlements;
@@ -2723,7 +2870,8 @@ async function captureLinkedReplies(message, token) {
           throw Object.assign(new Error(response?.error || "沒有可擷取的 AI 發言。"), { code: response?.code });
         }
         replies.push({ ok: true, provider, content: response.content,
-          ...(message.readConversation ? { empty: emptyConversation, messageCount: response.messageCount } : {}) });
+          ...(message.readConversation ? { empty: emptyConversation, messageCount: response.messageCount,
+            loadedMessageCount: response.loadedMessageCount, messages: response.messages, omission: response.omission } : {}) });
       } catch (error) {
         if (isRunCancelledError(error)) throw error;
         if (message.readConversation) {
@@ -2771,8 +2919,7 @@ async function repairMeetingReply(message, token) {
     repaired = repairedEngine.repairProviderReply({ ...message, sessionId: repairedEngine.state.sessionId });
   }
   runController.assertCurrent(token);
-  engine = repairedEngine;
-  runtimeState = {
+  const repairedState = {
     ...runtimeState,
     transcript: repaired,
     manuallyRecovered: true,
@@ -2789,19 +2936,27 @@ async function repairMeetingReply(message, token) {
     errors: runtimeState.errors.map((error) => error.provider === message.provider && error.phase === message.phase
       ? { ...error, resolvedManually: true } : error),
   };
-  if (runtimeState.repairPause) {
-    const pending = pendingReplyRepairs(runtimeState).length;
-    runtimeState.message = pending
+  if (repairedState.repairPause) {
+    const pending = pendingReplyRepairs(repairedState).length;
+    repairedState.message = pending
       ? `回覆已補入，還有 ${pending} 段故障回覆待補齊；會議保持暫停。`
       : "故障回覆已補齊，正在自動接續原流程…";
   }
-  if (runtimeState.providerDiagnostics?.[message.provider]?.phase === message.phase) {
-    runtimeState.providerDiagnostics = updateProviderDiagnostic(runtimeState.providerDiagnostics, message.provider, {
+  if (repairedState.providerDiagnostics?.[message.provider]?.phase === message.phase) {
+    repairedState.providerDiagnostics = updateProviderDiagnostic(repairedState.providerDiagnostics, message.provider, {
       stage: "manual-recovered", error: "", phase: message.phase,
     });
   }
-  runtimeState = { ...runtimeState, recoveryPrompts: forgetRecoveryPrompt(runtimeState.recoveryPrompts, message.provider, message.phase) };
-  await publishState(token);
+  repairedState.recoveryPrompts = forgetRecoveryPrompt(repairedState.recoveryPrompts, message.provider, message.phase);
+  const archiveEvent = { provider: message.provider, phase: message.phase,
+    round: message.phase.startsWith("critique") ? critiqueRoundFromPhase(message.phase) : 0,
+    stage: "manual-repair", response: message.content };
+  const saved = await publishState(token, undefined, { nextState: repairedState, archiveEvent });
+  runController.assertCurrent(token);
+  if (!saved) {
+    throw Object.assign(new Error("無法保存補入的回覆，請再試一次。"), { code: "MEETING_ARCHIVE_UNAVAILABLE" });
+  }
+  engine = repairedEngine;
   return { ok: true, state: runtimeState };
 }
 

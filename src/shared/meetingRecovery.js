@@ -1,4 +1,5 @@
 import { isProviderId, providerLabel } from "./providers.js";
+import { normalizeText } from "./text.js";
 
 export const MAX_MANUAL_REPLY_CHARS = 12000;
 export const MAX_CONTINUATION_CHARS = 60000;
@@ -8,6 +9,12 @@ export function isRecoverableReply(content) {
     /^\[(?:錯誤[：:]|服務狀態[：:])/.test(content)
     || /^無法載入(?:這則|此則)?回覆[。.!]?$/.test(content.trim())
   );
+}
+
+export function normalizePastedReply(provider, content) {
+  const text = normalizeText(content);
+  if (provider === "gemini") return text.replace(/^Gemini 說了(?:[ \t]*\n+|(?=（|$))/, "").trim();
+  return text;
 }
 
 export function pendingReplyRepairs(state) {

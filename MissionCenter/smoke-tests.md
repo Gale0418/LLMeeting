@@ -1,5 +1,18 @@
 # Smoke Tests
 
+## 2026-11-15 長會議複查與 GitHub main（LLM-T82／Review）
+
+- 執行 `node --test --test-reporter=tap tests/*.test.mjs`，預期全數通過，實測 576/576。回歸涵蓋交錯分頁導覽、暫停會議過期與補回提交競爭、虛擬化對話重複提示、來源摘要手動續跑及第 0 輪超長來源。
+- 執行 `npm --prefix tests/browser test`。獨立頁 101 項、原生側欄 51 項皆通過，頁面錯誤 0。測試資料沿用正式逐字稿形狀，渲染至第 18 輪並核對 180 筆提示及回覆事件。報告 `output/browser-acceptance/2026-11-15T13-56-16-323Z/report.json`。
+- 隔離執行 `npm run package`，候選 ZIP 59 項 CRC 通過，2,829,034 bytes，SHA256 `74130e324e7064e3945514feea4e35104df497eeb2e9047cd968ee05623b54c9`。封裝內容逐項和工作區對照相符。
+- CodeRabbit 3 輪分別審 131／17／5 檔，共核對 23 項，修正 16 項，7 項經核對不適用。首輪涵蓋相關舊程式與歷史文件，排除大型素材、生成檔及本機作業資料。後續只審針對已查證問題的差異。第三輪找到虛擬化時的舊回覆誤收，修正後已跑本機回歸，三次額度已用完。`evidence/051-driver14-main-review.json` 保存摘要。五家登入帳號的長會議送出待驗。
+
+## 2026-11-15 長會議可靠性（LLM-T82／Review）
+
+- `node --test --test-reporter=tap tests/*.test.mjs` 執行 558 項，556 項通過。兩項失敗來自使用者既有 `store/listing.md` 草稿缺少文案測試要求的詞句，已對照 HEAD。Grok 停止訊號消失 2.5 秒後接續生成、前一輪缺席不引用舊稿、存檔失敗不送出、重啟保留插話、75,000 字元第 0 輪來源均通過。
+- `npm --prefix tests/browser test` 的獨立頁共 101 項，原生側欄共 51 項，頁面錯誤 0。隔離 Chromium 設定檔用正式背景服務重開後，18 輪逐字稿 803,099 bytes 與 180 筆提示／回覆事件逐筆相等。下載 JSON 與清除後再重開均通過。隔離測試程序已關閉。雙層報告 `output/browser-acceptance/2026-11-15T10-34-30-814Z/report.json`。
+- 語法核對 51 檔、`git diff --check` 與隔離封裝通過。ZIP 59 項 CRC 通過，2,820,956 bytes，SHA256 `42e309466ea49b03d502eb041e3cd072d07a07fcdfba7e896b38593abfdf89c4`。Antigravity 與 Luna 提供唯讀審查，已補資料庫讀取失敗的安全備援與重置寫入失敗的處理。登入態五家送出仍待驗收。
+
 ## 2026-10-17 真人操作確認（使用者回報）
 
 - 使用者直接確認先前人工測試沒有問題，並指出先前截圖為真實執行中故障紀錄；結合先前完整場次與手補續跑回報，T51／T53以使用者實測結案。沒有重新執行自動測試或CodeRabbit，沒有宣稱逐案矩陣／讀屏／效能／商店已驗證，亦不推論最新三修已另行重載實測。見evidence/051-user-manual-acceptance.json。

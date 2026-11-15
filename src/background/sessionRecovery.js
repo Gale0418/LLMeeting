@@ -43,9 +43,10 @@ function recoverInterruptedDebate(normalized, checkpoint) {
   const jobsEngine = DebateEngine.restore(normalized.transcript);
   let phaseJobs;
   try {
+    const userMessage = normalized.transcript.critiqueRounds?.[round - 1]?.USER;
     phaseJobs = firstRound
-      ? jobsEngine.start(originalQuestion)
-      : jobsEngine.buildCritiqueJobs(round);
+      ? jobsEngine.start(originalQuestion, { roundZero: normalized.transcript.roundZero })
+      : userMessage ? jobsEngine.buildUserMessageJobs(userMessage, round) : jobsEngine.buildCritiqueJobs(round);
   } catch (_error) {
     return null;
   }

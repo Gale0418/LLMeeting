@@ -7,7 +7,8 @@ import { buildContinuationDraft, isRecoverableReply, MAX_MANUAL_REPLY_CHARS, pen
 import { PROVIDERS, isProviderId, normalizeProviderIds, providerLabel } from "../src/shared/providers.js";
 import { shouldShowChatControls } from "../src/sidepanel/modeRules.js";
 import { boundRecoveryPrompts, forgetRecoveryPrompt } from "../src/shared/recoveryPrompts.js";
-import { recoverSession } from "../src/background/sessionRecovery.js";
+import { isSessionExpired, recoverSession, SESSION_RETENTION_MS } from "../src/background/sessionRecovery.js";
+import { createStateStorageQueue } from "../src/background/statePersistence.js";
 
 test("departure resolves every fault slot for only that provider without deleting history", () => {
   const state = {departedProviders: ["grok"], transcript: {answers: {grok: "[錯誤：額度用完]", meta: "[錯誤：寫入失敗]"},
@@ -143,7 +144,12 @@ function runtimeHarness(overrides = {}) {
     getCurrentActiveTab: async () => ({ id: 99 }),
     restoreActiveTab: async () => {}, activateProviderTabForReadiness: async () => {},
     ensureProviderContentScript: async () => {}, providerRpc: (promise) => promise,
-    publishState: async () => {}, READINESS_TIMEOUT_MS: 15000,
+    engine: null,
+    publishState: async (_token, _operation, options) => {
+      if (options?.nextState) context.runtimeState = options.nextState;
+      return true;
+    },
+    critiqueRoundFromPhase: (phase) => Number(phase.split("-")[1] || 1), READINESS_TIMEOUT_MS: 15000,
     isProviderTabReady: () => true, isProviderLoginTab: () => false,
     isRunCancelledError: (error) => error.code === "RUN_CANCELLED",
     chrome: { tabs: { get: async (id) => ({ id, url: "https://chatgpt.com/", status: "complete" }),
@@ -185,6 +191,89 @@ test("manual repair updates runtime, invalidates the old summary, and opens cont
   assert.equal(shouldShowChatControls("fast", context.runtimeState), true);
   const stale = { ...before, sessionId: "wrong" };
   await assert.rejects(context.repairMeetingReply({ sessionId: stale.sessionId }, 1), /會議已變更/);
+});
+
+test("an unsaved manual repair restores the fault and never acknowledges the draft", async () => {
+  const previousEngine = failedMeeting();
+  const context = runtimeHarness({ engine: previousEngine,
+    publishState: async (_token, _operation, { nextState, archiveEvent }) => {
+      assert.notEqual(nextState, context.runtimeState);
+      assert.equal(archiveEvent.response, "保留使用者貼上的原文");
+      assert.match(context.runtimeState.transcript.critiqueRounds[6].chatgpt, /錯誤/);
+      return false;
+    },
+  });
+  const previousState = context.runtimeState;
+  const transcript = previousState.transcript;
+  await assert.rejects(context.repairMeetingReply({ sessionId: transcript.sessionId,
+    provider: "chatgpt", phase: "critique-7", expectedContent: transcript.critiqueRounds[6].chatgpt,
+    content: "保留使用者貼上的原文" }, 1), { code: "MEETING_ARCHIVE_UNAVAILABLE" });
+  assert.equal(context.runtimeState, previousState);
+  assert.equal(context.engine, previousEngine);
+});
+
+test("a paused meeting expiring during the repair commit is not restored or acknowledged", async () => {
+  const writeStarted = Promise.withResolvers();
+  const finishWrite = Promise.withResolvers();
+  const previousEngine = failedMeeting();
+  let now = Date.now();
+  let storedState;
+  const broadcasts = [];
+  const context = runtimeHarness({
+    engine: previousEngine,
+    lifecycleRevision: 1, controlOperation: null, pendingArchiveEvents: [], cachedEntitlements: {},
+    runController: { assertCurrent() {}, isCurrent: () => true },
+    enqueueStateStorage: createStateStorageQueue(),
+    createIdleState: () => ({ transcript: null, status: "idle", savedAt: now }),
+    isSessionExpired: (state) => isSessionExpired(state, now),
+    recoverSession: (state, createIdle) => recoverSession(state, createIdle, now),
+    createRunCancelledError: () => Object.assign(new Error("cancelled"), { code: "RUN_CANCELLED" }),
+    chrome: { runtime: { sendMessage: async ({ state }) => { broadcasts.push(state); } } },
+    meetingArchive: { available: true, save: async (state) => {
+      if (state.transcript) {
+        writeStarted.resolve();
+        await finishWrite.promise;
+      }
+      storedState = state;
+    } },
+  });
+  vm.runInContext(source.slice(source.indexOf("async function publishState"), source.indexOf("function appendArchiveEvent")), context);
+  vm.runInContext(source.slice(source.indexOf("async function ensureRuntimeStateRetention"), source.indexOf("async function requireProFeature")), context);
+  Object.assign(context.runtimeState, { savedAt: now, status: "waiting_for_user" });
+  const transcript = context.runtimeState.transcript;
+  const pendingRepair = context.repairMeetingReply({ sessionId: transcript.sessionId,
+    provider: "chatgpt", phase: "critique-7", expectedContent: transcript.critiqueRounds[6].chatgpt,
+    content: "過期前貼上的草稿" }, 1);
+  await writeStarted.promise;
+  now += SESSION_RETENTION_MS + 1;
+  const retention = context.ensureRuntimeStateRetention();
+  finishWrite.resolve();
+  await assert.rejects(pendingRepair, { code: "RUN_CANCELLED" });
+  await retention;
+  assert.equal(context.runtimeState.transcript, null);
+  assert.notEqual(context.engine, previousEngine);
+  assert.equal(storedState.transcript, null);
+  assert.ok(broadcasts.length >= 1);
+  assert.ok(broadcasts.every((state) => state.transcript === null));
+});
+
+test("export discards a meeting that expires on the archive read boundary", async () => {
+  const begin = source.indexOf("async function exportCurrentMeeting");
+  const end = source.indexOf("export function createBoundedPersistedState", begin);
+  let checks = 0;
+  let expired = false;
+  const context = vm.createContext({ structuredClone,
+    runtimeState: { transcript: { sessionId: "expiring" }, savedAt: 1 },
+    controlOperation: null, lifecycleRevision: 1, pendingArchiveEvents: [], archiveStatus: "saved",
+    ensureRuntimeStateRetention: async () => { checks++; },
+    isSessionExpired: () => expired,
+    enqueueStateStorage: (work) => work(),
+    meetingArchive: { available: true, readEvents: async () => { expired = true; return ["private test text"]; } },
+    buildMeetingExport: () => assert.fail("expired meeting reached the export payload builder"),
+  });
+  vm.runInContext(source.slice(begin, end), context);
+  await assert.rejects(context.exportCurrentMeeting(), /沒有可下載的會議/);
+  assert.equal(checks, 2);
 });
 
 function persistedSnapshot(state) {

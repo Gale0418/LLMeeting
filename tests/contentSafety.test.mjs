@@ -70,8 +70,9 @@ test("content script does not accept the submitted prompt bubble as an AI respon
   const script = await readFile("src/content/provider-page.js", "utf8");
 
   assert.match(script, /!isPromptEcho\(prompt, currentText\)/);
-  assert.match(script, /baseline,\s+errorBaseline,\s+prompt: message\.prompt/);
-  assert.match(script, /waitForCompletion\(config, providerId, message\.timeoutMs \|\| 120000, run\.baseline, run\.prompt, run\.errorBaseline, \(\) => assertAutomationEpoch\(runEpoch\), run\.userTurnCount,\s*\{ pollBudgetMs: message\.pollBudgetMs, state: run\.responseState \}\)/);
+  assert.match(script, /baseline,\s+baselinePromptCount,\s+submittedPromptIdentity: .*\n\s+conversationIdentity: readConversationIdentity\(providerId\),\s+errorBaseline,\s+prompt: message\.prompt/);
+  assert.match(script, /baselinePromptCount: run\.baselinePromptCount, submittedPromptIdentity: run\.submittedPromptIdentity,\s+conversationIdentity: run\.conversationIdentity/);
+  assert.match(script, /waitForCompletion\(config, providerId, message\.timeoutMs \|\| 120000, run\.baseline, run\.prompt, run\.errorBaseline, \(\) => assertAutomationEpoch\(runEpoch\), run\.userTurnCount,\s*responseOptions\)/);
 });
 
 test("content script uses inactivity timeout with a bounded completion hard cap", async () => {

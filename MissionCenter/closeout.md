@@ -1,3 +1,11 @@
+# GitHub main 交付檢查點｜2026-11-15
+
+LLM-T82 已完成長會議回覆擷取、保存、下載與第 0 輪修正。Node 回歸 576/576，隔離 Chrome 獨立頁 101 項／原生側欄 51 項全數通過，封裝 ZIP 59 項 CRC 通過。CodeRabbit 3 輪分別審 131／17／5 檔，共核對 23 項，修正 16 項，7 項經核對不適用。
+
+任務維持 Review，待以登入態五家跑完長會議並核對各家送達。測試證據見 [長會議複查](smoke-tests.md) 和 [審查摘要](evidence/051-driver14-main-review.json)。
+
+---
+
 # 上傳檢查點｜2026-10-04
 
 LLMeeting 0.5.0 已透過 macOS Chrome UI 上傳到既有 Chrome 商店項目，重新開啟套件頁確認草稿為 0.5.0、已發布版本仍為 0.4.7。候選 ZIP 指紋與前次驗證一致；人工回執位於 `evidence/webstore-upload-20261004.json`。

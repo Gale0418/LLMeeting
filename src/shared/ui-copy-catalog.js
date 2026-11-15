@@ -3726,10 +3726,10 @@ export const UI_COPY = [
   },
   {
     "id": "roundZero.5",
-    "source": "第 0 輪內容超過 60,000 字元，請減少連線分頁或精簡原對話後再開始。",
-    "zh_TW": "第 0 輪內容超過 60,000 字元囉！請精簡原對話或減少連線分頁後再出發～",
-    "en": "Round 0 is over 60,000 characters! Please trim the chat or disconnect tabs before starting.",
-    "ja": "ラウンド 0 が60,000文字を超えています！会話を整理するかタブを減らしてから再開してね。"
+    "source": "最新單則訊息超過 250,000 字元安全上限，無法完整讀取。",
+    "zh_TW": "最新單則訊息超過 250,000 字元，無法完整讀取。",
+    "en": "The latest message exceeds 250,000 characters and can't be captured in full.",
+    "ja": "最新のメッセージが250,000文字を超えているため、全文を読み取れません。"
   },
   {
     "id": "roundZero.6",
@@ -3751,5 +3751,34 @@ export const UI_COPY = [
     "zh_TW": "第 0 輪對話已打包完成！準備分享給 AI 夥伴們開聊囉 ✨",
     "en": "Round 0 chat is all gathered! Ready to share with the AI crew ✨",
     "ja": "ラウンド 0 の会話をまとめました！AIのみんなにシェアする準備完了だよ ✨"
-  }
+  },
+  {
+    "id": "meetingExport.button",
+    "source": "下載整場對話",
+    "zh_TW": "下載整場對話",
+    "en": "Download full meeting",
+    "ja": "会話全体をダウンロード"
+  },
+  {
+    "id": "meetingExport.privacy",
+    "source": "此下載檔包含對話原文與提示內容，請妥善保管。",
+    "zh_TW": "此下載檔包含對話原文與提示內容，請妥善保管。",
+    "en": "This file includes the original conversation and prompts. Store it safely.",
+    "ja": "このファイルには会話の原文とプロンプトが含まれます。安全に保管してください。"
+  },
+  {
+    "id": "meetingExport.failed",
+    "source": "整場對話下載失敗：",
+    "zh_TW": "整場對話下載失敗：",
+    "en": "Couldn't download the full meeting: ",
+    "ja": "会話全体をダウンロードできませんでした："
+  },
+  { "id": "meetingExport.empty", "source": "目前沒有可下載的會議。", "zh_TW": "目前沒有可下載的會議。", "en": "There is no meeting to download.", "ja": "ダウンロードできる会議がありません。" },
+  { "id": "meetingExport.changed", "source": "會議已變更，請重新下載。", "zh_TW": "會議已變更，請重新下載。", "en": "The meeting has changed. Try downloading again.", "ja": "会議が変わりました。もう一度ダウンロードしてください。" },
+  { "id": "meetingExport.invalid", "source": "匯出資料格式不完整", "zh_TW": "匯出資料格式不完整", "en": "The export data is incomplete.", "ja": "エクスポートデータが不完全です。" },
+  { "id": "meetingArchive.readFailed", "source": "無法讀取本機會議紀錄。", "zh_TW": "無法讀取本機會議紀錄。", "en": "Couldn't read the local meeting record.", "ja": "ローカルの会議記録を読み取れませんでした。" },
+  { "id": "meetingArchive.legacyReadOnly", "source": "無法讀取完整會議，僅顯示舊版保留的紀錄。", "zh_TW": "無法讀取完整會議，目前顯示舊版保留的紀錄。", "en": "Couldn't read the full meeting. The previous version's saved record is shown.", "ja": "会議全体を読み取れなかったため、旧バージョンの保存記録を表示しています。" },
+  { "id": "meetingArchive.repairWriteFailed", "source": "無法保存補入的回覆，請再試一次。", "zh_TW": "無法保存補入的回覆，請再試一次。", "en": "Couldn't save the pasted reply. Please try again.", "ja": "貼り付けた回答を保存できませんでした。もう一度お試しください。" },
+  { "id": "sourceSummary.conversationChanged", "source": "來源對話分頁已變更，請重新啟動總結辯論。", "zh_TW": "來源對話分頁已變更，請重新啟動總結辯論。", "en": "The source conversation changed. Start the summary debate again.", "ja": "元の会話が変わりました。要約ディベートをやり直してください。" },
+  { "id": "meetingArchive.writeFailed", "source": "無法保存會議進度，這則提示尚未送出。", "zh_TW": "無法保存會議進度，這則提示尚未送出。", "en": "The meeting couldn't be saved. This prompt is still unsent.", "ja": "会議の進行状況を保存できませんでした。このプロンプトは未送信です。" }
 ];

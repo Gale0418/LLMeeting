@@ -1,9 +1,13 @@
 # 每日紀錄
 
-- 最後整理： 2026-10-17
+- 最後整理： 2026-11-15
 - Activity log:
   - [2026-08-27T15:41:56] 收窄全部 provider 停止 selector，並補上 Claude sendControlDeferredWhenEmpty；修正側欄歷史文字誤判生成中與空白 composer disabled 送出鈕。 | reason: Chrome 唯讀 DOM 顯示 Claude 可編輯輸入框存在，chat-input-send 空白時 disabled；aria-label*='停止' 另命中異星工廠歷史選單按鈕。 | impact: Claude readiness 不再回報仍在回答或無法送出；189/189 測試、語法、diff 與 0.5.0 封裝通過。
   - [2026-09-23] 全面程式審查修正最後輪總結、Provider readiness SPA 競態、錯誤 selector 退路、長聊恢復與儲存覆寫，以及 side panel 可讀性／停止語義。 | reason: 使用者要求跨域嚴格抓蟲，三席盲審、CodeRabbit 與獨立仲裁均提供具體證據。 | impact: 244/244 測試、語法、diff 與封裝通過；仲裁無剩餘 P0/P1；最終 CodeRabbit 重掃因 WebSocket 斷線、Chrome side panel 實機仍待驗。
+
+## 2026-11-15
+
+- [2026-11-15T22:05:34.604+08:00] 完成 Driver .14 長會議 GitHub main 交付前驗收。 | reason: 使用者回報長會議漏句、第 0 輪超限及逐字稿下載缺口。 | impact: Node 回歸 576/576，隔離 Chrome 獨立頁 101 項／原生側欄 51 項皆通過，CodeRabbit 3 輪分別審 131／17／5 檔，共核對 23 項，修正 16 項，7 項經核對不適用。LLM-T82 保持 Review，待登入態五家送達矩陣。
 
 ## 2026-10-04
 

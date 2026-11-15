@@ -40,7 +40,9 @@ test("store listing prep documents privacy, permissions, and screenshots", async
   assert.match(listing, /全員匿名 sends it to every participant independently/);
   assert.match(listing, /🐑 mode easter egg/);
   assert.match(listing, /清除紀錄/);
-  assert.match(privacy, /Last updated: 2026-10-15/);
+  assert.match(privacy, /Last updated: \d{4}-\d{2}-\d{2}/);
+  assert.match(privacy, /local IndexedDB/);
+  assert.match(privacy, /full-meeting download saves a JSON copy/);
   assert.match(privacy, /provider selection and UI language preference/);
   assert.match(privacy, /preferences persist independently of the debate content expiry/);
   assert.match(screenshots, /Chrome Web Store/);

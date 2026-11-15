@@ -1,6 +1,6 @@
 # LLMeeting Privacy Policy
 
-Last updated: 2026-10-15
+Last updated: 2026-11-15
 
 LLMeeting is a local Chrome extension for coordinating a private multi-AI debate across AI web apps that you are already signed in to.
 
@@ -16,11 +16,11 @@ When you use LLMeeting on supported AI pages, the extension can read and write c
 
 This access is used to submit your prompt, collect AI replies, paste cross-critiques, and produce a final summary prompt.
 
-If you explicitly select existing conversation tabs, starting a meeting first reads the loaded, identifiable user and AI messages from those selected, participating providers. It combines that quoted context with your new input as Round 0 and shares it with the AI providers participating in the meeting. It does not load hidden history by scrolling, read unselected conversation tabs, or silently skip a selected tab that fails to load. Round 0 is part of the locally stored meeting transcript and has the same 24-hour retention limit. Diagnostic downloads omit conversation bodies.
+If you explicitly select existing conversation tabs, starting a meeting reads the loaded, identifiable user and AI messages from those selected, participating providers. Round 0 shares a bounded excerpt with the participating AI providers, together with your new input. The transcript retains the captured source and labels omitted material. The extension reads only the loaded history in selected tabs. A failed read stops the launch before new prompts are submitted.
 
 ## Data storage
 
-LLMeeting stores the latest debate state in Chrome local storage so the side panel can show progress, diagnostics, and transcript state. Stored debate content expires after 24 hours. LLMeeting also saves your provider selection and UI language preference locally; if the plan-badge easter egg is used, it remembers the selected local 🐑 mode. These preferences persist independently of the debate content expiry. Users can select `清除紀錄` in the side panel to remove the saved debate state and pending provider-page run records immediately; this does not clear those preferences.
+LLMeeting stores the latest meeting in the extension’s local IndexedDB, including captured replies, prompts prepared for each provider, submission status, and manual repairs. Starting a new meeting replaces the previous record. Meeting content expires after 24 hours and is removed when the extension next checks it. The side panel's full-meeting download saves a JSON copy that can contain private chat text. Diagnostic downloads omit conversation bodies. You can select `清除紀錄` to remove the saved meeting and pending provider-page run records. The provider selection and UI language preference, along with the local 🐑 mode preference, are stored separately. These preferences persist independently of the debate content expiry.
 
 LLMeeting 不會將資料送到 LLMeeting 開發者伺服器。LLMeeting also does not sell, share, or broker your chat content.
 

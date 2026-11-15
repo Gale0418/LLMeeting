@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = "0.5.1-driver.13";
+  const CONTENT_SCRIPT_VERSION = "0.5.1-driver.14";
   const {
     assistantSnapshot,
     classifyProviderResponseError,
@@ -37,12 +37,15 @@
   const CURRENT_CONVERSATION_POLL_MS = 100;
   const CURRENT_CONVERSATION_STABLE_MS = 500;
   const CURRENT_CONVERSATION_MAX_WAIT_MS = 5000;
+  const CURRENT_CONVERSATION_MAX_CAPTURE_CHARS = 250000;
   const INPUT_CANDIDATE_SELECTOR = "textarea, input:not([type]), input[type='text'], div[contenteditable='true'], [role='textbox']";
   const INPUT_SCORE_THRESHOLD = 75;
   const INPUT_AMBIGUITY_MARGIN = 12;
   const SEND_SCORE_THRESHOLD = 70;
   const SEND_AMBIGUITY_MARGIN = 12;
   const SHADOW_ROOT_CACHE_MS = 2000;
+  const contentExecutionId = (Number(globalThis.__aiDebateAutomationExecutionId) || 0) + 1;
+  globalThis.__aiDebateAutomationExecutionId = contentExecutionId;
   let automationEpoch = 0;
   const submittedRuns = loadSubmittedRuns();
   const PROVIDERS = globalThis.aiDebateProviderAdapters || {};
@@ -215,6 +218,20 @@
     return [location?.hostname, location?.pathname, location?.search, location?.hash].map((part) => String(part || "")).join("|");
   }
 
+  function readConversationIdentity(providerId) {
+    const pathname = String(location?.pathname || "/").replace(/\/+$/, "") || "/";
+    const routePatterns = {
+      chatgpt: /\/(?:c|share)\/([^/]+)/i,
+      gemini: /\/(?:u\/\d+\/)?app\/([^/]+)/i,
+      grok: /\/(?:c|chat|i\/grok)\/([^/]+)/i,
+      claude: /\/chat\/([^/]+)/i,
+      meta: /\/(?:prompt|chat|conversation|thread)\/([^/]+)/i,
+    };
+    const query = String(location?.search || "").match(/[?&](?:conversation|thread|chat)[_-]?(?:id|uuid)=([^&]+)/i);
+    const route = pathname.match(routePatterns[providerId]);
+    return query?.[1] || route?.[1] || null;
+  }
+
   function isDocumentReady() {
     return !document.readyState || document.readyState === "interactive" || document.readyState === "complete";
   }
@@ -253,16 +270,41 @@
   }
 
   function createCurrentConversationResult(providerId, messages) {
-    const content = messages.map(({ role, text }) => `${role}:\n${text}`).join("\n\n");
-    if (content.length > 60000) {
-      throw createConversationReadError("PROVIDER_CONVERSATION_TOO_LONG", "目前對話超過 60,000 字元，請縮短對話後再開始會議。");
+    const selected = [];
+    let usedChars = 0;
+    let omittedMessages = 0;
+    let omittedChars = 0;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      const formattedLength = `${message.role}:\n`.length + message.text.length;
+      const separatorLength = selected.length ? 2 : 0;
+      if (usedChars + separatorLength + formattedLength <= CURRENT_CONVERSATION_MAX_CAPTURE_CHARS) {
+        selected.unshift(message);
+        usedChars += separatorLength + formattedLength;
+        continue;
+      }
+      if (!selected.length && index === messages.length - 1) {
+        throw createConversationReadError(
+          "PROVIDER_CONVERSATION_MESSAGE_TOO_LONG",
+          "最新單則訊息超過 250,000 字元安全上限，無法完整讀取。",
+        );
+      }
+      for (; index >= 0; index -= 1) {
+        omittedMessages += 1;
+        omittedChars += messages[index].text.length;
+      }
+      break;
     }
+    const content = selected.map(({ role, text }) => `${role}:\n${text}`).join("\n\n");
     return {
       ok: true,
       provider: providerId,
       content,
-      empty: messages.length === 0,
+      messages: selected.map(({ role, text }) => ({ role, text })),
+      empty: selected.length === 0,
       messageCount: messages.length,
+      loadedMessageCount: selected.length,
+      ...(omittedMessages ? { omission: { omittedMessages, omittedChars, reason: "capture-limit" } } : {}),
     };
   }
 
@@ -288,7 +330,7 @@
   }
 
   function assertAutomationEpoch(expectedEpoch) {
-    if (expectedEpoch !== automationEpoch) {
+    if (expectedEpoch !== automationEpoch || contentExecutionId !== globalThis.__aiDebateAutomationExecutionId) {
       throw makeAutomationAbortError();
     }
   }
@@ -525,28 +567,38 @@
         assertAutomationEpoch(epoch);
         assertProviderLocation(providerId, config);
       };
+      const assertSourceConversation = () => {
+        assertCurrentPage();
+        if (message.expectedSourceUrl && location.href !== message.expectedSourceUrl) {
+          const error = new Error("來源對話分頁已變更，請重新啟動總結辯論。");
+          error.code = "PROVIDER_CONVERSATION_CHANGED";
+          throw error;
+        }
+      };
 
       const baseline = readAssistantSnapshot(config, providerId);
+      const baselinePromptCount = countUserMessages(config, message.prompt);
       stage = "尋找輸入框";
-      const input = await waitFor(() => findInput(config), 30000, `找不到 ${message.provider} 的輸入框，請確認已登入並開啟聊天頁面。`, assertCurrentPage);
+      const input = await waitFor(() => findInput(config), 30000, `找不到 ${message.provider} 的輸入框，請確認已登入並開啟聊天頁面。`, assertSourceConversation);
       const blockingStatus = readBlockingServiceStatus(config, providerId);
       if (blockingStatus) throw createProviderResponseError(blockingStatus.classification, blockingStatus.content);
       stage = "填入提示";
-      await writeInput(input, message.prompt, config.inputWriteStrategy, assertCurrentPage);
+      await writeInput(input, message.prompt, config.inputWriteStrategy, assertSourceConversation);
 
       stage = "送出提示";
       const sendButton = providerId === "gemini"
-        ? await waitForGeminiSubmissionReady(config, input, message.prompt, SUBMISSION_READY_TIMEOUT_MS, assertCurrentPage)
-        : await waitForOptional(() => findSendButton(config, input), 3000, assertCurrentPage);
-      assertCurrentPage();
+        ? await waitForGeminiSubmissionReady(config, input, message.prompt, SUBMISSION_READY_TIMEOUT_MS, assertSourceConversation)
+        : await waitForOptional(() => findSendButton(config, input), 3000, assertSourceConversation);
+      assertSourceConversation();
       const errorBaseline = readProviderErrorFingerprintBaseline(config, providerId);
+      const previousUserTurns = new Set(readUserMessageElements(config).map(readUserTurnIdentity).filter(Boolean));
       const userMessageCount = countUserMessages(config, message.prompt);
       const userTurnCount = countUserMessages(config);
       const promptWasPresent = isPromptStillPresent(input, message.prompt);
       const initiallyGenerating = isGenerating(config);
       const submission = await ensurePromptSubmitted({
         clickButton: () => {
-          assertCurrentPage();
+          assertSourceConversation();
           const actionInput = findInput(config);
           if (!actionInput || actionInput.isConnected === false || !isPromptStillPresent(actionInput, message.prompt)) {
             throw createInputWriteError();
@@ -561,12 +613,13 @@
           return true;
         },
         pressEnter: () => {
-          assertCurrentPage();
+          assertSourceConversation();
           const actionInput = findInput(config);
           if (!actionInput || actionInput.isConnected === false || !isPromptStillPresent(actionInput, message.prompt)) {
             throw createInputWriteError();
           }
           actionInput.focus();
+          assertSourceConversation();
           dispatchEnter(actionInput);
         },
         promptStillPresent: () => isPromptStillPresent(input, message.prompt),
@@ -586,11 +639,15 @@
 
       const runId = message.runId || createRunId(providerId, message.phase);
       assertAutomationEpoch(epoch);
+      const latestPromptTurn = readUserTurnIdentity(findLatestPromptTurn(config, providerId, message.prompt));
       submittedRuns.set(runId, {
         providerId,
         epoch,
         phase: message.phase,
         baseline,
+        baselinePromptCount,
+        submittedPromptIdentity: latestPromptTurn && !previousUserTurns.has(latestPromptTurn) ? latestPromptTurn : "",
+        conversationIdentity: readConversationIdentity(providerId),
         errorBaseline,
         prompt: message.prompt,
         submittedAt: Date.now(),
@@ -619,9 +676,22 @@
 
       stage = "等待新回覆";
       const runEpoch = Number.isInteger(run.epoch) ? run.epoch : automationEpoch;
+      const currentConversationIdentity = readConversationIdentity(providerId);
+      if (run.conversationIdentity && run.conversationIdentity !== currentConversationIdentity) {
+        const error = new Error("provider 分頁已切換到其他對話，已停止擷取回覆。");
+        error.code = "PROVIDER_CONVERSATION_CHANGED";
+        throw error;
+      }
       run.responseState ||= {};
+      const responseOptions = { pollBudgetMs: message.pollBudgetMs, state: run.responseState,
+        baselinePromptCount: run.baselinePromptCount, submittedPromptIdentity: run.submittedPromptIdentity,
+        conversationIdentity: run.conversationIdentity };
       const responseCandidate = await waitForCompletion(config, providerId, message.timeoutMs || 120000, run.baseline, run.prompt, run.errorBaseline, () => assertAutomationEpoch(runEpoch), run.userTurnCount,
-        { pollBudgetMs: message.pollBudgetMs, state: run.responseState });
+        responseOptions);
+      if (!run.conversationIdentity && responseOptions.conversationIdentity) {
+        run.conversationIdentity = responseOptions.conversationIdentity;
+        persistSubmittedRuns();
+      }
       assertAutomationEpoch(runEpoch);
       if (responseCandidate === null && message.pollBudgetMs) {
         persistSubmittedRuns();
@@ -1281,12 +1351,15 @@
     const startedAt = Number.isFinite(state.startedAt) ? state.startedAt : Date.now();
     state.startedAt = startedAt;
     let completionWindow = state.completionWindow || createCompletionWindow(timeoutMs, startedAt);
-    let lastVisibleText = state.lastVisibleText ?? readAssistantSnapshot(config, providerId).lastText;
+    const submittedPromptIdentity = options.submittedPromptIdentity;
+    let lastVisibleText = state.lastVisibleText ?? readAssistantSnapshot(config, providerId, prompt, submittedPromptIdentity).lastText;
+    let generationObserved = Boolean(state.generationObserved);
+    let lastGeneratingAt = Number(state.lastGeneratingAt) || 0;
     let candidateBuffer = state.candidateBuffer || createResponseCandidateBuffer();
     const pollBudgetMs = Number(options.pollBudgetMs);
     const pollDeadline = Number.isFinite(pollBudgetMs) && pollBudgetMs > 0
       ? Date.now() + Math.min(pollBudgetMs, 15000) : Infinity;
-    const saveProgress = () => Object.assign(state, { completionWindow, lastVisibleText, candidateBuffer });
+    const saveProgress = () => Object.assign(state, { completionWindow, lastVisibleText, candidateBuffer, generationObserved, lastGeneratingAt });
 
     while (true) {
       abortCheck();
@@ -1296,6 +1369,18 @@
         error.code = "PROVIDER_CONVERSATION_CHANGED";
         error.debugDetails = { expectedUserTurns: userTurnCount + 1, actualUserTurns };
         throw error;
+      }
+      const promptTurns = countUserMessages(config, prompt);
+      const currentConversationIdentity = readConversationIdentity(providerId);
+      if (options.conversationIdentity && options.conversationIdentity !== currentConversationIdentity) {
+        const error = new Error("provider 分頁已切換到其他對話，已停止擷取回覆。");
+        error.code = "PROVIDER_CONVERSATION_CHANGED";
+        throw error;
+      }
+      // A brand-new chat can receive its route ID after the user turn is rendered.
+      if (!options.conversationIdentity && currentConversationIdentity &&
+          promptTurns > (options.baselinePromptCount ?? 0)) {
+        options.conversationIdentity = currentConversationIdentity;
       }
       assertProviderLocation(providerId, config);
       const now = Date.now();
@@ -1312,13 +1397,19 @@
         throw createProviderResponseError(pageError.classification, pageError.content);
       }
 
-      const current = readAssistantSnapshot(config, providerId);
+      const usesAnchoredScope = Boolean(config.userMessageSelectors?.length && Number.isInteger(options.baselinePromptCount));
+      const current = !usesAnchoredScope || submittedPromptIdentity || promptTurns > options.baselinePromptCount
+        ? readAssistantSnapshot(config, providerId, prompt, submittedPromptIdentity)
+        : assistantSnapshot([]);
       const currentText = current.lastText;
+      const candidateBaseline = usesAnchoredScope ? assistantSnapshot([]) : baseline;
       const hasFreshCandidate = Boolean(currentText) &&
-        hasFreshAssistantResponse(baseline, current) &&
+        (usesAnchoredScope || hasFreshAssistantResponse(candidateBaseline, current)) &&
         !isPromptEcho(prompt, currentText);
       if (hasFreshCandidate) {
-        candidateBuffer = updateResponseCandidateBuffer(candidateBuffer, baseline, current, prompt, Date.now());
+        candidateBuffer = updateResponseCandidateBuffer(candidateBuffer, candidateBaseline, current, prompt, Date.now());
+      } else if (currentText) {
+        candidateBuffer = createResponseCandidateBuffer();
       }
       if (currentText && currentText !== lastVisibleText) {
         lastVisibleText = currentText;
@@ -1327,11 +1418,16 @@
 
       const timeStable = Date.now() - (candidateBuffer.stableSince || startedAt);
       const generating = isGenerating(config);
+      if (generating) {
+        generationObserved = true;
+        lastGeneratingAt = Date.now();
+      }
       const stableFallbackMs = config.generatingStableFallbackMs || 30000;
+      const quietSince = generationObserved ? Date.now() - lastGeneratingAt : timeStable;
       if (
         candidateBuffer.text &&
         (
-          !generating ||
+          (!generating && quietSince > (config.completionQuietMs ?? 1500)) ||
           (!config.requireGenerationEnd && timeStable > stableFallbackMs)
         ) &&
         timeStable > 2000
@@ -1375,8 +1471,7 @@
     if (
       !candidate ||
       isPromptEcho(prompt, candidate) ||
-      !hasFreshAssistantResponse(baseline, current) ||
-      (buffer.text && candidate.length < buffer.text.length)
+      !hasFreshAssistantResponse(baseline, current)
     ) {
       return buffer;
     }
@@ -1489,37 +1584,52 @@
   }
 
   function readUserMessageTexts(config) {
-    const elements = collectElements(config.userMessageSelectors).filter(isVisible);
-    return elements
-      .filter((element) => !elements.some((other) => other !== element && other.contains?.(element)))
-      .map((element) => element.innerText || element.textContent || "")
-      .map((text) => String(text).trim())
+    return readUserMessageElements(config)
+      .map((element) => String(element.innerText || element.textContent || "").trim())
       .filter(Boolean);
   }
 
-  function readAssistantSnapshot(config, providerId) {
-    const preferredElements = config.preferredResponseSelector
-      ? collectElements([config.preferredResponseSelector]).filter(isVisible)
+  function readUserMessageElements(config) {
+    const elements = collectElements(config.userMessageSelectors).filter(isVisible);
+    return collapseNestedConversationElements(elements);
+  }
+
+  function readUserTurnIdentity(element) {
+    // Avoid positional selectors and generic DOM IDs that virtualized rows can reuse.
+    return element?.getAttribute?.("data-message-id") || element?.getAttribute?.("data-conversation-message-id") ||
+      element?.getAttribute?.("data-chatgpt-selection-message-id") || element?.getAttribute?.("data-chatgpt-search-unit-key") ||
+      element?.getAttribute?.("data-turn-id") || "";
+  }
+
+  function findLatestPromptTurn(config, providerId, prompt, elements = readUserMessageElements(config)) {
+    const latest = elements.sort(compareDocumentOrder).at(-1);
+    return latest && userMessageContainsPrompt(readConversationElementText(latest, providerId), prompt) ? latest : null;
+  }
+
+  function readAssistantSnapshot(config, providerId, prompt = "", submittedPromptIdentity = "") {
+    const captureSelector = config.captureResponseSelector || config.preferredResponseSelector;
+    const preferredElements = captureSelector
+      ? collectElements([captureSelector]).filter(isVisible)
       : [];
     let elements = preferredElements.length > 0
       ? preferredElements
       : collectElements(config.responseSelectors);
 
     const userElements = collectElements(config.userMessageSelectors).filter(isVisible);
-    elements = elements.filter((element) => !userElements.some((userElement) =>
-      userElement === element ||
-      userElement.contains?.(element) ||
-      element.contains?.(userElement),
-    ));
+    let matchingUser;
+    if (prompt && config.userMessageSelectors?.length) {
+      matchingUser = findLatestPromptTurn(config, providerId, prompt, collapseNestedConversationElements(userElements));
+      if (!matchingUser || (submittedPromptIdentity && readUserTurnIdentity(matchingUser) !== submittedPromptIdentity)) {
+        return assistantSnapshot([]);
+      }
+    }
+    const belongsToReply = (element) => (!matchingUser || compareDocumentOrder(matchingUser, element) < 0) &&
+      !userElements.some((userElement) => userElement === element ||
+        userElement.contains?.(element) || element.contains?.(userElement));
+    elements = elements.filter(belongsToReply);
     if (!elements.some((element) => isVisible(element) &&
       String(element.innerText || element.textContent || "").trim())) {
-      elements = findSemanticAssistantResponses().filter((element) =>
-        !userElements.some((userElement) =>
-          userElement === element ||
-          userElement.contains?.(element) ||
-          element.contains?.(userElement),
-        ),
-      );
+      elements = findSemanticAssistantResponses().filter(belongsToReply);
     }
 
     // Filter out elements that are descendants of any other element in the list
@@ -1533,13 +1643,21 @@
       .filter(isVisible)
       .map((element) => ({
         element,
-        text: normalizeProviderResponse(providerId, element.innerText || element.textContent || "").trim(),
+        text: readConversationElementText(element, providerId),
         identity: readElementIdentity(element),
       }))
       .filter((message) => message.text.length > 0)
+      .filter((message) => !isTransientResponseText(message.text))
       .map(({ text, identity }) => ({ text, identity }));
 
     return assistantSnapshot(messages);
+  }
+
+  function isTransientResponseText(text) {
+    const normalized = String(text || "").replace(/\s+/g, " ").trim();
+    if (/^(?:你偏好哪一則回覆|你比較喜歡哪個回覆|which response do you prefer)/i.test(normalized)) return true;
+    if (/^(?:grok\s+)?(?:正在思考|回應群組討論\s*顯示思考過程|thinking)[.…\s]*$/i.test(normalized)) return true;
+    return /^(?:正在思考(?:…|\.\.\.)?|思考中(?:…|\.\.\.)?|正在生成(?:回覆|回答)?(?:…|\.\.\.)?|正在搜尋(?:…|\.\.\.)?|thinking(?:\.{1,3}|…)?|thinking\s*\.\.\.|generating(?:\.{1,3}|…)?|searching(?:\.{1,3}|…)?|working(?:\.{1,3}|…)?|please wait(?:\.{1,3}|…)?|A\s*\/?\s*B)$/i.test(normalized);
   }
 
   function readCurrentConversationMessages(config, providerId) {

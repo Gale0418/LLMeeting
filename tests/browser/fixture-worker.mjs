@@ -1,5 +1,7 @@
 // Only installed into an isolated test copy. Never loaded by manifest.json.
 import { meeting, providers } from './fixtures.mjs';
+import { buildArchiveFixture } from './archive-fixture.mjs';
+import { buildMeetingExport, createMeetingArchive } from '../src/background/meetingArchive.js';
 import { runProviderTabsProbe, readProviderMetaProbe, closeProviderTabsProbe } from './provider-probe.mjs';
 let state = meeting();
 let rejectRepair = false;
@@ -33,6 +35,48 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       rejectRepair = Boolean(message.rejectRepair);
       await saveAndBroadcast();
       return { ok: true, state };
+    }
+    if (message.type === 'test:archiveRegression') {
+      const fixture = buildArchiveFixture();
+      const archive = createMeetingArchive();
+      await archive.clear();
+      await archive.save(fixture.state, fixture.events);
+      const reopened = createMeetingArchive();
+      const loaded = await reopened.load();
+      const readEvents = await reopened.readEvents(fixture.state.transcript.sessionId);
+      const persistedBytes = new TextEncoder().encode(JSON.stringify({ state: loaded, events: readEvents })).byteLength;
+      if (!loaded || loaded.transcript.sessionId !== fixture.state.transcript.sessionId
+          || JSON.stringify(loaded) !== JSON.stringify(fixture.state)
+          || JSON.stringify(readEvents) !== JSON.stringify(fixture.events)) {
+        throw new Error('A fresh archive instance did not read back the full meeting and ordered events');
+      }
+      const nextState = { ...meeting('critique'), transcript: { ...meeting('critique').transcript,
+        sessionId: 'isolated-archive-next-meeting' } };
+      const nextEvents = [{ sequence: 1, provider: 'meta', phase: 'first-round', stage: 'received', response: 'next only' }];
+      await reopened.save(nextState, nextEvents);
+      const switched = createMeetingArchive();
+      const oldEventsAfterSwitch = await switched.readEvents(fixture.state.transcript.sessionId);
+      const newEvents = await switched.readEvents(nextState.transcript.sessionId);
+      await switched.clear();
+      const cleared = createMeetingArchive();
+      const clearRemovedStateAndEvents = (await cleared.load()) === undefined
+        && (await cleared.readEvents(nextState.transcript.sessionId)).length === 0;
+      if (oldEventsAfterSwitch.length || JSON.stringify(newEvents) !== JSON.stringify(nextEvents) || !clearRemovedStateAndEvents) {
+        throw new Error('Switching or clearing a meeting left stale IndexedDB state/events');
+      }
+      await cleared.save(fixture.state, fixture.events);
+      state = fixture.state;
+      await saveAndBroadcast();
+      return { ok: true, details: { rounds: fixture.state.transcript.critiqueRounds.length,
+        persistedBytes, reopened: true, switchClearedOldEvents: true, clearRemovedStateAndEvents: true } };
+    }
+    if (message.type === 'aiDebate:exportMeeting') {
+      const archive = createMeetingArchive();
+      const archived = await archive.load();
+      if (!archived?.transcript) return { ok: false, error: 'Fixture archive is empty' };
+      const providerEvents = await archive.readEvents(archived.transcript.sessionId);
+      return { ok: true, export: buildMeetingExport(archived, providerEvents, 'saved',
+        chrome.runtime.getManifest().version, 1792080005000) };
     }
     if (message.type === 'test:inspect') return { ok: true, state, rejectedRequests };
     if (message.type === 'test:compactQuestion') {
