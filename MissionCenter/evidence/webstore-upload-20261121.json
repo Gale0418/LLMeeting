@@ -1,0 +1,27 @@
+{
+  "operationId": "llmeeting-webstore-052-upload-20261121",
+  "task": "LLM-T82",
+  "target": "Chrome Web Store Developer Dashboard",
+  "itemId": "cjombmcmgifhanenolhaeepbpnlchjdp",
+  "destination": "https://chrome.google.com/webstore/devconsole/2150e654-f5ed-4a22-9468-3eee6fd2b9b2/cjombmcmgifhanenolhaeepbpnlchjdp/edit/package",
+  "action": "upload-package-draft",
+  "sourceCommit": "11bf83bf7d463802f6b4eaa016be2bfca5aad930",
+  "package": {
+    "path": "dist/llmeeting-0.5.2.zip",
+    "version": "0.5.2",
+    "size": 2835963,
+    "sha256": "72a2195d54d9452715f5b505340a549f582c341b40a645f0f232d6023e673c2e"
+  },
+  "before": {
+    "draftVersion": "0.5.1",
+    "publishedVersion": "0.5.1"
+  },
+  "recordedAt": "2026-11-21T11:29:11+08:00",
+  "result": "confirmed",
+  "submittedForReview": false,
+  "published": false,
+  "draftVersion": "0.5.2",
+  "publishedVersion": "0.5.1",
+  "confirmedAt": "2026-11-21T11:30:22+08:00",
+  "verification": "Chrome 開發人員後台在 ZIP 處理完成後重新進入套件頁，草稿表格顯示 0.5.2，已發布表格顯示 0.5.1。"
+}

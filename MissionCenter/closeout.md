@@ -2,7 +2,7 @@
 
 CodeRabbit 初查 130 檔、18 個問題，15 項修正，3 項屬歷史計畫或已由現行程式處理。第二次連線驗證逾時。修補複查 14 檔、1 issues，其中 1 項查證修正。Node 593/593、異動 JavaScript 語法、ZIP 59 檔 CRC 與原始檔逐位元比對通過。
 
-已核對 [候選包與審查回執](evidence/052-release-review.json)。目前公開版為 0.5.1，準備上傳 0.5.2 草稿。LLM-T82 保留 Review，五家登入態長會議另行驗收。
+已核對 [候選包與審查回執](evidence/052-release-review.json)。Chrome 後台已確認草稿為 0.5.2，公開版為 0.5.1。送審與發布仍待處理。回執見 [商店上傳證據](evidence/webstore-upload-20261121.json)。LLM-T82 保留 Review，五家登入態長會議另行驗收。
 
 ---
 

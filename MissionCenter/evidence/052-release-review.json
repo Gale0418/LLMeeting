@@ -228,7 +228,9 @@
     "五家登入態完整長會議、商店送審與發布"
   ],
   "store": {
-    "status": "ready-for-upload",
-    "publishedVersionObservedBefore": "0.5.1"
+    "status": "uploaded-draft",
+    "publishedVersion": "0.5.1",
+    "draftVersion": "0.5.2",
+    "receipt": "MissionCenter/evidence/webstore-upload-20261121.json"
   }
 }
