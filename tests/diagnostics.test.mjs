@@ -117,7 +117,7 @@ test("side panel exposes Pro summary strategy modes and random chair choice", as
   assert.match(html, /data-pro-feature="observerChair"/);
   assert.match(html, /data-pro-feature="anonymousReview"/);
   assert.match(html, /<option value="random">隨機主席<\/option>/);
-  assert.match(html, /class="version-badge">v0\.5\.1<\/span>/);
+  assert.match(html, /class="version-badge">v0\.5\.2<\/span>/);
   assert.match(app, /const summaryStrategyEls = Array\.from\(document\.querySelectorAll\("\.summary-strategy-select"\)\)/);
   assert.match(app, /selectedSummaryStrategy/);
   assert.match(app, /featureForSummaryStrategy/);

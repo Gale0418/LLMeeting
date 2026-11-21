@@ -63,7 +63,7 @@ test("content script keeps Enter fallback without a global generic submit select
 
   assert.match(script, /dispatchEnter\(actionInput\)/);
   assert.doesNotMatch(adapters, /button\[type='submit'\]/);
-  assert.match(script, /findLikelySendButton\(findComposerScope\(input, config\)\)/);
+  assert.match(script, /const composer = findComposerScope\(input, config\);\s*return findConfiguredSendButton\(composer, config\) \|\| findLikelySendButton\(composer\);/);
 });
 
 test("content script does not accept the submitted prompt bubble as an AI response", async () => {

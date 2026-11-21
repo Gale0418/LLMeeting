@@ -19,11 +19,126 @@ function critiqueRoundFromPhase(phase) {
   return match ? Number(match[1] || 1) : 0;
 }
 
+function recoverInterruptedRepairPause(normalized) {
+  const pause = normalized.repairPause;
+  if (!pause || !Array.isArray(pause.remainingJobs) || !normalized.transcript) return null;
+
+  let engine;
+  try {
+    engine = DebateEngine.restore(normalized.transcript);
+  } catch (_error) {
+    return null;
+  }
+
+  const checkpoint = normalized.workflowCheckpoint;
+  const phase = checkpoint?.phase || pause.pausedPhase || (pause.target === "answer" ? "first-round" : pause.target);
+  const diagnostics = normalized.providerDiagnostics || {};
+  const notStartedStages = new Set(["idle", "opening-tab", "activating-tab"]);
+  const remainingJobs = [];
+  const uncertainJobs = [];
+  let jobsToRecover = pause.remainingJobs;
+  if (phase !== (pause.pausedPhase || (pause.target === "answer" ? "first-round" : pause.target))) {
+    try {
+      const jobsEngine = DebateEngine.restore(normalized.transcript);
+      const snapshot = jobsEngine.snapshot();
+      if (phase === "first-round") {
+        if (snapshot.interactionStyle === "imposter") return null;
+        jobsToRecover = jobsEngine.start(snapshot.originalQuestion, { roundZero: snapshot.roundZero });
+      } else if (String(phase).startsWith("critique")) {
+        const round = critiqueRoundFromPhase(phase);
+        const userMessage = snapshot.critiqueRounds?.[round - 1]?.USER;
+        jobsToRecover = userMessage ? jobsEngine.buildUserMessageJobs(userMessage, round) : jobsEngine.buildCritiqueJobs(round);
+      } else if (phase === "summary") {
+        jobsToRecover = jobsEngine.buildFinalJobs();
+      } else if (phase === "reveal") {
+        jobsToRecover = jobsEngine.buildRevealJobs();
+      } else {
+        return null;
+      }
+    } catch (_error) {
+      return null;
+    }
+  }
+  const snapshot = engine.snapshot();
+  for (const job of jobsToRecover) {
+    const reply = job.phase === "first-round"
+      ? snapshot.answers?.[job.provider]
+      : String(job.phase).startsWith("critique")
+        ? snapshot.critiqueRounds?.[critiqueRoundFromPhase(job.phase) - 1]?.[job.provider]
+        : job.phase === "summary" ? normalized.summaries?.[job.provider]
+          : job.phase === "source-summary" && normalized.sourceProvider === job.provider ? normalized.sourceSummary
+            : job.phase === "reveal" ? snapshot.reveal?.reactions?.[job.provider] : "";
+    if (typeof reply === "string" && reply.trim() && !isRecoverableReply(reply)) continue;
+
+    const diagnostic = diagnostics[job.provider];
+    const samePhase = diagnostic?.phase === phase;
+    const mayHaveBeenSent = (checkpoint?.provider === job.provider && checkpoint?.phase === phase) ||
+      (samePhase && diagnostic?.stage && !notStartedStages.has(diagnostic.stage));
+    if (mayHaveBeenSent) {
+      uncertainJobs.push(job);
+    } else if (!samePhase || !diagnostic?.stage || notStartedStages.has(diagnostic.stage)) {
+      remainingJobs.push(job);
+    }
+  }
+
+  for (const job of uncertainJobs) {
+    const message = "背景程序在接續流程中中斷，可能已送出提示，請檢查原 AI 頁面並手動貼回；系統不會自動重送。";
+    if (job.phase === "first-round" || String(job.phase).startsWith("critique")) {
+      engine.markProviderError(job.provider, job.phase, message);
+    } else if (job.phase === "summary") {
+      normalized.summaries = { ...normalized.summaries, [job.provider]: `[服務狀態：${message}]` };
+    } else if (job.phase === "source-summary") {
+      normalized.sourceSummary = `[服務狀態：${message}]`;
+    } else if (job.phase === "reveal") {
+      engine.markProviderError(job.provider, job.phase, message);
+      const existingReaction = engine.snapshot().reveal?.reactions?.[job.provider];
+      if (!existingReaction || isRecoverableReply(existingReaction)) {
+        engine.recordReveal(job.provider, `[錯誤：${message}]`);
+      }
+    }
+  }
+
+  const transcript = engine.snapshot();
+  return {
+    state: {
+      ...normalized,
+      transcript,
+      busy: false,
+      status: "waiting_for_user",
+      phase: "waiting_for_user",
+      workflowCheckpoint: null,
+      repairPause: {
+        ...pause,
+        target: phase === "first-round" ? "answer" : String(phase).startsWith("critique") ? "critique" : phase,
+        pausedPhase: phase,
+        remainingJobs,
+        resumePlan: phase === "summary" ? { type: "summary", scheduler: "fast" }
+          : phase === "reveal" ? { type: "reveal", scheduler: "fast" }
+            : phase === "first-round" ? {
+              type: normalized.mode === "chat" && normalized.interactiveMode ? "interactive" : "planned",
+              nextRound: 1, scheduler: pause.resumePlan?.scheduler || "fast",
+              interactiveMode: Boolean(normalized.interactiveMode),
+            }
+              : String(phase).startsWith("critique") ? {
+                type: "planned", nextRound: critiqueRoundFromPhase(phase) + 1,
+                scheduler: pause.resumePlan?.scheduler || "fast",
+                interactiveMode: Boolean(normalized.interactiveMode),
+              }
+              : pause.resumePlan,
+      },
+      message: RECOVERY_REPAIR_MESSAGE,
+    },
+    engine,
+    shouldPersist: true,
+  };
+}
+
 function recoverInterruptedDebate(normalized, checkpoint) {
   const phase = checkpoint?.phase;
   const round = critiqueRoundFromPhase(phase);
   const firstRound = phase === "first-round";
-  const supportedStage = ["submitting", "submitted", "collecting"].includes(checkpoint?.stage);
+  const supportedStage = ["submitting", "submitted", "collecting", "meta-input-refresh", "overload-refresh"]
+    .includes(checkpoint?.stage);
 
   if (!supportedStage || (!firstRound && !round) || !normalized.transcript) return null;
 
@@ -53,8 +168,8 @@ function recoverInterruptedDebate(normalized, checkpoint) {
 
   const diagnostics = normalized.providerDiagnostics || {};
   const checkpointProvider = checkpoint.provider;
-  const uncertainStages = new Set(["submitting-prompt", "submitted", "waiting-response", "received", "error"]);
-  const notStartedStages = new Set(["idle", "opening-tab", "activating-tab"]);
+  const uncertainStages = new Set(["submitting-prompt", "submitted", "waiting-response", "received", "error", "overload-refresh"]);
+  const notStartedStages = new Set(["idle", "opening-tab", "activating-tab", "meta-input-refresh"]);
   const faultProviders = new Set();
   const remainingJobs = [];
   const target = firstRound ? "answer" : "critique";
@@ -65,7 +180,8 @@ function recoverInterruptedDebate(normalized, checkpoint) {
 
     const diagnostic = diagnostics[provider];
     const samePhase = diagnostic?.phase === phase;
-    const mayHaveBeenSent = provider === checkpointProvider ||
+    const confirmedUndispatchedMetaRetry = checkpoint.stage === "meta-input-refresh" && provider === checkpointProvider;
+    const mayHaveBeenSent = (provider === checkpointProvider && !confirmedUndispatchedMetaRetry) ||
       (samePhase && uncertainStages.has(diagnostic?.stage));
     if (mayHaveBeenSent) {
       faultProviders.add(provider);
@@ -189,6 +305,8 @@ export function recoverSession(storedState, createIdleState, now = Date.now()) {
     const checkpoint = normalized.workflowCheckpoint;
     const repaired = recoverInterruptedDebate(normalized, checkpoint);
     if (repaired) return repaired;
+    const resumedPause = recoverInterruptedRepairPause(normalized);
+    if (resumedPause) return resumedPause;
     const checkpointNote = checkpoint?.provider
       ? ` 最後進度：${checkpoint.provider}／${checkpoint.phase || checkpoint.stage || "unknown"}。`
       : "";

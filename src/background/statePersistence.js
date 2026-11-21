@@ -106,7 +106,7 @@ function clipStoredText(value, limit) {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }
 
-export async function safePersistState(chromeStorage, state, storageKey, { isCurrent = () => true } = {}) {
+export async function safePersistState(chromeStorage, state, storageKey, { isCurrent = () => true, allowReducedState = true } = {}) {
   if (!chromeStorage?.local?.set) {
     return false;
   }
@@ -118,6 +118,7 @@ export async function safePersistState(chromeStorage, state, storageKey, { isCur
     await chromeStorage.local.set(payload);
     return true;
   } catch (_firstError) {
+    if (!allowReducedState) return false;
     // Attempt degraded persistence for long chats / quota exceeded
     try {
       if (!isCurrent()) return false;

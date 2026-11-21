@@ -419,3 +419,42 @@ test("repair pause sends only resume and refuses it until all replies are repair
   assert.equal(sent.length, 1);
   assert.match(messages.at(-1), /補齊所有故障回覆/);
 });
+
+test("a draft stays bound to its original session and fault when a repair card is clicked", () => {
+  const start = source.indexOf('chatTranscript?.addEventListener("click", (event)');
+  const end = source.indexOf('document.querySelector("#cancelManualReplyBtn")', start);
+  const listeners = [];
+  const original = {
+    provider: "chatgpt", phase: "first-round", sessionId: "first", expectedContent: "first fault",
+  };
+  const context = vm.createContext({
+    chatTranscript: { addEventListener(_type, handler) { listeners.push(handler); } },
+    latestState: { transcript: { sessionId: "first" } },
+    recoveryActionPending: false,
+    manualReplyTarget: original,
+    manualReplyEditor: { hidden: false },
+    manualReplyInput: { value: "my pasted reply", focus() {} },
+    saveManualReplyBtn: {},
+    manualReplyContent: () => "same provider, new fault",
+    isRecoverableReply: () => true,
+    setManualReplyStatus() {},
+    uiText: (value) => value,
+    meetingSpeakerLabel: () => "ChatGPT",
+    manualReplyPhaseLabel: () => "First round",
+    document: { querySelector: () => ({}) },
+  });
+  vm.runInContext(source.slice(start, end), context);
+  const clickRepair = () => listeners[0]({ target: { closest(selector) {
+    if (selector === "[data-repair-provider]") {
+      return { dataset: { repairProvider: "chatgpt", repairPhase: "first-round" } };
+    }
+    return null;
+  } } });
+  clickRepair();
+  assert.equal(context.manualReplyTarget, original, "a new fault in this session cannot adopt the draft");
+  context.latestState.transcript.sessionId = "second";
+  context.manualReplyContent = () => original.expectedContent;
+  clickRepair();
+  assert.equal(context.manualReplyTarget, original, "a different session cannot adopt the draft");
+  assert.equal(context.manualReplyInput.value, "my pasted reply");
+});

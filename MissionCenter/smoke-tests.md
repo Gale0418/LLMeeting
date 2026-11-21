@@ -1,5 +1,12 @@
 # Smoke Tests
 
+## 2026-11-21 0.5.2 候選驗證（LLM-T82）
+
+- 執行 Node 全套（隔離副本）、異動 JS/MJS 語法檢查、`npm run package`、CRC 與逐檔比對。Node 593/593、異動 JavaScript 語法、ZIP 59 檔 CRC 與原始檔逐位元比對通過。
+- CodeRabbit 初查 130 檔、18 個問題，15 項修正，3 項屬歷史計畫或已由現行程式處理。第二次連線驗證逾時。修補複查 14 檔、1 issues，其中 1 項查證修正。
+- ZIP SHA256 `72a2195d54d9452715f5b505340a549f582c341b40a645f0f232d6023e673c2e`。五家登入態長會議與送審仍待驗收。
+
+
 ## 2026-11-15 長會議複查與 GitHub main（LLM-T82／Review）
 
 - 執行 `node --test --test-reporter=tap tests/*.test.mjs`，預期全數通過，實測 576/576。回歸涵蓋交錯分頁導覽、暫停會議過期與補回提交競爭、虛擬化對話重複提示、來源摘要手動續跑及第 0 輪超長來源。

@@ -13,7 +13,9 @@ test("recommendation material distinguishes candidate availability and third-par
     assert.match(copy, /訂閱/);
     assert.match(copy, /用量|額度/);
   }
-  assert.match(readme, /0\.4\.7/);
+  const { version } = JSON.parse(await readFile("manifest.json", "utf8"));
+  assert.ok(readme.includes(`**${version} 發布候選版**`));
+  assert.match(readme, /公開版本為 \*\*\d+\.\d+\.\d+\*\*/);
   assert.match(listing, /Anonymous modes use aliases.*not anonymous accounts/);
 });
 

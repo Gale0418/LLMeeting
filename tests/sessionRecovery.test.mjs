@@ -283,3 +283,84 @@ test("reload preserves a repair pause, deferred jobs, and the original round pla
   assert.equal(pendingReplyRepairs(result.state).length, 1);
   assert.equal(result.shouldPersist, false);
 });
+
+test("an interrupted Fast Arena run preserves the saved choice to wait for input", () => {
+  for (const interactiveMode of [true, false]) {
+    const stored = { ...interruptedCritiqueState(), interactiveMode };
+    const recovered = recoverSession(stored, mockCreateIdleState);
+    assert.equal(recovered.state.repairPause.resumePlan.interactiveMode, interactiveMode);
+  }
+});
+
+function resumedRepairState() {
+  const providers = ["chatgpt", "gemini", "grok"];
+  const engine = new DebateEngine(providers, "chatgpt", 2);
+  engine.start("續跑測試");
+  engine.recordAnswer("chatgpt", "已手動補齊");
+  return {
+    savedAt: Date.now(), busy: true, status: "running", mode: "fast", phase: "first-round",
+    activeProviders: providers, transcript: engine.snapshot(), workflowCheckpoint: null,
+    repairPause: {
+      target: "answer", pausedPhase: "first-round",
+      remainingJobs: ["gemini", "grok"].map(provider => ({
+        provider, phase: "first-round", prompt: `${provider} 待送提示`,
+      })),
+      resumePlan: { type: "planned", nextRound: 1, scheduler: "fast", interactiveMode: false },
+    },
+  };
+}
+
+test("resume interrupted before the first dispatch retains the original repair plan", () => {
+  const stored = resumedRepairState();
+  const result = recoverSession(stored, mockCreateIdleState);
+  assert.equal(result.state.status, "waiting_for_user");
+  assert.deepEqual(result.state.repairPause, stored.repairPause);
+  assert.equal(result.shouldPersist, true);
+});
+
+test("resumed repair never resends a possibly delivered job or discards a saved reply", () => {
+  const stored = resumedRepairState();
+  stored.providerDiagnostics = {
+    gemini: { phase: "first-round", stage: "submitted" },
+    grok: { phase: "first-round", stage: "received" },
+  };
+  stored.transcript.answers.grok = "已保存的正常回覆";
+  const result = recoverSession(stored, mockCreateIdleState);
+  assert.equal(result.state.status, "waiting_for_user");
+  assert.deepEqual(result.state.repairPause.remainingJobs, []);
+  assert.equal(result.state.transcript.answers.grok, "已保存的正常回覆");
+  assert.deepEqual(pendingReplyRepairs(result.state).map(item => item.provider), ["gemini"]);
+});
+
+test("an interrupted summary dispatch goes to repair instead of resend", () => {
+  const stored = resumedRepairState();
+  stored.summaryProvider = "gemini";
+  stored.phase = "summary";
+  stored.workflowCheckpoint = { provider: "gemini", phase: "summary", stage: "submitting" };
+  stored.repairPause = {
+    target: "summary", pausedPhase: "summary",
+    remainingJobs: [{ provider: "gemini", phase: "summary", prompt: "裁判提示" }],
+    resumePlan: { type: "summary", scheduler: "fast", interactiveMode: false },
+  };
+  const result = recoverSession(stored, mockCreateIdleState);
+  assert.equal(result.state.status, "waiting_for_user");
+  assert.deepEqual(result.state.repairPause.remainingJobs, []);
+  assert.deepEqual(pendingReplyRepairs(result.state).map(({ provider, phase }) => ({ provider, phase })),
+    [{ provider: "gemini", phase: "summary" }]);
+});
+
+test("interrupted first-round imposter recovery does not reconstruct roles from a prior phase", () => {
+  const stored = resumedRepairState();
+  stored.transcript.interactionStyle = "imposter";
+  stored.transcript.imposterProvider = "gemini";
+  stored.repairPause = {
+    target: "source-summary", pausedPhase: "source-summary", remainingJobs: [],
+    resumePlan: { type: "source-summary", scheduler: "fast" },
+  };
+  stored.workflowCheckpoint = { provider: "gemini", phase: "first-round", stage: "submitting" };
+  const result = recoverSession(stored, mockCreateIdleState);
+  assert.equal(result.state.status, "error");
+  assert.equal(result.engine, null);
+  assert.equal(result.state.transcript.answers.chatgpt, "已手動補齊");
+  assert.equal(result.state.transcript.imposterProvider, "gemini");
+});

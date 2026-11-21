@@ -207,14 +207,16 @@ chatTranscript?.addEventListener("click", (event) => {
   const phase = button.dataset.repairPhase;
   const content = manualReplyContent(latestState, provider, phase);
   if (!isRecoverableReply(content)) return;
-  // Keep an unfinished paste when choosing another message; never erase it silently.
-  if (manualReplyTarget && !manualReplyEditor.hidden &&
-      (manualReplyTarget.provider !== provider || manualReplyTarget.phase !== phase) && manualReplyInput.value.trim()) {
+  const { sessionId, originalQuestion } = latestState.transcript;
+  const nextTarget = { provider, phase, expectedContent: content, sessionId, originalQuestion };
+  // A draft belongs to one specific fault, even when two sessions use the same provider and round.
+  if (manualReplyTarget && !manualReplyEditor.hidden && manualReplyInput.value.trim() &&
+      (manualReplyTarget.provider !== provider || manualReplyTarget.phase !== phase ||
+        manualReplyTarget.sessionId !== sessionId || manualReplyTarget.expectedContent !== content)) {
     setManualReplyStatus("請先完成或取消目前這段補回覆，再選擇另一格。");
     return;
   }
-  manualReplyTarget = { provider, phase, expectedContent: content,
-    sessionId: latestState.transcript.sessionId, originalQuestion: latestState.transcript.originalQuestion };
+  manualReplyTarget = nextTarget;
   document.querySelector("#manualReplyTarget").textContent = uiText(`${meetingSpeakerLabel(latestState, provider)} · ${manualReplyPhaseLabel(phase)} · 手動補回覆`);
   setManualReplyStatus("");
   manualReplyEditor.hidden = false;

@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = "0.5.1-driver.14";
+  const CONTENT_SCRIPT_VERSION = "0.5.2-driver.14";
   const {
     assistantSnapshot,
     classifyProviderResponseError,
@@ -965,37 +965,13 @@
   }
 
   function findSendButton(config, input) {
-    if (input) {
-      let ancestor = input.parentElement;
-      while (ancestor && ancestor !== document.documentElement) {
-        const nearbyButton = findConfiguredSendButton(ancestor, config);
-        if (nearbyButton) {
-          return nearbyButton;
-        }
-        ancestor = ancestor.parentElement;
-      }
-    }
-
-    const shadowButton = getOpenShadowRoots()
-      .map((root) => findConfiguredSendButton(root, config))
-      .find(Boolean);
-    return findConfiguredSendButton(document, config) || shadowButton || findLikelySendButton(findComposerScope(input, config));
+    const composer = findComposerScope(input, config);
+    return findConfiguredSendButton(composer, config) || findLikelySendButton(composer);
   }
 
   function findVisibleSendButton(config, input) {
-    if (input) {
-      let ancestor = input.parentElement;
-      while (ancestor && ancestor !== document.documentElement) {
-        const nearbyButton = findVisibleConfiguredSendButtons(ancestor, config)[0];
-        if (nearbyButton) return nearbyButton;
-        ancestor = ancestor.parentElement;
-      }
-    }
-    const shadowButtons = getOpenShadowRoots()
-      .flatMap((root) => findVisibleConfiguredSendButtons(root, config));
-    const shadowButton = shadowButtons[0];
-    return findVisibleConfiguredSendButtons(document, config)[0] || shadowButton ||
-      findLikelySendButton(findComposerScope(input, config));
+    const composer = findComposerScope(input, config);
+    return findVisibleConfiguredSendButtons(composer, config)[0] || findLikelySendButton(composer);
   }
 
   function findConfiguredSendButton(root, config) {
@@ -1034,6 +1010,7 @@
   }
 
   function findVisibleConfiguredSendButtons(root, config) {
+    if (!root) return [];
     const candidates = [];
     for (const selector of config.sendSelectors) {
       candidates.push(...Array.from(root.querySelectorAll(selector))
@@ -1047,11 +1024,12 @@
     const deadline = Date.now() + timeoutMs;
     while (true) {
       abortCheck();
-      if (!isPromptStillPresent(input, prompt)) {
+      const liveInput = findInput(config);
+      if (!liveInput || !isPromptStillPresent(liveInput, prompt)) {
         throw createSubmissionReadinessError();
       }
 
-      const button = findSendButton(config, input);
+      const button = findSendButton(config, liveInput);
       if (button) {
         return button;
       }
@@ -1068,7 +1046,7 @@
     for (const selector of config.composerRootSelectors || []) {
       try {
         const root = input.closest?.(selector);
-        if (root) return root;
+        if (root && root !== input) return root;
       } catch (_error) {
         // Keep the fallback bounded even when one provider selector drifts.
       }
@@ -1406,9 +1384,12 @@
       const hasFreshCandidate = Boolean(currentText) &&
         (usesAnchoredScope || hasFreshAssistantResponse(candidateBaseline, current)) &&
         !isPromptEcho(prompt, currentText);
+      const currentPromptTurn = usesAnchoredScope ? findLatestPromptTurn(config, providerId, prompt) : null;
+      const submittedTurnStillVisible = !usesAnchoredScope || Boolean(currentPromptTurn &&
+        (!submittedPromptIdentity || readUserTurnIdentity(currentPromptTurn) === submittedPromptIdentity));
       if (hasFreshCandidate) {
         candidateBuffer = updateResponseCandidateBuffer(candidateBuffer, candidateBaseline, current, prompt, Date.now());
-      } else if (currentText) {
+      } else if (!submittedTurnStillVisible) {
         candidateBuffer = createResponseCandidateBuffer();
       }
       if (currentText && currentText !== lastVisibleText) {
@@ -1626,11 +1607,12 @@
     const belongsToReply = (element) => (!matchingUser || compareDocumentOrder(matchingUser, element) < 0) &&
       !userElements.some((userElement) => userElement === element ||
         userElement.contains?.(element) || element.contains?.(userElement));
-    elements = elements.filter(belongsToReply);
+    elements = elements.filter(belongsToReply).sort(compareDocumentOrder);
     if (!elements.some((element) => isVisible(element) &&
       String(element.innerText || element.textContent || "").trim())) {
       elements = findSemanticAssistantResponses().filter(belongsToReply);
     }
+    elements = elements.sort(compareDocumentOrder);
 
     // Filter out elements that are descendants of any other element in the list
     // This ensures we capture the outermost message container and don't overwrite
@@ -1674,13 +1656,18 @@
     }
     const userElements = collectElements(config.userMessageSelectors).filter(isVisible);
 
+    const userRecords = collapseNestedConversationElements(userElements).map((element) => ({ element, role: "User" }));
     const candidateRecords = [
       ...collapseNestedConversationElements(assistantElements).map((element) => ({ element, role: "AI" })),
-      ...collapseNestedConversationElements(userElements).map((element) => ({ element, role: "User" })),
+      ...userRecords,
     ];
     const records = candidateRecords
       .filter(({ element }) => !element.closest?.("nav, aside, [role='navigation'], [aria-label*='history' i]"))
+      .filter(({ element, role }) => !(role === "AI" && userRecords.some((user) => user.element !== element &&
+        user.element.contains?.(element))))
       .filter(({ element, role }) => !candidateRecords.some((other) => other.element !== element && other.role !== role &&
+        !(role === "AI" && other.role === "User" && other.element.contains?.(element)) &&
+        !(role === "User" && other.role === "AI" && element.contains?.(other.element)) &&
         (other.element.contains?.(element) || element.contains?.(other.element))))
       .map(({ element, role }) => ({ element, role, text: readConversationElementText(element, providerId) }))
       .filter((entry) => entry.text);

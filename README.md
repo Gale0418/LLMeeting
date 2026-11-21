@@ -2,7 +2,9 @@
 
 不用再把同一題貼到好幾個聊天視窗。LLMeeting 在 Chrome 側欄協調你已登入的 AI：收集回答、交叉互評，再整理共識與分歧。你也可以加入討論，或替 AI 設定人設，看它們如何接招。
 
-本儲存庫版本：**0.5.1 發布候選版**，尚未完成整場實機驗收。
+本儲存庫版本為 **0.5.2 發布候選版**。Chrome 線上應用程式商店於 2026-11-21 確認的公開版本為 **0.5.1**。
+
+0.5.2 改善長會議的回覆擷取與續跑，從側欄可下載整場 UTF-8 JSON。第 0 輪會在預算內優先引用近期訊息，標明省略處，並保留本次補充原文。五家 AI 登入態的完整長會議驗收仍在追蹤。
 
 <details>
 <summary>候選版更新與開發驗證紀錄</summary>
@@ -91,7 +93,7 @@ Meta指定分頁選單會在瀏覽器只提供通用品牌標題時，嘗試唯�
 
 </details>
 
-[查看 Chrome 商店公開版](https://chromewebstore.google.com/detail/llmeeting/cjombmcmgifhanenolhaeepbpnlchjdp)（2026-10-14 本次讀到的公開頁仍顯示 0.4.7，與本儲存庫候選版不同；安裝前請確認商店版本）。
+[查看 Chrome 商店公開版](https://chromewebstore.google.com/detail/llmeeting/cjombmcmgifhanenolhaeepbpnlchjdp)。
 
 ---
 
@@ -169,9 +171,9 @@ LLMeeting 功能免費，但不包含 AI 帳號或訂閱。各家的用量、等
 
 歷史驗證（0.5.0）：317/317 通過。2026-10-03 CodeRabbit 納入既有核心程式、測試、工具與小型文件共 59 檔，提出兩項問題；回歸測試確認後修正，修後複查實際覆蓋 22 檔（含相關上下文），0 issues；本輪合計 2/3 次。Chrome 唯讀檢查確認 ChatGPT 草稿段落的 25 個來源換行會被 innerText 讀成 59 個，0.5.0 的 Driver .6 補上精確段落還原；未操作該會議重送。Chrome 獨立 Gemini 格式測試收到回覆；320–480px 模擬側欄完成修復指引、推薦入口與轉折草稿操作檢查。使用者回報目前試用正常，但沒有具名模式／模型矩陣；這些不是 LLMeeting 全員匿名整場實機、完整鍵盤驗收或真實遊玩測試，候選版仍待端到端測試。
 
-平台更新：Chrome 商店後台被瀏覽器控制工具禁止操作；本次準備更新包與 Git main 保存，未上傳、送審或發布。請由開發者手動上傳 ZIP 並保留回執，商店公開版本不會因推送 Git 自動更新。
+套件上傳與商店審查進度記錄於 [Mission Center](MissionCenter/closeout.md)。
 
-開發驗證：`npm test`；封裝：`npm run package`，產物位於 `dist/llmeeting-0.5.1.zip`。更新本機未封裝版本後，請重新載入擴充套件以啟用新 Driver。
+開發驗證：`npm test`；封裝：`npm run package`，產物位於 `dist/llmeeting-0.5.2.zip`。更新本機未封裝版本後，請重新載入擴充套件以啟用新 Driver。
 
 想分享給朋友？[推薦文案與示範題](store/recommendation-kit.md) 已整理好；分享前請先核對對方會安裝的版本。
 
@@ -183,7 +185,7 @@ LLMeeting 功能免費，但不包含 AI 帳號或訂閱。各家的用量、等
 2. Sign in to at least two supported AI services in Chrome: ChatGPT, Gemini, Grok, Claude, or Meta AI Beta.
 3. Open the LLMeeting side panel, choose participants, enter a topic, and start Fast Arena with the default settings.
 
-LLMeeting features are free; AI accounts, subscriptions, quotas, and regional restrictions remain separate. AI agreement is not fact-checking. The repository contains a 0.5.1 release candidate; the Store page checked on October 2, 2026 showed 0.4.7.
+LLMeeting features are free; AI accounts, subscriptions, quotas, and regional restrictions remain separate. AI agreement is not fact-checking. This repository contains the 0.5.2 release candidate. On November 21, 2026, the Chrome Web Store dashboard showed 0.5.1 as the published version.
 
 ## Built with Codex and GPT-5.6
 

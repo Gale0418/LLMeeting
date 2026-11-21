@@ -24,7 +24,7 @@ async function loadProviderPageTestContext(overrides = {}) {
   const script = await readFile("src/content/provider-page.js", "utf8");
   const instrumentedScript = script.replace(
     /\}\)\(\);\s*$/,
-    "globalThis.aiDebateProviderPageTest = {\n      assertProviderLocation,\n      abortAutomation,\n      contentMessageListener,\n      collectElements,\n      createResponseCandidateBuffer,\n      findInput,\n      readAssistantSnapshot,\n      readCurrentConversation,\n      readCurrentConversationMessages,\n      isExistingConversationRoute,\n      readConversationElementText,\n      isGenerating,\n      resolveConfiguredSendButton,\n      resolveInput,\n      resolveLikelySendButton,\n      scoreInputCandidate,\n      scoreSendCandidate,\n      updateResponseCandidateBuffer,\n      userMessageContainsPrompt,\n      observeProviderSubmission,\n      waitForCompletion,\n      waitForGeminiSubmissionReady,\n      waitForInputWritten,\n      writeInput,\n    };\n})();",
+    "globalThis.aiDebateProviderPageTest = {\n      assertProviderLocation,\n      abortAutomation,\n      contentMessageListener,\n      collectElements,\n      createResponseCandidateBuffer,\n      findInput,\n      findSendButton,\n      readAssistantSnapshot,\n      readCurrentConversation,\n      readCurrentConversationMessages,\n      isExistingConversationRoute,\n      readConversationElementText,\n      isGenerating,\n      resolveConfiguredSendButton,\n      resolveInput,\n      resolveLikelySendButton,\n      scoreInputCandidate,\n      scoreSendCandidate,\n      updateResponseCandidateBuffer,\n      userMessageContainsPrompt,\n      observeProviderSubmission,\n      waitForCompletion,\n      waitForGeminiSubmissionReady,\n      waitForInputWritten,\n      writeInput,\n    };\n})();",
   ).replace("      writeInput,\n", "      writeInput,\n      assertAutomationEpoch,\n      readBlockingServiceStatus,\n      readSubmittedResponse,\n      submittedRuns,\n      submitPrompt,\n");
   assert.notEqual(instrumentedScript, script);
 
@@ -622,6 +622,9 @@ test("provider readiness returns a read-only ready snapshot", async () => {
     getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
   });
 
+  const composer = { querySelectorAll: () => [sendButton] };
+  input.parentElement = composer;
+  sendButton.parentElement = composer;
   const result = await context.aiDebateProviderPageReadiness({ provider: "chatgpt" });
 
   assert.equal(result.ok, true);
@@ -704,6 +707,9 @@ test("provider readiness accepts an empty composer with a disabled send control"
     getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
   });
 
+  const composer = { querySelectorAll: () => [disabledSendButton] };
+  input.parentElement = composer;
+  disabledSendButton.parentElement = composer;
   const result = await context.aiDebateProviderPageReadiness({ provider: "chatgpt" });
 
   assert.equal(result.ready, true);
@@ -770,6 +776,9 @@ test("Claude readiness accepts its disabled empty composer send control", async 
     getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
   });
 
+  const composer = { querySelectorAll: () => [disabledSendButton] };
+  input.parentElement = composer;
+  disabledSendButton.parentElement = composer;
   const result = await context.aiDebateProviderPageReadiness({ provider: "claude" });
 
   assert.equal(result.ready, true);
@@ -834,7 +843,7 @@ test("Grok readiness recognizes the localized live composer structure", async ()
 test("provider content script uses a replaceable versioned listener after extension reload", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
 
-  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.14"/);
+  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.2-driver\.14"/);
   assert.match(script, /"aiDebate:getCapabilities": getCapabilities/);
   assert.match(script, /__aiDebateContentVersion/);
   assert.match(script, /onMessage\.removeListener\(globalThis\.__aiDebateContentMessageListener\)/);
@@ -855,7 +864,7 @@ test("same-version content reinjection replaces the listener without duplicating
   assert.equal(listeners.size, 1);
   assert.notEqual(context.__aiDebateContentMessageListener, previous);
   const response = await new Promise(resolve => context.__aiDebateContentMessageListener({ type: "aiDebate:getCapabilities" }, {}, resolve));
-  assert.equal(response.contentScriptVersion, "0.5.1-driver.14");
+  assert.equal(response.contentScriptVersion, "0.5.2-driver.14");
 });
 
 test("failed content initialization cannot poison the next injection", async () => {
@@ -1943,23 +1952,28 @@ test("Gemini accepts exact Markdown reconstructed from asynchronously formatted 
     innerText: "題目：重要內容",
     matches: (selector) => selector === ".ql-editor.rich-query-formatting-enabled",
     childNodes: [textNode("題目："), { tagName: "STRONG", childNodes: [textNode("重要內容")] }],
+    getBoundingClientRect: () => ({ width: 320, height: 40 }),
   };
   const button = {
     disabled: false,
     getAttribute: (name) => name === "role" ? "button" : null,
     getBoundingClientRect: () => ({ width: 100, height: 40 }),
   };
+  const composer = { querySelectorAll: () => [button] };
+  input.parentElement = composer;
+  input.closest = (selector) => selector === ".composer" ? composer : null;
   const context = await loadProviderPageTestContext({
-    document: { querySelectorAll: () => [button] },
+    document: { querySelectorAll: (selector) => selector === ".editor" ? [input] : [button] },
     getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
   });
   const api = context.aiDebateProviderPageTest;
-  assert.equal(await api.waitForGeminiSubmissionReady({ sendSelectors: ["button.send-button"] }, input, "題目：**重要內容**", 40), button);
+  const config = { preferredInputSelector: ".editor", sendSelectors: ["button.send-button"], composerRootSelectors: [".composer"] };
+  assert.equal(await api.waitForGeminiSubmissionReady(config, input, "題目：**重要內容**", 40), button);
   await api.waitForInputWritten(input, "題目：**重要內容**", 40);
-  await assert.rejects(api.waitForGeminiSubmissionReady({ sendSelectors: ["button.send-button"] }, input, "題目：**別的內容**", 40),
+  await assert.rejects(api.waitForGeminiSubmissionReady(config, input, "題目：**別的內容**", 40),
     (error) => error.code === "PROVIDER_SUBMISSION_NOT_READY");
   input.matches = () => false;
-  await assert.rejects(api.waitForGeminiSubmissionReady({ sendSelectors: ["button.send-button"] }, input, "題目：**重要內容**", 40),
+  await assert.rejects(api.waitForGeminiSubmissionReady(config, input, "題目：**重要內容**", 40),
     (error) => error.code === "PROVIDER_SUBMISSION_NOT_READY");
 });
 
@@ -1972,18 +1986,21 @@ test("Gemini readiness returns the send button only after it becomes enabled", a
     getAttribute: (name) => name === "role" ? "button" : null,
     getBoundingClientRect: () => ({ width: 100, height: 40 }),
   };
+  const input = { tagName: "TEXTAREA", value: "要送出的提示", innerText: "要送出的提示",
+    getAttribute: () => null, getBoundingClientRect: () => ({ width: 320, height: 40 }) };
+  const composer = { querySelectorAll: () => [button] };
+  input.parentElement = composer;
+  input.closest = (selector) => selector === ".composer" ? composer : null;
   const context = await loadProviderPageTestContext({
-    document: {
-      querySelectorAll: () => [button],
-    },
+    document: { querySelectorAll: (selector) => selector === ".editor" ? [input] : [button] },
     getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
   });
   setTimeout(() => { enabled = true; }, 20);
 
   assert.equal(
     await context.aiDebateProviderPageTest.waitForGeminiSubmissionReady(
-      { sendSelectors: ["button.send-button"] },
-      { innerText: "要送出的提示" },
+      { preferredInputSelector: ".editor", sendSelectors: ["button.send-button"], composerRootSelectors: [".composer"] },
+      input,
       "要送出的提示",
       200,
     ),
@@ -2700,4 +2717,137 @@ test("existing conversation routes include current Grok, Meta and Gemini account
     const context = await loadProviderPageTestContext({ location: { pathname, search: "" } });
     assert.equal(context.aiDebateProviderPageTest.isExistingConversationRoute(provider), expected, `${provider}:${pathname}`);
   }
+});
+
+
+test("generic assistant candidates inside a known user turn do not erase the user record", async () => {
+  const markdown = { innerText: "使用者提問", textContent: "使用者提問", contains: () => false,
+    getBoundingClientRect: () => ({ width: 400, height: 40 }) };
+  const user = { innerText: "使用者提問", textContent: "使用者提問", contains: (element) => element === markdown || element === user,
+    getBoundingClientRect: () => ({ width: 500, height: 60 }) };
+  const context = await loadProviderPageTestContext({
+    aiDebateAutomationCore: { ...globalThis.aiDebateAutomationCore },
+    document: { querySelectorAll: (selector) => selector === ".markdown" ? [markdown]
+      : selector === ".user-turn" || selector.includes("user") ? [user] : [] },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(context.aiDebateProviderPageTest.readCurrentConversationMessages({
+    responseSelectors: [".markdown"], userMessageSelectors: [".user-turn"],
+  }, "chatgpt"))), [{ role: "User", text: "使用者提問" }]);
+});
+
+test("Send lookup stays inside the verified composer when a page-level feedback button is enabled", async () => {
+  const disabledSend = { disabled: true, getAttribute: (name) => name === "aria-label" ? "Send" : null,
+    getBoundingClientRect: () => ({ width: 40, height: 40 }) };
+  const feedback = { disabled: false, getAttribute: (name) => name === "aria-label" ? "Send feedback" : null,
+    getBoundingClientRect: () => ({ width: 100, height: 40 }) };
+  const composer = { querySelectorAll: (selector) => selector === ".send" ? [disabledSend]
+    : selector === "button, [role='button']" ? [disabledSend] : [] };
+  const input = { parentElement: composer, closest: (selector) => selector === ".composer" ? composer : null };
+  const context = await loadProviderPageTestContext({
+    document: { querySelectorAll: (selector) => selector === ".send" ? [feedback] : [] },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+  });
+  assert.equal(context.aiDebateProviderPageTest.findSendButton({
+    sendSelectors: [".send"], composerRootSelectors: [".composer"],
+  }, input), null);
+});
+
+test("a provider selector matching the editor itself does not hide Send in its containing form", async () => {
+  const send = { disabled: false, getAttribute: (name) => name === "aria-label" ? "Send" : null,
+    getBoundingClientRect: () => ({ width: 40, height: 40 }) };
+  const form = { querySelectorAll: (selector) => selector === ".send" || selector === "button, [role='button']" ? [send] : [] };
+  const input = { querySelectorAll: () => [], closest(selector) {
+    return selector === ".editor" ? this : selector === "form" ? form : null;
+  } };
+  const context = await loadProviderPageTestContext({
+    document: { querySelectorAll: () => [] },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+  });
+  assert.equal(context.aiDebateProviderPageTest.findSendButton({
+    sendSelectors: [".send"], composerRootSelectors: [".editor", "form"],
+  }, input), send);
+});
+
+test("Gemini readiness follows a replacement editor and validates its live prompt", async () => {
+  const composer = { querySelectorAll: (selector) => selector === ".send" ? [button]
+    : selector === "button, [role='button']" ? [button] : [] };
+  const button = { disabled: false, getAttribute: (name) => name === "aria-label" ? "Send" : null,
+    getBoundingClientRect: () => ({ width: 40, height: 40 }) };
+  const makeInput = (text) => ({ tagName: "TEXTAREA", value: text, innerText: text,
+    parentElement: composer, closest: (selector) => selector === ".composer" ? composer : null,
+    getAttribute: () => null, getBoundingClientRect: () => ({ width: 400, height: 40 }) });
+  const oldInput = makeInput("原本編輯器");
+  const liveInput = makeInput("要送出的提示");
+  const context = await loadProviderPageTestContext({
+    document: { querySelectorAll: (selector) => selector === ".editor" ? [liveInput] : [] },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+  });
+  assert.equal(await context.aiDebateProviderPageTest.waitForGeminiSubmissionReady({
+    preferredInputSelector: ".editor", sendSelectors: [".send"], composerRootSelectors: [".composer"],
+  }, oldInput, "要送出的提示", 40), button);
+  liveInput.value = "被替換成其他內容";
+  liveInput.innerText = liveInput.value;
+  await assert.rejects(context.aiDebateProviderPageTest.waitForGeminiSubmissionReady({
+    preferredInputSelector: ".editor", sendSelectors: [".send"], composerRootSelectors: [".composer"],
+  }, oldInput, "要送出的提示", 40), (error) => error.code === "PROVIDER_SUBMISSION_NOT_READY");
+});
+
+test("response snapshots choose the newest assistant element in document order across selectors", async () => {
+  const makeReply = (text, order) => ({ innerText: text, textContent: text,
+    contains(other) { return other === this; },
+    compareDocumentPosition(other) { return order < other.order ? 4 : 2; },
+    order, getBoundingClientRect: () => ({ width: 400, height: 40 }) });
+  const older = makeReply("較舊回答", 1);
+  const newer = makeReply("最新回答", 2);
+  const context = await loadProviderPageTestContext({
+    aiDebateAutomationCore: { ...globalThis.aiDebateAutomationCore },
+    document: { querySelectorAll: (selector) => selector === ".markdown" ? [older]
+      : selector === "[data-role='assistant']" ? [newer] : [] },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+  });
+  const snapshot = context.aiDebateProviderPageTest.readAssistantSnapshot({
+    responseSelectors: [".markdown", "[data-role='assistant']"], userMessageSelectors: [],
+  }, "chatgpt");
+  assert.equal(snapshot.lastText, "最新回答");
+});
+
+test("an absent submitted reply clears its buffered partial response", async () => {
+  let now = 0;
+  let visible = true;
+  const answer = { innerText: "部分回答", textContent: "部分回答", contains: () => false,
+    getBoundingClientRect: () => ({ width: 400, height: 40 }) };
+  const user = { innerText: "本次提示", textContent: "本次提示", contains: () => false,
+    compareDocumentPosition: (element) => element === answer ? 4 : 0,
+    getAttribute: (name) => name === "data-message-id" ? "user-anchor" : null,
+    getBoundingClientRect: () => ({ width: 400, height: 40 }) };
+  const context = await loadProviderPageTestContext({
+    aiDebateAutomationCore: globalThis.aiDebateAutomationCore,
+    Date: class extends Date { static now() { return now; } },
+    setTimeout: (callback, milliseconds) => { now += milliseconds; callback(); return 0; },
+    document: { querySelectorAll: (selector) => selector === ".assistant" && visible ? [answer]
+      : selector === ".user" ? [user] : [] },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+  });
+  const state = {};
+  const config = { responseSelectors: [".assistant"], userMessageSelectors: [".user"], stopSelectors: [], errorSelectors: [] };
+  const options = { baselinePromptCount: 0, submittedPromptIdentity: "user-anchor", pollBudgetMs: 600, state };
+  await context.aiDebateProviderPageTest.waitForCompletion(config, "chatgpt", 120000, assistantSnapshot([]),
+    "本次提示", [], () => {}, undefined, options);
+  assert.equal(state.candidateBuffer.text, "部分回答");
+  visible = false;
+  user.innerText = "使用者已修改題目";
+  user.textContent = user.innerText;
+  assert.equal(await context.aiDebateProviderPageTest.waitForCompletion(config, "chatgpt", 120000, assistantSnapshot([]),
+    "本次提示", [], () => {}, undefined, { ...options, pollBudgetMs: 3000 }), null);
+  assert.equal(state.candidateBuffer.text, "");
+});
+
+test("only standalone retry notices are classified as a provider outage", () => {
+  assert.equal(classifyProviderResponseError("grok", "If the upload fails, please try again later."), null);
+  assert.equal(classifyProviderResponseError("grok", "If the upload fails, please try again in a few minutes."), null);
+  assert.equal(classifyProviderResponseError("grok", "Please try again in a few minutes. The upload may take time."), null);
+  assert.equal(classifyProviderResponseError("grok", "Please try again later.")?.code, "PROVIDER_OVERLOADED");
+  assert.equal(classifyProviderResponseError("grok", "Please try again in a few minutes.")?.code, "PROVIDER_OVERLOADED");
+  assert.equal(classifyProviderResponseError("grok", "Please retry again in 30 seconds.")?.code, "PROVIDER_OVERLOADED");
 });

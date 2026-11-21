@@ -4,6 +4,9 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
 import { entitlementsForPlan } from "../src/shared/entitlements.js";
+import { DebateEngine } from "../src/background/debateEngine.js";
+import { recoverSession } from "../src/background/sessionRecovery.js";
+import { pendingReplyRepairs } from "../src/shared/meetingRecovery.js";
 test("fast provider jobs submit prompts before collecting replies", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
@@ -41,7 +44,7 @@ test("provider readiness has a stable service-worker boundary and status mapping
 test("provider messaging repairs stale content scripts through a version handshake", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
-  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.14"/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.2-driver\.14"/);
   assert.match(script, /PROVIDER_DRIVER_CONTRACT_VERSION = 1/);
   assert.match(script, /"src\/content\/provider-driver\.js"/);
   assert.match(script, /type: "aiDebate:getCapabilities"/);
@@ -256,7 +259,7 @@ test("provider debug history is bounded, persisted, and keeps only approved diag
   }
   assert.match(script, /error\.debugDetails = sanitizeDebugDetails\(response\?\.debugDetails\)/);
   assert.match(script, /debugDetails: sanitizeDebugDetails\(error\.debugDetails\)/);
-  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.1-driver\.14"/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.2-driver\.14"/);
 });
 
 test("transient response read RPC failures retry the same run within the provider deadline", async () => {
@@ -699,7 +702,7 @@ test("readiness falls back to a fresh provider tab when the requested tab is sta
       async update() {},
       async sendMessage(_tabId, message) {
         if (message.type === "aiDebate:getCapabilities") {
-          return { contentScriptVersion: "0.5.1-driver.14", driverContractVersion: 1 };
+          return { contentScriptVersion: "0.5.2-driver.14", driverContractVersion: 1 };
         }
         return { ready: true, status: "ready", checks: {} };
       },
@@ -776,4 +779,80 @@ test("summary provider messages use a longer phase-aware timeout", async () => {
   assert.ok(summaryTimeout > generalTimeout);
   assert.match(script, /phase === "summary" \|\| phase === "source-summary"/);
   assert.match(script, /timeoutMs: getProviderTimeoutMs\(job\.phase\)/);
+});
+
+
+test("service-worker persistence keeps cancellable submissions and repair continuations recoverable", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const recovery = await readFile("src/background/sessionRecovery.js", "utf8");
+  const submit = script.slice(script.indexOf("async function submitProviderJob("), script.indexOf("async function collectProviderJob"));
+  const messageSender = script.slice(script.indexOf("async function sendProviderMessage("), script.indexOf("function getProviderTimeoutMs"));
+  const resumed = script.slice(script.indexOf("async function resumeRepairedMeeting"), script.indexOf("function recordProviderResult"));
+  const clearHandler = script.slice(script.indexOf('if (message.type === "aiDebate:clearLocalData")'), script.indexOf('if (message.type === "aiDebate:start")'));
+  const departure = script.slice(script.indexOf('if (message.type === "aiDebate:departProvider")'), script.indexOf('if (["aiDebate:captureLinkedReplies"'));
+
+  assert.match(submit, /await publishState\(runToken\);[\s\S]*?runController\.assertCurrent\(runToken\);\s*const response = await sendProviderMessage/);
+  assert.match(messageSender, /type === "aiDebate:submitPrompt" && options\.runToken !== undefined[\s\S]*?runController\.assertCurrent\(options\.runToken\)/);
+  assert.match(clearHandler, /\.catch\(\(error\) => \{[\s\S]*?MEETING_ARCHIVE_READ_FAILED[\s\S]*?\}\)\s*\.then\(async/);
+  assert.doesNotMatch(script, /runtimeState = \{ \.\.\.runtimeState, workflowCheckpoint: null \};\s*await publishState\(runToken\);\s*return \{\s*ok: false,\s*provider: (?:job|submitted)\.provider/);
+  assert.match(departure, /currentSummaryProvider !== message\.provider[\s\S]*?departedProviders\.includes\(currentSummaryProvider\)/);
+  assert.match(resumed, /busy: true, status: "running"[\s\S]*?await runJobs\(pause\.remainingJobs[\s\S]*?if \(plan\.type === "planned"\)/);
+  const resumedJobs = resumed.slice(resumed.indexOf("if (pause.remainingJobs.length)"), resumed.indexOf('if (plan.type === "planned")'));
+  assert.doesNotMatch(resumedJobs, /repairPause: null/);
+  assert.match(recovery, /recoverInterruptedRepairPause\(normalized\)/);
+  assert.match(recovery, /checkpoint\?\.provider === job\.provider && checkpoint\?\.phase === phase/);
+  assert.match(recovery, /jobsToRecover = jobsEngine\.buildFinalJobs\(\)/);
+  assert.match(recovery, /jobsToRecover = jobsEngine\.buildRevealJobs\(\)/);
+  assert.match(script, /allowReducedState: !nextState/);
+  assert.equal((script.match(/interactiveMode: Boolean\(options\.interactiveMode\),/g) || []).length >= 3, true);
+});
+
+
+test("interrupted refresh checkpoints retry only explicit undispatched Meta writes", () => {
+  const providers = ["chatgpt", "gemini"];
+  const makeState = (stage) => {
+    const engine = new DebateEngine(providers);
+    engine.start("refresh retry checkpoint");
+    return {
+      savedAt: Date.now(), busy: true, status: "running", phase: "first-round", mode: "fast",
+      activeProviders: providers, transcript: engine.snapshot(),
+      workflowCheckpoint: { stage, provider: "chatgpt", phase: "first-round" },
+      providerDiagnostics: { chatgpt: { stage, phase: "first-round" } },
+    };
+  };
+  const createIdle = () => ({ status: "idle", busy: false, phase: "done", activeProviders: providers, errors: [] });
+
+  const metaRetry = recoverSession(makeState("meta-input-refresh"), createIdle);
+  assert.equal(pendingReplyRepairs(metaRetry.state).length, 0);
+  assert.deepEqual(metaRetry.state.repairPause.remainingJobs.map(({ provider }) => provider), providers);
+
+  const overloadRetry = recoverSession(makeState("overload-refresh"), createIdle);
+  assert.deepEqual(pendingReplyRepairs(overloadRetry.state).map(({ provider }) => provider), ["chatgpt"]);
+  assert.deepEqual(overloadRetry.state.repairPause.remainingJobs.map(({ provider }) => provider), ["gemini"]);
+});
+
+test("interrupted reveal dispatch creates a repairable reaction without replacing saved reactions", () => {
+  const providers = ["chatgpt", "gemini"];
+  const engine = new DebateEngine(providers, "chatgpt", 1, { openEnded: true, interactionStyle: "imposter" });
+  engine.start("reveal repair checkpoint");
+  engine.recordAnswer("chatgpt", "chatgpt first answer");
+  engine.recordAnswer("gemini", "gemini first answer");
+  engine.buildReveal();
+  engine.recordReveal("gemini", "已保存的揭曉反應");
+  const recovered = recoverSession({
+    savedAt: Date.now(), busy: true, status: "running", phase: "reveal", mode: "fast",
+    activeProviders: providers, transcript: engine.snapshot(),
+    workflowCheckpoint: { stage: "collecting", provider: "chatgpt", phase: "reveal" },
+    repairPause: { target: "answer", pausedPhase: "first-round", remainingJobs: [],
+      resumePlan: { type: "planned", nextRound: 1, scheduler: "fast", interactiveMode: false } },
+    providerDiagnostics: {
+      chatgpt: { stage: "waiting-response", phase: "reveal" },
+      gemini: { stage: "received", phase: "reveal" },
+    },
+  }, () => ({ status: "idle", busy: false, phase: "done", activeProviders: providers, errors: [] }));
+
+  assert.deepEqual(pendingReplyRepairs(recovered.state).map(({ provider, phase }) => ({ provider, phase })),
+    [{ provider: "chatgpt", phase: "reveal" }]);
+  assert.equal(recovered.state.transcript.reveal.reactions.gemini, "已保存的揭曉反應");
+  assert.equal(recovered.state.repairPause.target, "reveal");
 });

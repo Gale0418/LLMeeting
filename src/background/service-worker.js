@@ -145,8 +145,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           runtimeState.departures = [...(runtimeState.departures || []), { provider: message.provider, departedAt: Date.now() }];
         }
         const departedProviders = [...new Set([...(runtimeState.departedProviders || []), message.provider])];
-        const nextSummaryProvider = engine.participatingProviders.find((provider) => provider === engine.summaryProvider)
-          || engine.participatingProviders[0];
+        const currentSummaryProvider = runtimeState.summaryProvider;
+        const nextSummaryProvider = isProviderId(currentSummaryProvider) && currentSummaryProvider !== message.provider &&
+          !departedProviders.includes(currentSummaryProvider)
+          ? currentSummaryProvider
+          : engine.participatingProviders[0];
         if (nextSummaryProvider) {
           engine.summaryProvider = nextSummaryProvider;
           engine.resolvedSummaryProvider = nextSummaryProvider;
@@ -311,6 +314,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return true;
     }
     ensureRuntimeInitialized()
+      .catch((error) => {
+        if (error.code !== "MEETING_ARCHIVE_READ_FAILED") throw error;
+      })
       .then(async () => {
         await ensureRuntimeStateRetention();
         assertCurrentControlOperation(operation);
@@ -1088,6 +1094,7 @@ async function startInteractiveDebate(question, options = {}) {
     skipSummary: options.skipSummary || false,
     providerTabs,
     preflightResults: preflight.results,
+    interactiveMode: Boolean(options.interactiveMode),
   };
   await publishState(runToken);
 
@@ -1098,13 +1105,14 @@ async function startInteractiveDebate(question, options = {}) {
     type: options.mode === "chat" && options.interactiveMode ? "interactive" : "planned",
     nextRound: 1, scheduler: "fast", interactiveMode: Boolean(options.interactiveMode),
   });
-  if (runtimeState.repairPause) return runtimeState;
+  if (runtimeState.repairPause && pendingReplyRepairs(runtimeState).length) return runtimeState;
 
   // Free chat pauses after the initial answers so the user can join round 1.
   // Other interactive modes retain their existing answer -> critique flow.
   if (options.mode === "chat" && options.interactiveMode) {
     runtimeState = {
       ...runtimeState,
+      repairPause: null,
       busy: false,
       status: "waiting_for_user",
       phase: "waiting_for_user",
@@ -1195,7 +1203,7 @@ async function runFinalSummary(runToken) {
   runtimeState = { ...runtimeState, summaries: {} };
   const jobs = engine.buildFinalJobs();
   const results = await runFastProviderJobs(jobs, "summary", runToken, { type: "summary" });
-  if (runtimeState.repairPause) return { ok: false, paused: true };
+  if (runtimeState.repairPause && pendingReplyRepairs(runtimeState).length) return { ok: false, paused: true };
   runController.assertCurrent(runToken);
   if (!results.some((result) => result.ok)) {
     return results[0] || { ok: false, error: "全員匿名總結沒有可用的裁判結果" };
@@ -1227,10 +1235,11 @@ async function finishImposterReveal(runToken) {
   // 沿用 fast scheduler 的逐一收回與既有錯誤容錯，單一 AI 失敗不會中斷其餘參與者。
   const revealJobs = engine.buildRevealJobs();
   await runFastProviderJobs(revealJobs, "reveal", runToken, { type: "reveal" });
-  if (runtimeState.repairPause) return runtimeState;
+  if (runtimeState.repairPause && pendingReplyRepairs(runtimeState).length) return runtimeState;
 
   runtimeState = {
     ...runtimeState,
+    repairPause: null,
     busy: false,
     status: "done",
     phase: "reveal",
@@ -1293,6 +1302,7 @@ async function startQuestionDebate(question, options = {}) {
     skipSummary: options.skipSummary || false,
     providerTabs,
     preflightResults: preflight.results,
+    interactiveMode: Boolean(options.interactiveMode),
   };
   await publishState(runToken);
 
@@ -1349,6 +1359,7 @@ async function startSummaryDebate(userNote, options = {}) {
     entitlements,
     skipSummary: options.skipSummary || false,
     preflightResults: preflight.results,
+    interactiveMode: Boolean(options.interactiveMode),
   };
   await publishState(runToken);
 
@@ -1407,7 +1418,7 @@ async function runDebateRounds(originalQuestion, options = {}) {
   await runProviderJobs(firstRoundJobs, "answer", runToken, {
     type: "planned", nextRound: 1, scheduler, interactiveMode: Boolean(options.interactiveMode),
   });
-  if (runtimeState.repairPause) return runtimeState;
+  if (runtimeState.repairPause && pendingReplyRepairs(runtimeState).length) return runtimeState;
 
   return continuePlannedDebate(1, options);
 }
@@ -1432,12 +1443,12 @@ async function continuePlannedDebate(startRound, options = {}) {
     await runProviderJobs(critiqueJobs, "critique", runToken, {
       type: "planned", nextRound: roundNumber + 1, scheduler, interactiveMode: Boolean(options.interactiveMode),
     });
-    if (runtimeState.repairPause) return runtimeState;
+    if (runtimeState.repairPause && pendingReplyRepairs(runtimeState).length) return runtimeState;
   }
 
   if (engine.participatingProviders.length < 2) {
     runtimeState = {
-      ...runtimeState, busy: false, status: "done", phase: "done", summary: "",
+      ...runtimeState, repairPause: null, busy: false, status: "done", phase: "done", summary: "",
       transcript: engine.snapshot(),
       message: "本場僅剩一位 AI 在席，已略過互評並安全結束。",
     };
@@ -1448,6 +1459,7 @@ async function continuePlannedDebate(startRound, options = {}) {
   if (options.interactiveMode) {
     runtimeState = {
       ...runtimeState,
+      repairPause: null,
       busy: false,
       status: "waiting_for_user",
       phase: "waiting_for_user",
@@ -1465,6 +1477,7 @@ async function continuePlannedDebate(startRound, options = {}) {
   if (runtimeState.skipSummary) {
     runtimeState = {
       ...runtimeState,
+      repairPause: null,
       busy: false,
       status: "done",
       phase: "done",
@@ -1485,13 +1498,14 @@ async function continuePlannedDebate(startRound, options = {}) {
   await publishState(runToken);
 
   const finalResult = await runFinalSummary(runToken);
-  if (runtimeState.repairPause) return runtimeState;
+  if (runtimeState.repairPause && pendingReplyRepairs(runtimeState).length) return runtimeState;
   if (!finalResult.ok) {
     return finishWithError(finalResult, runToken);
   }
 
   runtimeState = {
     ...runtimeState,
+    repairPause: null,
     busy: false,
     status: "done",
     phase: "done",
@@ -1526,7 +1540,7 @@ async function handleNextRound(action, text, runToken) {
     };
     await publishState(runToken);
     await runFastProviderJobs(jobs, "critique", runToken);
-    if (runtimeState.repairPause) return runtimeState;
+    if (runtimeState.repairPause && pendingReplyRepairs(runtimeState).length) return runtimeState;
   } else if (action === "critique") {
     if (engine.participatingProviders.length < 2) {
       runtimeState = { ...runtimeState, busy: false, status: "done", phase: "done", summary: "",
@@ -1546,7 +1560,7 @@ async function handleNextRound(action, text, runToken) {
     };
     await publishState(runToken);
     await runFastProviderJobs(jobs, "critique", runToken);
-    if (runtimeState.repairPause) return runtimeState;
+    if (runtimeState.repairPause && pendingReplyRepairs(runtimeState).length) return runtimeState;
   } else if (action === "summarize") {
     if (engine.participatingProviders.length < 2 &&
         (!engine.openEnded || engine.interactionStyle === "imposter")) {
@@ -1566,7 +1580,7 @@ async function handleNextRound(action, text, runToken) {
     };
     await publishState(runToken);
     const finalResult = await runFinalSummary(runToken);
-    if (runtimeState.repairPause) return runtimeState;
+    if (runtimeState.repairPause && pendingReplyRepairs(runtimeState).length) return runtimeState;
     if (!finalResult.ok) return finishWithError(finalResult, runToken);
 
     runtimeState = {
@@ -1700,13 +1714,13 @@ async function resumeRepairedMeeting(runToken) {
     return runtimeState;
   }
   const plan = pause.resumePlan;
-  runtimeState = { ...runtimeState, repairPause: null, busy: true, status: "running",
+  runtimeState = { ...runtimeState, busy: true, status: "running",
     phase: pause.pausedPhase || (pause.target === "answer" ? "first-round" : pause.target), message: "補回覆已完成，接續原流程…" };
   await publishState(runToken);
   if (pause.remainingJobs.length) {
     const runJobs = plan.scheduler === "sequential" ? runSequentialProviderJobs : runFastProviderJobs;
     await runJobs(pause.remainingJobs, pause.target, runToken, plan);
-    if (runtimeState.repairPause) return runtimeState;
+    if (runtimeState.repairPause && pendingReplyRepairs(runtimeState).length) return runtimeState;
   }
   if (plan.type === "planned") {
     return continuePlannedDebate(plan.nextRound, { ...plan, runToken });
@@ -1721,14 +1735,14 @@ async function resumeRepairedMeeting(runToken) {
         .filter((provider) => !runtimeState.departedProviders?.includes(provider))
         .map((provider) => `${names[provider] || "匿名參與者（暱稱未取得）"}：\n${runtimeState.summaries[provider] || ""}`).join("\n\n")
       : runtimeState.summaries[runtimeState.summaryProvider];
-    runtimeState = { ...runtimeState, busy: false, status: "done", phase: "done", summary,
+    runtimeState = { ...runtimeState, repairPause: null, busy: false, status: "done", phase: "done", summary,
       transcript: engine.snapshot(), message: "總結已補齊，會議完成" };
   } else if (plan.type === "reveal") {
     const reveal = engine.snapshot().reveal;
-    runtimeState = { ...runtimeState, busy: false, status: "done", phase: "reveal", reveal,
+    runtimeState = { ...runtimeState, repairPause: null, busy: false, status: "done", phase: "reveal", reveal,
       transcript: engine.snapshot(), summary: reveal.content, message: "揭曉反應已補齊，會議完成" };
   } else {
-    runtimeState = { ...runtimeState, busy: false, status: "waiting_for_user", phase: "waiting_for_user",
+    runtimeState = { ...runtimeState, repairPause: null, busy: false, status: "waiting_for_user", phase: "waiting_for_user",
       transcript: engine.snapshot(), manuallyRecovered: true, message: "本輪已補齊，等待你的下一步。" };
   }
   await publishState(runToken);
@@ -1815,11 +1829,12 @@ async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
     if (meetingArchive.available && !saved) {
       throw Object.assign(new Error("無法保存會議進度，這則提示尚未送出。"), { code: "MEETING_ARCHIVE_UNAVAILABLE" });
     }
+    runController.assertCurrent(runToken);
 
     const response = await sendProviderMessage(tab.id, job, "aiDebate:submitPrompt", {
       runId,
       ...(job.sourceTab ? { expectedSourceUrl: job.sourceTab.url } : {}),
-    });
+    }, { runToken });
     runController.assertCurrent(runToken);
     if (!response?.ok) {
       throw providerResponseError(response, "provider submit failed");
@@ -1881,7 +1896,6 @@ async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
       debugStage: error.rpcStage || "submit",
       debugDetails: error.debugDetails,
     }, runToken);
-    runtimeState = { ...runtimeState, workflowCheckpoint: null };
     await publishState(runToken);
     return {
       ok: false,
@@ -2004,7 +2018,6 @@ async function collectProviderJob(submitted, runToken, overloadRetryCount = 0) {
       debugStage: error.rpcStage || "collect",
       debugDetails: error.debugDetails,
     }, runToken);
-    runtimeState = { ...runtimeState, workflowCheckpoint: null };
     await publishState(runToken);
     return {
       ok: false,
@@ -2189,7 +2202,7 @@ async function refreshMetaInputProvider(tabId, job, runToken) {
   runController.assertCurrent(runToken);
 }
 
-const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.1-driver.14";
+const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.2-driver.14";
 const PROVIDER_DRIVER_CONTRACT_VERSION = 1;
 
 function isProviderLoginTab(tab, provider) {
@@ -2334,6 +2347,9 @@ async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", ex
         throw Object.assign(new Error("來源對話分頁已變更，請重新啟動總結辯論。"), { code: "PROVIDER_CONVERSATION_CHANGED" });
       }
     }
+    if (type === "aiDebate:submitPrompt" && options.runToken !== undefined) {
+      runController.assertCurrent(options.runToken);
+    }
     if (type === "aiDebate:checkReadiness") {
       const remaining = (options.deadline ?? Infinity) - Date.now();
       if (remaining <= 0) {
@@ -2465,8 +2481,8 @@ async function publishState(runToken, operation, { nextState, archiveEvent } = {
       if (!isCurrent()) return false;
       if (!meetingArchive.available) {
         archiveStatus = "unavailable";
-        const persistedState = createBoundedPersistedState(stateToPublish);
-        return safePersistState(chrome.storage, persistedState, STORAGE_KEY, { isCurrent });
+        const persistedState = nextState ? stateToPublish : createBoundedPersistedState(stateToPublish);
+        return safePersistState(chrome.storage, persistedState, STORAGE_KEY, { isCurrent, allowReducedState: !nextState });
       }
       const batch = pendingArchiveEvents.filter((entry) => entry.sessionId === sessionId);
       const events = batch.map((entry) => entry.event);

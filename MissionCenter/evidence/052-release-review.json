@@ -1,0 +1,234 @@
+{
+  "date": "2026-11-21",
+  "task": "LLM-T82",
+  "baseRevision": "166fa67088b8ae6653809f95cb4ff2385088e45d",
+  "sourceBranch": "main",
+  "review": {
+    "maxRunsPerHour": 3,
+    "maxFilesPerRun": 150,
+    "runs": [
+      {
+        "status": "completed",
+        "startedAt": "2026-11-21T10:26:12+08:00",
+        "reviewedFiles": 130,
+        "snapshotCommit": "85771c07dc863eeb0f6146297a8797d9c100a743",
+        "selectionDigest": "561e527cb8c9c0da813f888e2bd3c7430bbf01ce1978808b503f4c1ac7c1859a",
+        "ndjsonDigest": "cb92ea0289b48d9f328a61b152db37923445029a5fe964529cb8cfe213f3a3b6",
+        "findings": [
+          {
+            "id": 1,
+            "severity": "major",
+            "path": "docs/superpowers/plans/2026-06-19-regression-repair-and-easter-egg.md",
+            "line": 513,
+            "title": "Share the runtime initialization promise.",
+            "disposition": "not-applicable",
+            "evidence": "舊計畫範例。現行 ensureRuntimeInitialized 共享 initializationPromise。"
+          },
+          {
+            "id": 2,
+            "severity": "major",
+            "path": "docs/superpowers/plans/2026-05-21-ai-debate-extension-mvp.md",
+            "line": 116,
+            "title": "Create the test harness before running the green check.",
+            "disposition": "historical",
+            "evidence": "舊 MVP 開工步驟。現行 package.json 已有 npm test，發行流程可直接使用。"
+          },
+          {
+            "id": 3,
+            "severity": "major",
+            "path": "docs/superpowers/plans/2026-06-18-core-regression-repairs.md",
+            "line": 463,
+            "title": "Serialize runtime hydration.",
+            "disposition": "not-applicable",
+            "evidence": "舊計畫摘錄。現行背景初始化使用單一 promise 並在讀取失敗後重設。"
+          },
+          {
+            "id": 4,
+            "severity": "major",
+            "path": "src/background/service-worker.js",
+            "line": 2347,
+            "title": "Check the run token immediately before sending a prompt.",
+            "disposition": "fixed",
+            "evidence": "完成能力與來源檢查後，在派發 RPC 前重新檢查 run token。"
+          },
+          {
+            "id": 5,
+            "severity": "major",
+            "path": "src/background/sessionRecovery.js",
+            "line": 94,
+            "title": "Persist the requested interactive mode for restart recovery.",
+            "disposition": "fixed",
+            "evidence": "起跑狀態持久化互動旗標，重啟沿用已保存的選項。"
+          },
+          {
+            "id": 6,
+            "severity": "major",
+            "path": "src/background/service-worker.js",
+            "line": 313,
+            "title": "Allow local data deletion when the archive cannot be read.",
+            "disposition": "fixed",
+            "evidence": "辨認讀取本機檔案庫失敗，仍進行明確授權的清除流程。"
+          },
+          {
+            "id": 7,
+            "severity": "major",
+            "path": "src/background/service-worker.js",
+            "line": 1884,
+            "title": "Do not erase the recovery checkpoint for an outstanding submission.",
+            "disposition": "fixed",
+            "evidence": "一家送出或收集失敗仍保留提交 checkpoint 與已落盤的診斷。"
+          },
+          {
+            "id": 8,
+            "severity": "major",
+            "path": "src/background/service-worker.js",
+            "line": 148,
+            "title": "Keep the selected chair when a debater leaves.",
+            "disposition": "fixed",
+            "evidence": "非主席的成員離席時保留現有旁觀主席。"
+          },
+          {
+            "id": 9,
+            "severity": "major",
+            "path": "src/background/statePersistence.js",
+            "line": 154,
+            "title": "Do not report a manual reply as saved after a metadata-only write.",
+            "disposition": "fixed",
+            "evidence": "手補保存需確實存入完整快照，拒絕降級成僅存狀態。"
+          },
+          {
+            "id": 10,
+            "severity": "major",
+            "path": "src/background/service-worker.js",
+            "line": 1703,
+            "title": "Keep the resume plan until recovery can restore the next step.",
+            "disposition": "fixed",
+            "evidence": "保留暫停到下一階段接手，依已存回覆與派發狀態恢復。揭曉漏段轉手補，無法重建的內鬼首輪停下並保存原回覆。"
+          },
+          {
+            "id": 11,
+            "severity": "major",
+            "path": "src/content/provider-page.js",
+            "line": 1683,
+            "title": "Keep the known user turn when a generic assistant selector matches inside it.",
+            "disposition": "fixed",
+            "evidence": "已知使用者訊息中的泛用 AI 節點不會誤刪整段使用者訊息。"
+          },
+          {
+            "id": 12,
+            "severity": "major",
+            "path": "src/content/provider-page.js",
+            "line": 969,
+            "title": "Restrict Send lookup to controls associated with the verified composer.",
+            "disposition": "fixed",
+            "evidence": "送出僅搜尋輸入框所屬的表單，忽略頁面的回饋按鈕。"
+          },
+          {
+            "id": 13,
+            "severity": "major",
+            "path": "src/content/provider-page.js",
+            "line": 1411,
+            "title": "Discard the buffered reply when the submitted turn is no longer visible.",
+            "disposition": "fixed",
+            "evidence": "失去已送出提示的可靠對應時丟棄先前的回覆緩衝。"
+          },
+          {
+            "id": 14,
+            "severity": "major",
+            "path": "src/content/provider-page.js",
+            "line": 1050,
+            "title": "Check Gemini readiness against the live editor.",
+            "disposition": "fixed",
+            "evidence": "Gemini 等待送出時重新定位目前編輯器，驗證同一份提示。"
+          },
+          {
+            "id": 15,
+            "severity": "major",
+            "path": "src/content/provider-page.js",
+            "line": 1642,
+            "title": "Sort eligible replies before selecting the latest one.",
+            "disposition": "fixed",
+            "evidence": "依頁面實際順序比較符合不同選擇器的 AI 回覆。"
+          },
+          {
+            "id": 16,
+            "severity": "major",
+            "path": "src/content/automation-core.js",
+            "line": 174,
+            "title": "Do not classify normal assistant advice as a provider outage.",
+            "disposition": "fixed",
+            "evidence": "直接的服務重試通知與內含重試建議的正常回覆分開辨識。"
+          },
+          {
+            "id": 17,
+            "severity": "major",
+            "path": "src/sidepanel/app.js",
+            "line": 212,
+            "title": "Do not assign a repair draft to a different session.",
+            "disposition": "fixed",
+            "evidence": "補回覆草稿綁定會議、供應商、輪次與故障文本。"
+          },
+          {
+            "id": 18,
+            "severity": "major",
+            "path": "tests/pageAutomation.test.mjs",
+            "line": 837,
+            "title": "Use one version expectation for the content script.",
+            "disposition": "fixed",
+            "evidence": "兩端握手及版本斷言同步到 0.5.2-driver.14，修正首輪快照的舊版號正規表示式。"
+          }
+        ]
+      },
+      {
+        "attempt": 2,
+        "startedAt": "2026-11-21T11:13:24+0800",
+        "requestedPaths": 14,
+        "status": "error",
+        "error": "Connection failed: Provider identity verification timed out. Please try again."
+      },
+      {
+        "attempt": 3,
+        "startedAt": "2026-11-21T11:16:28+0800",
+        "requestedPaths": 14,
+        "status": "complete",
+        "reviewedFiles": 14,
+        "findings": 1,
+        "dispositions": [
+          {
+            "severity": "major",
+            "path": "src/content/automation-core.js",
+            "title": "Keep duration-based retry notices classified as errors.",
+            "disposition": "fixed",
+            "evidence": "獨立限時重試通知的回歸測試修前失敗，修後涵蓋數分鐘、指定秒數與含重試建議的正常回覆。"
+          }
+        ]
+      }
+    ],
+    "scope": "歷史追蹤程式與測試、文件。排除大型生成檔、素材、鎖檔、私人輸出與 Mission Center。",
+    "rawLogs": "僅隔離資料夾暫存，保存查證摘要。"
+  },
+  "tests": {
+    "runner": "node --test --test-concurrency=4 tests/*.test.mjs",
+    "passed": 593,
+    "total": 593,
+    "mode": "本機隔離副本，正式套件與工作區逐位元核對"
+  },
+  "package": {
+    "path": "dist/llmeeting-0.5.2.zip",
+    "version": "0.5.2",
+    "size": 2835963,
+    "sha256": "72a2195d54d9452715f5b505340a549f582c341b40a645f0f232d6023e673c2e",
+    "entries": 59,
+    "crc": "pass",
+    "exactWorkspaceBytes": true,
+    "manifestPermissionDiff": false,
+    "driverVersion": "0.5.2-driver.14"
+  },
+  "remaining": [
+    "五家登入態完整長會議、商店送審與發布"
+  ],
+  "store": {
+    "status": "ready-for-upload",
+    "publishedVersionObservedBefore": "0.5.1"
+  }
+}

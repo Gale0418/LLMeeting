@@ -263,3 +263,20 @@ test("safePersistState catches failure on minimal state write without throwing",
   const ok = await safePersistState(chromeStorage, { status: "done" });
   assert.equal(ok, false);
 });
+
+test("an exact repair save refuses a metadata-only or shortened fallback", async () => {
+  const repaired = { transcript: { answers: { chatgpt: "full reply" } } };
+  const writes = [];
+  const storage = { local: {
+    async set(payload) {
+      writes.push(payload);
+      if (writes.length === 1) throw new Error("quota exceeded");
+    },
+    async get() { return {}; },
+  } };
+  const options = { allowReducedState: false };
+  assert.equal(await safePersistState(storage, repaired, "state", options), false);
+  assert.deepEqual(writes, [{ state: repaired }]);
+  assert.equal(await safePersistState(storage, repaired, "state", options), true);
+  assert.deepEqual(writes[1], { state: repaired });
+});
