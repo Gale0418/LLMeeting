@@ -133,11 +133,11 @@ test("response reads recheck the epoch before classifying or persisting", async 
   const afterAwait = readResponse.indexOf("const responseCandidate = await waitForCompletion");
   const firstEpochCheck = readResponse.indexOf("assertAutomationEpoch(runEpoch);", afterAwait);
   const classify = readResponse.indexOf("const providerError = classifyProviderResponseError", afterAwait);
-  const remove = readResponse.indexOf("submittedRuns.delete(message.runId)", afterAwait);
-  const persist = readResponse.indexOf("persistSubmittedRuns();", remove);
+  const saveReply = readResponse.indexOf("submittedRuns.set(message.runId", afterAwait);
+  const persist = readResponse.indexOf("persistSubmittedRuns();", saveReply);
 
   assert.ok(afterAwait >= 0);
   assert.ok(firstEpochCheck > afterAwait && firstEpochCheck < classify);
-  assert.ok(firstEpochCheck < remove);
-  assert.ok(readResponse.indexOf("assertAutomationEpoch(runEpoch);", remove) < persist);
+  assert.ok(classify < saveReply && saveReply < persist);
+  assert.ok(readResponse.slice(classify, saveReply).includes("assertAutomationEpoch(runEpoch);"));
 });

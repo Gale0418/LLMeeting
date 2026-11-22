@@ -843,7 +843,7 @@ test("Grok readiness recognizes the localized live composer structure", async ()
 test("provider content script uses a replaceable versioned listener after extension reload", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
 
-  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.2-driver\.14"/);
+  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.2-driver\.15"/);
   assert.match(script, /"aiDebate:getCapabilities": getCapabilities/);
   assert.match(script, /__aiDebateContentVersion/);
   assert.match(script, /onMessage\.removeListener\(globalThis\.__aiDebateContentMessageListener\)/);
@@ -864,7 +864,7 @@ test("same-version content reinjection replaces the listener without duplicating
   assert.equal(listeners.size, 1);
   assert.notEqual(context.__aiDebateContentMessageListener, previous);
   const response = await new Promise(resolve => context.__aiDebateContentMessageListener({ type: "aiDebate:getCapabilities" }, {}, resolve));
-  assert.equal(response.contentScriptVersion, "0.5.2-driver.14");
+  assert.equal(response.contentScriptVersion, "0.5.2-driver.15");
 });
 
 test("failed content initialization cannot poison the next injection", async () => {
@@ -1838,6 +1838,33 @@ test("ChatGPT paragraph editor verifies exact source despite rendered paragraph 
   await context.aiDebateProviderPageTest.waitForInputWritten(input, "第一段\n\n第二段\n第三段", 0);
 });
 
+test("ChatGPT verifies literal-paste line breaks and generated links without losing prompt text", async () => {
+  const api = (await loadProviderPageTestContext()).aiDebateProviderPageTest;
+  const href = "https://example.com/test?q=123&b=5";
+  const prompt = `第一段\n\n參考 ${href}\n  **第二段**\n完整尾端`;
+  const text = (textContent) => ({ nodeType: 3, textContent });
+  const br = { tagName: "BR" };
+  const literal = (...childNodes) => ({ tagName: "SPAN", childNodes,
+    hasAttribute: (name) => name === "data-prompt-literal-paste" });
+  const link = { tagName: "SPAN", textContent: href,
+    getAttribute: (name) => ({ "data-rich-text-generated-autolink": "", "text-link-href": href })[name] ?? null,
+    querySelectorAll: () => [{ tagName: "SPAN" }, { tagName: "svg" }, { tagName: "path" }] };
+  const input = paragraphEditorFixture(["未套用"]);
+  input.innerText = prompt.replaceAll("\n", "\n\n");
+  input.childNodes[0].childNodes = [literal(text("第一段"), br, br, text("參考 ")), link,
+    literal(br, text("  **第二段**"), br, text("完整尾端"))];
+  await api.waitForInputWritten(input, prompt, 0);
+
+  for (const mismatch of [prompt.replace("\n\n", "\n"), prompt.replace("完整尾端", "完整"), prompt.replace("b=5", "b=8")]) {
+    await assert.rejects(api.waitForInputWritten(input, mismatch, 0), { code: "PROVIDER_INPUT_WRITE_FAILED" });
+  }
+  link.textContent = "https://example.com/different";
+  await assert.rejects(api.waitForInputWritten(input, prompt, 0), { code: "PROVIDER_INPUT_WRITE_FAILED" });
+  link.textContent = href;
+  input.childNodes[0].childNodes[2].childNodes.push({ tagName: "IMG" });
+  await assert.rejects(api.waitForInputWritten(input, prompt, 0), { code: "PROVIDER_INPUT_WRITE_FAILED" });
+});
+
 test("ChatGPT verifies literal color-code spans and empty matching swatches without losing source", async () => {
   const context = await loadProviderPageTestContext();
   const input = paragraphEditorFixture(["第 1 輪對話。", "", "底色 #0e3a4a", "尾端"]);
@@ -2655,53 +2682,61 @@ test("completion polls preserve the original hard deadline despite continued tex
   generating = false;
 });
 
-test("readSubmittedResponse retains pending runs and removes them only after a complete read", async () => {
+test("Meta response polls join in flight and replay a completed reply after a lost receipt", async () => {
   let now = 0;
   let generating = true;
-  let sendClicks = 0;
-  const assistant = { innerText: "完整答案", contains: () => false,
+  let stored = "[]";
+  let renderedReply = "完整答案\n含完整結尾";
+  const prompt = "這次提示\n附上完整原文";
+  const user = { innerText: prompt.replace("\n", "\u2028"),
+    getAttribute: (name) => name === "data-message-id" ? "meta-user-1" : null,
+    compareDocumentPosition: () => 4, getBoundingClientRect: () => ({ width: 400, height: 50 }) };
+  const assistant = { get innerText() { return renderedReply; }, contains: () => false,
     getBoundingClientRect: () => ({ width: 400, height: 50 }) };
   const stop = { disabled: false, getAttribute: () => null,
     getBoundingClientRect: () => ({ width: 40, height: 40 }) };
-  const base = globalThis.aiDebateProviderAdapters.chatgpt;
-  const config = { ...base, responseSelectors: [".assistant"], userMessageSelectors: [],
-    stopSelectors: [".stop"], errorSelectors: [], sendSelectors: [".send"], inputSelectors: [".input"] };
-  const send = { click() { sendClicks += 1; }, disabled: false,
-    getBoundingClientRect: () => ({ width: 40, height: 40 }) };
-  const context = await loadProviderPageTestContext({
+  const config = globalThis.aiDebateProviderAdapters.meta;
+  const sessionStorage = { getItem: () => stored, setItem: (_key, value) => { stored = value; } };
+  const hooks = {
     aiDebateAutomationCore: globalThis.aiDebateAutomationCore,
-    aiDebateProviderAdapters: { chatgpt: config },
-    location: { hostname: "chatgpt.com", pathname: "/" },
+    aiDebateProviderAdapters: { meta: config },
+    location: { hostname: "www.meta.ai", pathname: "/prompt/meta-chat" },
+    sessionStorage,
     Date: class extends Date { static now() { return now; } },
-    setTimeout: (callback, milliseconds) => { now += milliseconds; callback(); return 0; },
-    document: { querySelectorAll: (selector) => selector === ".assistant" ? [assistant]
-      : selector === ".stop" && generating ? [stop]
-      : selector === ".send" ? [send] : [] },
+    setTimeout: (callback, milliseconds) => { now += milliseconds; queueMicrotask(callback); return 0; },
+    document: { querySelectorAll: (selector) => selector === config.captureResponseSelector ? [assistant]
+      : selector === config.stopSelectors[0] && generating ? [stop]
+      : selector === "[role='article'][aria-label='你的訊息']" ? [user] : [] },
     getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
-  });
-  const api = context.aiDebateProviderPageTest;
-  api.submittedRuns.set("run-poll", { providerId: "chatgpt", epoch: 0,
-    baseline: assistantSnapshot([]), errorBaseline: [], prompt: "這次提示", submittedAt: 0,
-    userTurnCount: undefined });
+  };
+  const api = (await loadProviderPageTestContext(hooks)).aiDebateProviderPageTest;
+  api.submittedRuns.set("run-poll", { providerId: "meta", epoch: 0, conversationIdentity: "meta-chat",
+    baseline: assistantSnapshot([]), errorBaseline: [], prompt, submittedAt: 0,
+    baselinePromptCount: 0, userTurnCount: 0, submittedPromptIdentity: "meta-user-1" });
+  const read = { provider: "meta", runId: "run-poll", epoch: 0, timeoutMs: 120000 };
 
-  const pending = await api.readSubmittedResponse({ provider: "chatgpt", runId: "run-poll",
-    epoch: 0, timeoutMs: 120000, pollBudgetMs: 600 });
+  const pending = await api.readSubmittedResponse({ ...read, pollBudgetMs: 600 });
   assert.equal(pending.ok, true);
   assert.equal(pending.pending, true);
-  assert.equal(pending.provider, "chatgpt");
-  assert.equal(pending.runId, "run-poll");
-  assert.equal(api.submittedRuns.has("run-poll"), true);
-  assert.equal(api.submittedRuns.get("run-poll").responseState.candidateBuffer.text, "完整答案");
+  assert.equal(api.submittedRuns.get("run-poll").responseState.candidateBuffer.text, renderedReply);
 
   generating = false;
-  const completed = await api.readSubmittedResponse({ provider: "chatgpt", runId: "run-poll",
-    epoch: 0, timeoutMs: 120000, pollBudgetMs: 3000 });
-  assert.equal(completed.ok, true);
-  assert.equal(completed.pending, undefined);
-  assert.equal(completed.provider, "chatgpt");
-  assert.equal(completed.content, "完整答案");
-  assert.equal(api.submittedRuns.has("run-poll"), false);
-  assert.equal(sendClicks, 0);
+  const [completed, overlapping] = await Promise.all([
+    api.readSubmittedResponse({ ...read, pollBudgetMs: 5000 }),
+    api.readSubmittedResponse({ ...read, pollBudgetMs: 5000 }),
+  ]);
+  assert.equal(completed.content, renderedReply);
+  assert.equal(completed, overlapping);
+  assert.equal(api.submittedRuns.get("run-poll").prompt, undefined);
+
+  renderedReply = "換成別的畫面，仍只能回傳這次已擷取的答案";
+  const restored = (await loadProviderPageTestContext(hooks)).aiDebateProviderPageTest;
+  assert.equal((await restored.readSubmittedResponse(read)).content, completed.content);
+  hooks.location.pathname = "/prompt/another-chat";
+  await assert.rejects(restored.readSubmittedResponse(read), { code: "PROVIDER_CONVERSATION_CHANGED" });
+  hooks.location.pathname = "/prompt/meta-chat";
+  restored.abortAutomation();
+  await assert.rejects(restored.readSubmittedResponse({ ...read, epoch: 1 }), { code: "PROVIDER_RESPONSE_MISMATCH" });
 });
 
 

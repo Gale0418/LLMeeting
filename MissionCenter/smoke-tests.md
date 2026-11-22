@@ -1,5 +1,12 @@
 # Smoke Tests
 
+## 2026-11-22 ChatGPT 提示驗證與 Meta 回覆收集（LLM-T82／Review）
+
+- 實際 ChatGPT 草稿重現 34 行合成提示的畫面文字與原文不一致。依頁面原文節點重建後，換行、縮排和網址與原始提示逐字相符。回歸確認會拒絕漏掉空行、被修改的網址或未知內嵌節點。
+- Meta 已產生回覆時，會議記錄的錯誤為收集通訊逾時。測試重現同一次讀取的回執遺失，重試共用進行中的讀取，已完成則回傳原回覆。同一提示只送一次。
+- 執行 `node --test --test-reporter=tap tests/*.test.mjs`、`npm --prefix tests/browser test` 和隔離封裝。Node 回歸 595/595，隔離 Chromium 獨立頁 101 項、原生側欄 51 項通過，ZIP 59 檔 CRC 與逐位元比對通過。隔離瀏覽器頁面錯誤 0。ZIP 2838347 bytes，SHA256 `ef3c39ffe89ec7117ce9cbd4431a5e702fa6784f15286ac4c04764f10e251747`。
+- CodeRabbit 審查 128 檔，唯一一項經核對為審查副本省略語系檔所致。Git 和候選 ZIP 都含英、日、繁中語系與有效的擴充功能說明。審查處置與驗收見 [Driver .15 紀錄](evidence/052-driver15-review.json)。五家登入帳號的整場送出與回覆核對待驗。
+
 ## 2026-11-21 0.5.2 候選驗證（LLM-T82）
 
 - 執行 Node 全套（隔離副本）、異動 JS/MJS 語法檢查、`npm run package`、CRC 與逐檔比對。Node 593/593、異動 JavaScript 語法、ZIP 59 檔 CRC 與原始檔逐位元比對通過。

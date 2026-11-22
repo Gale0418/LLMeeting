@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = "0.5.2-driver.14";
+  const CONTENT_SCRIPT_VERSION = "0.5.2-driver.15";
   const {
     assistantSnapshot,
     classifyProviderResponseError,
@@ -48,6 +48,7 @@
   globalThis.__aiDebateAutomationExecutionId = contentExecutionId;
   let automationEpoch = 0;
   const submittedRuns = loadSubmittedRuns();
+  const activeResponsePolls = new WeakMap();
   const PROVIDERS = globalThis.aiDebateProviderAdapters || {};
   let shadowRootCache = { expiresAt: 0, roots: [] };
 
@@ -640,6 +641,11 @@
       const runId = message.runId || createRunId(providerId, message.phase);
       assertAutomationEpoch(epoch);
       const latestPromptTurn = readUserTurnIdentity(findLatestPromptTurn(config, providerId, message.prompt));
+      // The background has consumed this provider's previous answer before
+      // submitting its next prompt. Keep only the latest completed reply.
+      for (const [previousRunId, previousRun] of submittedRuns) {
+        if (previousRun.providerId === providerId && previousRun.completedReply) submittedRuns.delete(previousRunId);
+      }
       submittedRuns.set(runId, {
         providerId,
         epoch,
@@ -682,40 +688,54 @@
         error.code = "PROVIDER_CONVERSATION_CHANGED";
         throw error;
       }
-      run.responseState ||= {};
-      const responseOptions = { pollBudgetMs: message.pollBudgetMs, state: run.responseState,
-        baselinePromptCount: run.baselinePromptCount, submittedPromptIdentity: run.submittedPromptIdentity,
-        conversationIdentity: run.conversationIdentity };
-      const responseCandidate = await waitForCompletion(config, providerId, message.timeoutMs || 120000, run.baseline, run.prompt, run.errorBaseline, () => assertAutomationEpoch(runEpoch), run.userTurnCount,
-        responseOptions);
-      if (!run.conversationIdentity && responseOptions.conversationIdentity) {
-        run.conversationIdentity = responseOptions.conversationIdentity;
-        persistSubmittedRuns();
-      }
-      assertAutomationEpoch(runEpoch);
-      if (responseCandidate === null && message.pollBudgetMs) {
-        persistSubmittedRuns();
-        return { ok: true, pending: true, provider: providerId, runId: message.runId };
-      }
-      stage = "讀取新回覆";
-      const content = responseCandidate || readLastAssistantMessage(config, providerId);
-      if (!content) {
-        throw new Error(`無法讀取 ${message.provider} 的 AI 回覆。`);
-      }
-      const providerError = classifyProviderResponseError(providerId, content);
-      if (providerError) {
-        throw createProviderResponseError(providerError, content);
-      }
+      if (run.completedReply) return run.completedReply;
 
-      assertAutomationEpoch(runEpoch);
-      submittedRuns.delete(message.runId);
-      assertAutomationEpoch(runEpoch);
-      persistSubmittedRuns();
-      assertAutomationEpoch(runEpoch);
-      return { ok: true, provider: providerId, content };
+      let poll = activeResponsePolls.get(run);
+      if (!poll) {
+        poll = pollSubmittedResponse(message, providerId, config, run, runEpoch);
+        activeResponsePolls.set(run, poll);
+      }
+      try {
+        const response = await poll;
+        assertAutomationEpoch(runEpoch);
+        return response;
+      } finally {
+        if (activeResponsePolls.get(run) === poll) activeResponsePolls.delete(run);
+      }
     } catch (error) {
       throw createStageError(stage, error);
     }
+  }
+
+  async function pollSubmittedResponse(message, providerId, config, run, runEpoch) {
+    run.responseState ||= {};
+    const responseOptions = { pollBudgetMs: message.pollBudgetMs, state: run.responseState,
+      baselinePromptCount: run.baselinePromptCount, submittedPromptIdentity: run.submittedPromptIdentity,
+      conversationIdentity: run.conversationIdentity };
+    const responseCandidate = await waitForCompletion(config, providerId, message.timeoutMs || 120000, run.baseline, run.prompt, run.errorBaseline, () => assertAutomationEpoch(runEpoch), run.userTurnCount,
+      responseOptions);
+    assertAutomationEpoch(runEpoch);
+    run.conversationIdentity ||= responseOptions.conversationIdentity;
+    if (responseCandidate === null && message.pollBudgetMs) {
+      persistSubmittedRuns();
+      return { ok: true, pending: true, provider: providerId, runId: message.runId };
+    }
+    const content = responseCandidate || readLastAssistantMessage(config, providerId);
+    if (!content) {
+      throw new Error(`無法讀取 ${message.provider} 的 AI 回覆。`);
+    }
+    const providerError = classifyProviderResponseError(providerId, content);
+    if (providerError) {
+      throw createProviderResponseError(providerError, content);
+    }
+
+    assertAutomationEpoch(runEpoch);
+    // Keep the final receipt after sendResponse in case the message port closes.
+    const completedReply = { ok: true, provider: providerId, content };
+    submittedRuns.set(message.runId, { providerId, epoch: runEpoch, submittedAt: run.submittedAt,
+      conversationIdentity: run.conversationIdentity, completedReply });
+    persistSubmittedRuns();
+    return completedReply;
   }
 
   function requireProviderPage(expectedProvider) {
@@ -1255,6 +1275,15 @@
           // ChatGPT wraps literal hex colors in inline-markdown text spans.
           // Preserve every character; this is not Markdown rendering reversal.
           line += Array.from(node.childNodes || []).map((child) => child.textContent || "").join("");
+        } else if (node.tagName === "SPAN" && node.hasAttribute?.("data-prompt-literal-paste")) {
+          const literal = Array.from(node.childNodes || []);
+          if (literal.some((child) => child.nodeType !== 3 && child.tagName !== "BR")) return null;
+          line += literal.map((child) => child.tagName === "BR" ? "\n" : child.textContent || "").join("");
+        } else if (node.tagName === "SPAN" && node.getAttribute?.("data-rich-text-generated-autolink") === "") {
+          const href = node.getAttribute("text-link-href");
+          if (!/^https?:\/\/[^\s]+$/i.test(href || "") || node.textContent !== href ||
+              Array.from(node.querySelectorAll("*")).some((child) => !/^(?:span|svg|path)$/i.test(child.tagName))) return null;
+          line += href;
         } else if (isMatchingColorSwatch(node, line)) {
           // The adjacent empty, hidden ProseMirror color preview is decoration.
         } else if (node.tagName === "IMG" && node.classList?.contains("ProseMirror-separator") &&

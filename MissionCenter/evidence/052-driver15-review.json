@@ -1,0 +1,58 @@
+{
+  "task": "LLM-T82",
+  "version": "0.5.2-driver.15",
+  "recordedAt": "2026-11-22T15:18:07.752+08:00",
+  "tests": {
+    "passed": 595,
+    "total": 595
+  },
+  "browser": {
+    "report": "output/browser-acceptance/2026-11-22T07-12-27-443Z/report.json",
+    "standalone": 101,
+    "native": 51,
+    "pageErrors": 0,
+    "blockedNetwork": 0
+  },
+  "package": {
+    "files": 59,
+    "bytes": 2838347,
+    "sha256": "ef3c39ffe89ec7117ce9cbd4431a5e702fa6784f15286ac4c04764f10e251747",
+    "crcPassed": true,
+    "bytesMatch": true
+  },
+  "reviewSummary": "CodeRabbit 審查 128 檔，唯一一項經核對為審查副本省略語系檔所致。Git 和候選 ZIP 都含英、日、繁中語系與有效的擴充功能說明",
+  "codeRabbit": {
+    "attempts": 1,
+    "maxPerHour": 3,
+    "fileLimit": 150,
+    "files": 128,
+    "issues": 1,
+    "fixed": 0,
+    "notApplicable": 1,
+    "remaining": 0,
+    "scope": "這次程式與測試，加上相關舊程式、測試及設計說明。排除大型生成文案、二進位素材、依賴鎖檔及任務中心紀錄。",
+    "items": [
+      {
+        "severity": "critical",
+        "file": "manifest.json",
+        "disposition": "不適用",
+        "verification": "Git 追蹤內容及 ZIP 皆含 _locales/en/messages.json、_locales/ja/messages.json、_locales/zh_TW/messages.json，三者的 extensionDescription 都可解析且有文字。"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "provider": "chatgpt",
+      "observed": "實機偵錯為 PROVIDER_INPUT_WRITE_FAILED，預期 34 行，讀到 80 行。以合成草稿重現版面文字差異並確認可從 DOM 還原。",
+      "verification": "保留空行、縮排、網址與結尾。拒絕損壞內容與未知內嵌節點。"
+    },
+    {
+      "provider": "meta",
+      "observed": "網頁已完成回覆，側欄收集回覆的通訊請求逾時。",
+      "verification": "測試覆蓋同次讀取的重試、同步讀取共用、回執遺失與重注入後回放，以及取消後拒讀。"
+    }
+  ],
+  "pending": [
+    "使用五家登入帳號執行長會議並逐筆比對網頁與逐字稿。"
+  ]
+}

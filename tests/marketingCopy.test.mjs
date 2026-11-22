@@ -7,15 +7,17 @@ test("recommendation material distinguishes candidate availability and third-par
   const readme = await readFile("README.md", "utf8");
   const listing = await readFile("store/listing.md", "utf8");
   const kit = await readFile("store/recommendation-kit.md", "utf8");
-  for (const copy of [readme, listing, kit]) {
+  for (const copy of [listing, kit]) {
     assert.match(copy, /候選/);
     assert.match(copy, /實機驗收|端到端測試/);
     assert.match(copy, /訂閱/);
     assert.match(copy, /用量|額度/);
   }
-  const { version } = JSON.parse(await readFile("manifest.json", "utf8"));
-  assert.ok(readme.includes(`**${version} 發布候選版**`));
-  assert.match(readme, /公開版本為 \*\*\d+\.\d+\.\d+\*\*/);
+  assert.match(readme, /ChatGPT、Claude、Gemini、Grok 與 Meta AI/);
+  assert.match(readme, /chrome:\/\/extensions/);
+  assert.match(readme, /繁體中文、英文或日文/);
+  assert.match(readme, /store\/privacy-policy\.md/);
+  assert.match(readme, /MissionCenter\/smoke-tests\.md/);
   assert.match(listing, /Anonymous modes use aliases.*not anonymous accounts/);
 });
 

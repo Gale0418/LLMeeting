@@ -2046,16 +2046,18 @@ async function readSubmittedResponseWithRetry(submitted, tabId, deadline, runTok
 
     const rpcBudgetMs = Math.min(remainingMs, RESPONSE_POLL_BUDGET_MS + 10000);
     const rpcDeadline = Date.now() + rpcBudgetMs;
+    const dispatchState = { providerReadDispatched: false };
     try {
-      const response = await providerRpc(sendProviderMessage(tabId, submitted, "aiDebate:readSubmittedResponse", {
+      const readPromise = sendProviderMessage(tabId, submitted, "aiDebate:readSubmittedResponse", {
         runId: submitted.runId,
         pollBudgetMs: Math.min(RESPONSE_POLL_BUDGET_MS, remainingMs),
-      }, { deadline: rpcDeadline }), "收集 AI 回覆", rpcBudgetMs);
+      }, { deadline: rpcDeadline, dispatchState });
+      const response = await providerRpc(readPromise, "收集 AI 回覆", rpcBudgetMs, dispatchState);
       runController.assertCurrent(runToken);
       return response;
     } catch (error) {
       runController.assertCurrent(runToken);
-      if (!isSafeUndispatchedReadTransientError(error) || transientRetries >= maxTransientRetries) throw error;
+      if (!isSafeReadRetryTransientError(error) || transientRetries >= maxTransientRetries) throw error;
       transientRetries += 1;
       const delayMs = Math.min(200, Math.max(0, deadline - Date.now()));
       if (delayMs <= 0) throw error;
@@ -2202,7 +2204,7 @@ async function refreshMetaInputProvider(tabId, job, runToken) {
   runController.assertCurrent(runToken);
 }
 
-const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.2-driver.14";
+const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.2-driver.15";
 const PROVIDER_DRIVER_CONTRACT_VERSION = 1;
 
 function isProviderLoginTab(tab, provider) {
@@ -2215,11 +2217,14 @@ function isProviderLoginTab(tab, provider) {
   }
 }
 
-async function providerRpc(promise, stage, timeoutMs = PROVIDER_CONTROL_TIMEOUT_MS) {
+async function providerRpc(promise, stage, timeoutMs = PROVIDER_CONTROL_TIMEOUT_MS, dispatchState = null) {
   try {
     return await withReadinessTimeout(promise, timeoutMs);
   } catch (error) {
     if (error.code === "READINESS_TIMEOUT") error.code = "PROVIDER_RPC_TIMEOUT";
+    if (stage === "收集 AI 回覆" && dispatchState) {
+      error.providerReadDispatched = dispatchState.providerReadDispatched;
+    }
     error.rpcStage ||= stage;
     error.message = `${stage}: ${error.message}`;
     throw error;
@@ -2234,8 +2239,14 @@ function isTransientProviderChannelError(error) {
     /(?:message (?:port|channel) closed|channel closed before|receiving end does not exist|could not establish connection|extension context invalidated|frame was removed)/i.test(error?.message || "");
 }
 
-function isSafeUndispatchedReadTransientError(error) {
-  if (error?.providerReadDispatched !== false || !isTransientProviderChannelError(error)) return false;
+function isSafeReadRetryTransientError(error) {
+  if (!isTransientProviderChannelError(error)) return false;
+  if (error.providerReadDispatched === true) {
+    // The content script deduplicates reads by runId, so retrying this same
+    // request is safe even if the browser dropped the reply port after dispatch.
+    return error.rpcStage === "收集 AI 回覆";
+  }
+  if (error.providerReadDispatched !== false) return false;
   if (error.code === "PROVIDER_RPC_TIMEOUT") {
     return error.rpcStage === "capabilities";
   }
@@ -2359,7 +2370,10 @@ async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", ex
       }
       return await providerRpc(chrome.tabs.sendMessage(tabId, payload), "readiness DOM", Math.min(5000, remaining));
     }
-    if (type === "aiDebate:readSubmittedResponse") providerReadDispatched = true;
+    if (type === "aiDebate:readSubmittedResponse") {
+      providerReadDispatched = true;
+      if (options.dispatchState) options.dispatchState.providerReadDispatched = true;
+    }
     return await chrome.tabs.sendMessage(tabId, payload);
   } catch (error) {
     const wrapped = new Error(`${error.message}（目前網址：${tab?.url || tab?.pendingUrl || "unknown"}）`);

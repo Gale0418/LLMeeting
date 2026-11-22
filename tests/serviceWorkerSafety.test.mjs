@@ -44,7 +44,7 @@ test("provider readiness has a stable service-worker boundary and status mapping
 test("provider messaging repairs stale content scripts through a version handshake", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
-  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.2-driver\.14"/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.2-driver\.15"/);
   assert.match(script, /PROVIDER_DRIVER_CONTRACT_VERSION = 1/);
   assert.match(script, /"src\/content\/provider-driver\.js"/);
   assert.match(script, /type: "aiDebate:getCapabilities"/);
@@ -259,7 +259,7 @@ test("provider debug history is bounded, persisted, and keeps only approved diag
   }
   assert.match(script, /error\.debugDetails = sanitizeDebugDetails\(response\?\.debugDetails\)/);
   assert.match(script, /debugDetails: sanitizeDebugDetails\(error\.debugDetails\)/);
-  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.2-driver\.14"/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.2-driver\.15"/);
 });
 
 test("transient response read RPC failures retry the same run within the provider deadline", async () => {
@@ -273,7 +273,7 @@ test("transient response read RPC failures retry the same run within the provide
   assert.match(collect, /readSubmittedResponseWithRetry\(submitted, tab\.id, deadline, runToken\)/);
   assert.match(helper, /sendProviderMessage\(tabId, submitted, "aiDebate:readSubmittedResponse"/);
   assert.match(helper, /runId: submitted\.runId/);
-  assert.match(helper, /isSafeUndispatchedReadTransientError\(error\)/);
+  assert.match(helper, /isSafeReadRetryTransientError\(error\)/);
   assert.match(helper, /maxTransientRetries = 3/);
   assert.match(helper, /rpcDeadline = Date\.now\(\) \+ rpcBudgetMs/);
   assert.match(helper, /deadline - Date\.now\(\)/);
@@ -282,10 +282,34 @@ test("transient response read RPC failures retry the same run within the provide
   assert.match(script, /error\.rpcStage \|\|= stage/);
   assert.match(script, /wrapped\.providerReadDispatched = providerReadDispatched/);
   assert.match(script, /error\.rpcStage === "capabilities"/);
-  assert.match(script, /error\?\.providerReadDispatched !== false/);
+  assert.match(script, /error\.providerReadDispatched === true/);
+  assert.match(script, /error\.providerReadDispatched = dispatchState\.providerReadDispatched/);
+  assert.match(script, /dispatchState\.providerReadDispatched = true/);
 });
 
-test("read retry only repeats after an undispatched capability failure", async () => {
+test("collection RPC timeout keeps the read dispatch marker from the outer timeout wrapper", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const rpcStart = script.indexOf("async function providerRpc(");
+  const rpcEnd = script.indexOf("function isTransientProviderChannelError", rpcStart);
+  const source = `${script.slice(rpcStart, rpcEnd)}\nglobalThis.runRpc = providerRpc;`;
+  const context = {
+    PROVIDER_CONTROL_TIMEOUT_MS: 1000,
+    withReadinessTimeout: async () => {
+      const error = new Error("provider readiness timeout");
+      error.code = "READINESS_TIMEOUT";
+      throw error;
+    },
+  };
+  vm.runInNewContext(source, context);
+
+  await assert.rejects(
+    context.runRpc(new Promise(() => {}), "收集 AI 回覆", 25, { providerReadDispatched: true }),
+    (error) => error.code === "PROVIDER_RPC_TIMEOUT" &&
+      error.rpcStage === "收集 AI 回覆" && error.providerReadDispatched === true,
+  );
+});
+
+test("read retry repeats after a lost collection reply and an undispatched capability failure only", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
   const retryStart = script.indexOf("async function readSubmittedResponseWithRetry");
   const retryEnd = script.indexOf("async function sendJob", retryStart);
@@ -320,6 +344,25 @@ test("read retry only repeats after an undispatched capability failure", async (
   const recovered = await readWithRecovery(submitted, 4, Date.now() + 2000, 1);
   assert.equal(recovered.content, "saved reply");
   assert.deepEqual(calls, [
+    { runId: submitted.runId, type: "aiDebate:readSubmittedResponse" },
+    { runId: submitted.runId, type: "aiDebate:readSubmittedResponse" },
+  ]);
+
+  let launchedReadAttempts = 0;
+  const lostReplyRecovery = execute({ sendProviderMessage(_tabId, job, type, extra) {
+    launchedReadAttempts += 1;
+    calls.push({ runId: extra.runId, type });
+    if (launchedReadAttempts === 1) {
+      return Promise.reject(Object.assign(new Error("收集 AI 回覆: message port closed"), {
+        code: "PROVIDER_RPC_TIMEOUT", rpcStage: "收集 AI 回覆", providerReadDispatched: true,
+      }));
+    }
+    return Promise.resolve({ ok: true, pending: false, content: "saved reply" });
+  } });
+  const afterLostReply = await lostReplyRecovery(submitted, 4, Date.now() + 2000, 1);
+  assert.equal(afterLostReply.content, "saved reply");
+  assert.equal(launchedReadAttempts, 2);
+  assert.deepEqual(calls.slice(-2), [
     { runId: submitted.runId, type: "aiDebate:readSubmittedResponse" },
     { runId: submitted.runId, type: "aiDebate:readSubmittedResponse" },
   ]);
@@ -702,7 +745,7 @@ test("readiness falls back to a fresh provider tab when the requested tab is sta
       async update() {},
       async sendMessage(_tabId, message) {
         if (message.type === "aiDebate:getCapabilities") {
-          return { contentScriptVersion: "0.5.2-driver.14", driverContractVersion: 1 };
+          return { contentScriptVersion: "0.5.2-driver.15", driverContractVersion: 1 };
         }
         return { ready: true, status: "ready", checks: {} };
       },

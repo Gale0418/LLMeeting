@@ -1,9 +1,13 @@
 # 每日紀錄
 
-- 最後整理： 2026-11-15
+- 最後整理： 2026-11-22
 - Activity log:
   - [2026-08-27T15:41:56] 收窄全部 provider 停止 selector，並補上 Claude sendControlDeferredWhenEmpty；修正側欄歷史文字誤判生成中與空白 composer disabled 送出鈕。 | reason: Chrome 唯讀 DOM 顯示 Claude 可編輯輸入框存在，chat-input-send 空白時 disabled；aria-label*='停止' 另命中異星工廠歷史選單按鈕。 | impact: Claude readiness 不再回報仍在回答或無法送出；189/189 測試、語法、diff 與 0.5.0 封裝通過。
   - [2026-09-23] 全面程式審查修正最後輪總結、Provider readiness SPA 競態、錯誤 selector 退路、長聊恢復與儲存覆寫，以及 side panel 可讀性／停止語義。 | reason: 使用者要求跨域嚴格抓蟲，三席盲審、CodeRabbit 與獨立仲裁均提供具體證據。 | impact: 244/244 測試、語法、diff 與封裝通過；仲裁無剩餘 P0/P1；最終 CodeRabbit 重掃因 WebSocket 斷線、Chrome side panel 實機仍待驗。
+
+## 2026-11-22
+
+- [2026-11-22T15:18:07.752+08:00] Driver .15 完成 ChatGPT 寫入驗證與 Meta 回覆逾時修正。 | reason: 實機偵錯紀錄顯示提示驗證失敗與回覆通訊逾時。 | impact: Node 回歸 595/595，隔離 Chromium 獨立頁 101 項、原生側欄 51 項通過，ZIP 59 檔 CRC 與逐位元比對通過。CodeRabbit 審查 128 檔，唯一一項經核對為審查副本省略語系檔所致。Git 和候選 ZIP 都含英、日、繁中語系與有效的擴充功能說明。LLM-T82 保持 Review，待五家登入態實測。
 
 ## 2026-11-15
 

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DebateEngine } from "../src/background/debateEngine.js";
 
-const PROVIDER_CONTENT_VERSION = "0.5.2-driver.14";
+const PROVIDER_CONTENT_VERSION = "0.5.2-driver.15";
 
 function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [], serverOverload = [], pendingReads = [], pauseFirstRead, initialUrl = "chrome://newtab/", initialCurrentState, conversationReplies = {} } = {}) {
   const tabs = new Map();

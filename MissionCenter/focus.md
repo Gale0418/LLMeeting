@@ -1,6 +1,6 @@
 <!-- Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files. -->
 <!-- Deprecated compatibility view: focus.md is generated from tasks.md only and must never be edited or treated as a second lifecycle source. -->
-<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=9255100fe304061649699b0796ea3bf598d634fc71bf5e7d760a501e4d964cc1 -->
+<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=79fee13ea2505ac7cab33ebba2a5298f4fde14ea87b20313354cd433b1d16027 -->
 # P0 焦點
 
 - 唯一真實來源: `tasks.md`
