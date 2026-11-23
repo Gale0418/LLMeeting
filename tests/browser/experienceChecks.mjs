@@ -53,6 +53,7 @@ export async function verifyExperience({ panel, settings, control, eventually, u
   try {
     await panel.bringToFront();
     await panel.emulateMedia({ reducedMotion: 'no-preference' });
+    await settings.emulateMedia({ reducedMotion: 'no-preference' });
     await setToggle('#circuitBackgroundToggle', true);
     await setToggle('#circuitMotionToggle', saved.motion);
     await setToggle('#circuitBackgroundToggle', false);
@@ -113,6 +114,7 @@ export async function verifyExperience({ panel, settings, control, eventually, u
     await panel.waitForFunction(() => document.documentElement.lang === 'en');
     await panel.bringToFront();
     await assertPanelPreferences(saved.background, saved.motion);
+    await settings.emulateMedia({ reducedMotion: null });
   }
 
   checks.push({ scenario: 'preferences-restored-locale-english', status: 'pass' });

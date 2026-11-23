@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DebateEngine } from "../src/background/debateEngine.js";
 
-const PROVIDER_CONTENT_VERSION = "0.5.3-driver.19";
+const PROVIDER_CONTENT_VERSION = "0.5.3-driver.20";
 
-function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [], serverOverload = [], pendingReads = [], pauseFirstRead, initialUrl = "chrome://newtab/", initialCurrentState, conversationReplies = {} } = {}) {
+function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [], serverOverload = [], pendingReads = [], pauseFirstRead, navigateAfterConversationRead = "", navigateAfterConversationReadiness = "", pendingAfterConversationReadiness = "", initialUrl = "chrome://newtab/", initialCurrentState, conversationReplies = {} } = {}) {
   const tabs = new Map();
   const submitted = new Map();
   const readAttempts = new Map();
@@ -14,6 +14,7 @@ function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [],
   let onMessage;
   let resolvePausedRead;
   let signalFirstReadStarted;
+  let conversationReadComplete = false;
   const matchesFailure = (configured, job) => {
     const failures = Array.isArray(configured) ? configured : [configured];
     return failures.some((failure) => failure && failure.provider === job.provider && failure.phase === job.phase);
@@ -82,9 +83,26 @@ function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [],
           return { contentScriptVersion: PROVIDER_CONTENT_VERSION, driverContractVersion: 1 };
         }
         if (message.type === "aiDebate:checkReadiness") {
+          if (conversationReadComplete && navigateAfterConversationReadiness) {
+            const tab = tabs.get(tabId);
+            tab.url = navigateAfterConversationReadiness;
+            tab.pendingUrl = navigateAfterConversationReadiness;
+            navigateAfterConversationReadiness = "";
+          } else if (conversationReadComplete && pendingAfterConversationReadiness) {
+            const tab = tabs.get(tabId);
+            tab.pendingUrl = pendingAfterConversationReadiness;
+            tab.status = "loading";
+            pendingAfterConversationReadiness = "";
+          }
           return { ready: true, status: "ready" };
         }
         if (message.type === "aiDebate:readCurrentConversation") {
+          conversationReadComplete = true;
+          if (navigateAfterConversationRead) {
+            const tab = tabs.get(tabId);
+            tab.url = navigateAfterConversationRead;
+            tab.pendingUrl = navigateAfterConversationRead;
+          }
           return conversationReplies[message.provider] || { ok: true, content: "", empty: true, messageCount: 0 };
         }
         if (message.type === "aiDebate:submitPrompt") {
@@ -224,6 +242,63 @@ test('failed linked context stops before new prompts or fresh tabs are created',
     assert.ok(response.state.debugEvents.some(event => event.phase === 'round-zero'));
     assert.equal(mock.sent.filter(m => m.type === 'aiDebate:submitPrompt').length, 0);
     assert.equal(mock.getTabs().length, 1);
+  });
+});
+
+test('linked round zero stops if its tab changes to another same-provider conversation while reading', async () => {
+  await quickly(async () => {
+    const mock = createChromeMock({
+      initialUrl: 'https://chatgpt.com/c/selected',
+      navigateAfterConversationRead: 'https://chatgpt.com/c/replaced',
+      conversationReplies: { chatgpt: { ok: true, content: 'Conversation X', empty: false, messageCount: 2 } },
+    });
+    await loadWorker(mock, 'linked-context-tab-binding');
+    const response = await mock.dispatch({
+      type: 'aiDebate:start', mode: 'chat', question: '沿用舊討論',
+      activeProviders: ['chatgpt', 'gemini'], hookedTabs: { chatgpt: 1 }, skipSummary: true,
+    });
+
+    assert.equal(response.ok, false);
+    assert.match(response.error, /對話分頁.*已切換/);
+    assert.equal(mock.sent.some((message) => message.type === 'aiDebate:submitPrompt'), false);
+  });
+});
+
+test('linked round zero stops if its tab changes to another same-provider conversation during preflight', async () => {
+  await quickly(async () => {
+    const mock = createChromeMock({
+      initialUrl: 'https://chatgpt.com/c/selected',
+      navigateAfterConversationReadiness: 'https://chatgpt.com/c/replaced',
+      conversationReplies: { chatgpt: { ok: true, content: 'Conversation X', empty: false, messageCount: 2 } },
+    });
+    await loadWorker(mock, 'linked-context-preflight-binding');
+    const response = await mock.dispatch({
+      type: 'aiDebate:start', mode: 'chat', question: '沿用舊討論',
+      activeProviders: ['chatgpt', 'gemini'], hookedTabs: { chatgpt: 1 }, skipSummary: true,
+    });
+
+    assert.equal(response.ok, false);
+    assert.match(response.error, /對話分頁已切換/);
+    assert.equal(mock.sent.some((message) => message.type === 'aiDebate:submitPrompt'), false);
+  });
+});
+
+test('linked round zero stops if its selected tab has a different pending URL during preflight', async () => {
+  await quickly(async () => {
+    const mock = createChromeMock({
+      initialUrl: 'https://chatgpt.com/c/selected',
+      pendingAfterConversationReadiness: 'https://chatgpt.com/c/replaced',
+      conversationReplies: { chatgpt: { ok: true, content: 'Conversation X', empty: false, messageCount: 2 } },
+    });
+    await loadWorker(mock, 'linked-context-pending-binding');
+    const response = await mock.dispatch({
+      type: 'aiDebate:start', mode: 'chat', question: '沿用舊討論',
+      activeProviders: ['chatgpt', 'gemini'], hookedTabs: { chatgpt: 1 }, skipSummary: true,
+    });
+
+    assert.equal(response.ok, false);
+    assert.match(response.error, /對話分頁已切換/);
+    assert.equal(mock.sent.some((message) => message.type === 'aiDebate:submitPrompt'), false);
   });
 });
 

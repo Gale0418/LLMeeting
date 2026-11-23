@@ -1,5 +1,5 @@
 import { DebateEngine, normalizeDebateRounds } from "./debateEngine.js";
-import { isProviderTabReady, setSidePanelOpenOnActionClick } from "./chromeCompat.js";
+import { isProviderTabReady, setSidePanelOpenOnActionClick, urlMatchesPattern } from "./chromeCompat.js";
 import { createProviderDiagnostics, updateProviderDiagnostic } from "./diagnostics.js";
 import { RunController, isRunCancelledError } from "./runController.js";
 import { createStateStorageQueue, safePersistState } from "./statePersistence.js";
@@ -32,6 +32,9 @@ const PROVIDER_TIMEOUT_MS = 240000; // 4分鐘，防話癆
 const SUMMARY_PROVIDER_TIMEOUT_MS = 480000; // 8分鐘，給長篇總結更多時間
 // Match the content driver's fixed cap; phase timeouts remain inactivity limits.
 const PROVIDER_RESPONSE_HARD_CAP_MS = 12 * 60 * 1000;
+const SUBMITTED_RUNS_STORAGE_PREFIX = "aiDebate.submittedRuns.v1.";
+const SUBMITTED_RUNS_TTL_MS = 30 * 60 * 1000;
+const MAX_SUBMITTED_RUNS_PER_TAB = 50;
 // A provider fault now waits for a manual reply; never refresh and resend it.
 const OVERLOAD_REFRESH_RETRIES = 0;
 const META_INPUT_REFRESH_RETRIES = 0;
@@ -55,6 +58,7 @@ let initializationPromise;
 let lifecycleRevision = 0;
 let controlOperation = null;
 const enqueueStateStorage = createStateStorageQueue();
+const enqueueSubmittedRunStorage = createStateStorageQueue();
 const meetingArchive = createMeetingArchive();
 let pendingArchiveEvents = [];
 let archiveStatus = "saved";
@@ -85,6 +89,56 @@ function finishControlOperation(operation) {
   }
 }
 
+function submittedRunsMessageProvider(sender) {
+  if (sender?.id !== chrome.runtime.id || sender.frameId !== 0 || !Number.isInteger(sender.tab?.id)) return "";
+  const documentUrl = sender.url;
+  if (!documentUrl || documentUrl !== sender.tab.url) return "";
+  return PROVIDERS.find((provider) => provider.matchPatterns.some((pattern) => urlMatchesPattern(documentUrl, pattern)))?.id || "";
+}
+
+function submittedRunsStorageKey(tabId, providerId) {
+  return `${SUBMITTED_RUNS_STORAGE_PREFIX}${tabId}.${providerId}`;
+}
+
+function normalizeSubmittedRunEntries(entries, providerId, now = Date.now()) {
+  if (!Array.isArray(entries)) return [];
+  return entries.filter((entry) => {
+    if (!Array.isArray(entry) || typeof entry[0] !== "string" || !entry[1] || typeof entry[1] !== "object") return false;
+    const run = entry[1];
+    return run.providerId === providerId && Number.isFinite(run.submittedAt) && run.submittedAt <= now &&
+      now - run.submittedAt <= SUBMITTED_RUNS_TTL_MS;
+  }).slice(-MAX_SUBMITTED_RUNS_PER_TAB);
+}
+
+async function handleSubmittedRunsMessage(message, tabId, providerId) {
+  const key = submittedRunsStorageKey(tabId, providerId);
+  if (message.type === "aiDebate:submittedRuns:get") {
+    const stored = await chrome.storage.session.get(key);
+    const runs = normalizeSubmittedRunEntries(stored?.[key], providerId);
+    // chrome.storage.session is extension-context storage and is trusted-only
+    // by default; do not widen its access level for content scripts.
+    if (runs.length) await chrome.storage.session.set({ [key]: runs });
+    else await chrome.storage.session.remove(key);
+    return { ok: true, runs };
+  }
+  if (message.type === "aiDebate:submittedRuns:set") {
+    const runs = normalizeSubmittedRunEntries(message.runs, providerId);
+    if (runs.length) await chrome.storage.session.set({ [key]: runs });
+    else await chrome.storage.session.remove(key);
+    return { ok: true };
+  }
+  if (message.type === "aiDebate:submittedRuns:clear") {
+    await chrome.storage.session.remove(key);
+    return { ok: true };
+  }
+  return { ok: false, error: "Unknown submitted run operation" };
+}
+
+chrome.tabs?.onRemoved?.addListener?.((tabId) => {
+  const keys = PROVIDERS.map((provider) => submittedRunsStorageKey(tabId, provider.id));
+  enqueueSubmittedRunStorage(() => chrome.storage.session.remove(keys)).catch(() => {});
+});
+
 chrome.runtime.onInstalled.addListener(() => {
   setSidePanelOpenOnActionClick(chrome);
 });
@@ -92,6 +146,15 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || !message.type) {
     return false;
+  }
+
+  if (typeof message.type === "string" && message.type.startsWith("aiDebate:submittedRuns:")) {
+    const providerId = submittedRunsMessageProvider(_sender);
+    if (!providerId) return false;
+    enqueueSubmittedRunStorage(() => handleSubmittedRunsMessage(message, _sender.tab.id, providerId))
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
   }
 
   if (message.type === "aiDebate:getState") {
@@ -406,7 +469,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         };
         await publishState(reservationToken);
         runToken = runController.claim(reservationToken);
-        const execution = startAction(initialContext?.question ?? question, { activeProviders, summaryProvider, summaryStrategy, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode, preflight, runToken, roundZero: initialContext?.roundZero });
+        await assertLinkedTabBindingsCurrent(initialContext?.linkedTabBindings);
+        runController.assertCurrent(runToken);
+        if (controlOperation || lifecycleRevision !== startRevision) throw createRunCancelledError();
+        const execution = startAction(initialContext?.question ?? question, { activeProviders, summaryProvider, summaryStrategy, debateRounds, skipSummary, customPersonas, hookedTabs, interactionStyle, interactiveMode, preflight, runToken, roundZero: initialContext?.roundZero, linkedTabBindings: initialContext?.linkedTabBindings });
         replyStart({ ok: true, accepted: true, state: runtimeState });
         return execution;
       })
@@ -1095,6 +1161,7 @@ async function startInteractiveDebate(question, options = {}) {
     providerTabs,
     preflightResults: preflight.results,
     interactiveMode: Boolean(options.interactiveMode),
+    linkedTabBindings: options.linkedTabBindings || {},
   };
   await publishState(runToken);
 
@@ -1303,6 +1370,7 @@ async function startQuestionDebate(question, options = {}) {
     providerTabs,
     preflightResults: preflight.results,
     interactiveMode: Boolean(options.interactiveMode),
+    linkedTabBindings: options.linkedTabBindings || {},
   };
   await publishState(runToken);
 
@@ -1360,6 +1428,7 @@ async function startSummaryDebate(userNote, options = {}) {
     skipSummary: options.skipSummary || false,
     preflightResults: preflight.results,
     interactiveMode: Boolean(options.interactiveMode),
+    linkedTabBindings: options.linkedTabBindings || {},
   };
   await publishState(runToken);
 
@@ -1535,6 +1604,7 @@ async function handleNextRound(action, text, runToken) {
       phase: "critique",
       currentCritiqueRound: newRound,
       debateRounds: newRound,
+      workflowCheckpoint: { stage: "prepared", phase: newRound === 1 ? "critique" : `critique-${newRound}`, round: newRound, updatedAt: Date.now() },
       message: `送出使用者的補充發言`,
       transcript: engine.snapshot(),
     };
@@ -1555,6 +1625,7 @@ async function handleNextRound(action, text, runToken) {
       phase: "critique",
       currentCritiqueRound: newRound,
       debateRounds: newRound,
+      workflowCheckpoint: { stage: "prepared", phase: newRound === 1 ? "critique" : `critique-${newRound}`, round: newRound, updatedAt: Date.now() },
       message: `第 ${newRound} 輪：送出交叉互評`,
       transcript: engine.snapshot(),
     };
@@ -1788,6 +1859,10 @@ async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
   const attempt = { provider: job.provider, phase: job.phase, round: job.round ?? 0, attemptId: runId };
   try {
     runController.assertCurrent(runToken);
+    await assertLinkedTabBindingsCurrent(runtimeState.linkedTabBindings);
+    runController.assertCurrent(runToken);
+    const linkedBinding = runtimeState.linkedTabBindings?.[job.provider];
+    if (!job.sourceTab && linkedBinding) job = { ...job, sourceTab: linkedBinding };
     appendArchiveEvent({ ...attempt, stage: "prepared", prompt: job.prompt,
       ...(Number.isInteger(job.round) ? { sourceRound: job.round - 1 } : {}) });
     runtimeState = { ...runtimeState, recoveryPrompts: rememberRecoveryPrompt(runtimeState.recoveryPrompts, job) };
@@ -2205,7 +2280,7 @@ async function refreshMetaInputProvider(tabId, job, runToken) {
   runController.assertCurrent(runToken);
 }
 
-const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.3-driver.19";
+const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.3-driver.20";
 const PROVIDER_DRIVER_CONTRACT_VERSION = 1;
 
 function isProviderLoginTab(tab, provider) {
@@ -2951,7 +3026,29 @@ async function collectLinkedRoundZero(message, token) {
     const detail = failed.map(({ provider, error }) => `${providerLabel(provider)}：${error}`).join("；");
     throw new Error(`指定分頁讀取失敗，尚未送出新提示：${detail}`);
   }
-  return buildRoundZero(replies, message.question);
+  const linkedTabBindings = Object.fromEntries(replies
+    .filter((reply) => reply.ok && reply.binding)
+    .map((reply) => [reply.provider, reply.binding]));
+  return { ...buildRoundZero(replies, message.question), linkedTabBindings };
+}
+
+async function assertLinkedTabBindingsCurrent(bindings = {}) {
+  for (const [provider, binding] of Object.entries(bindings || {})) {
+    const config = PROVIDERS.find((item) => item.id === provider);
+    if (!binding || !Number.isInteger(binding.id) || typeof binding.url !== "string" || !binding.url || !config) {
+      throw Object.assign(new Error("指定的對話分頁資訊不完整，請重新選擇來源分頁。"), { code: "PROVIDER_CONVERSATION_CHANGED" });
+    }
+    const tab = await chrome.tabs.get(binding.id);
+    if (!matchesLinkedTabBinding(tab, binding, config)) {
+      throw Object.assign(new Error("指定的對話分頁已切換，請重新選擇來源分頁。"), { code: "PROVIDER_CONVERSATION_CHANGED" });
+    }
+  }
+}
+
+function matchesLinkedTabBinding(tab, binding, config) {
+  const urls = [tab?.url, tab?.pendingUrl].filter(Boolean);
+  return tab?.id === binding.id && tab.status === "complete" && urls.length > 0 &&
+    urls.every((url) => url === binding.url) && isProviderTabReady(tab, config) && !isProviderLoginTab(tab, config);
 }
 
 async function captureLinkedReplies(message, token) {
@@ -2971,6 +3068,8 @@ async function captureLinkedReplies(message, token) {
         const tab = await chrome.tabs.get(tabs[provider]);
         const config = PROVIDERS.find((item) => item.id === provider);
         if (!isProviderTabReady(tab, config) || isProviderLoginTab(tab, config)) throw new Error("分頁網址已改變、尚未載入或需要登入。");
+        const linkedUrl = tab.url || tab.pendingUrl || "";
+        if (!linkedUrl) throw new Error("指定的對話分頁網址無法確認，請重新選擇。");
         await activateProviderTabForReadiness(tab);
         runController.assertCurrent(token);
         await ensureProviderContentScript(tab.id, { deadline: Date.now() + READINESS_TIMEOUT_MS });
@@ -2979,11 +3078,16 @@ async function captureLinkedReplies(message, token) {
           type: message.readConversation ? "aiDebate:readCurrentConversation" : "aiDebate:readCurrentReply", provider,
         }), "擷取目前發言", READINESS_TIMEOUT_MS);
         runController.assertCurrent(token);
+        const afterRead = await chrome.tabs.get(tab.id);
+        if (!matchesLinkedTabBinding(afterRead, { id: tab.id, url: linkedUrl }, config)) {
+          throw Object.assign(new Error("指定的對話分頁在擷取期間已切換，請重新選擇來源分頁。"), { code: "PROVIDER_CONVERSATION_CHANGED" });
+        }
         const emptyConversation = message.readConversation && response?.ok && response.empty === true && response.content === "";
         if (!emptyConversation && (!response?.ok || typeof response.content !== "string" || !response.content.trim())) {
           throw Object.assign(new Error(response?.error || "沒有可擷取的 AI 發言。"), { code: response?.code });
         }
         replies.push({ ok: true, provider, content: response.content,
+          ...(message.readConversation ? { binding: { id: tab.id, url: linkedUrl } } : {}),
           ...(message.readConversation ? { empty: emptyConversation, messageCount: response.messageCount,
             loadedMessageCount: response.loadedMessageCount, messages: response.messages, omission: response.omission } : {}) });
       } catch (error) {

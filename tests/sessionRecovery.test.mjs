@@ -215,14 +215,16 @@ test("interrupted recovery never queues an AI that already left this meeting", (
   assert.equal(pendingReplyRepairs(result.state).some(p=>p.provider === "meta"), false);
 });
 
-test("interrupted imposter first round keeps the existing error fallback", () => {
+test("interrupted imposter first round without an explicit saved role keeps the error fallback", () => {
   const providers = ["chatgpt", "gemini"];
   const engine = new DebateEngine(providers, "chatgpt", 2, { interactionStyle: "imposter" });
   engine.start("內鬼模式問題");
+  const transcript = engine.snapshot();
+  delete transcript.imposterProvider;
   const result = recoverSession({
     savedAt: Date.now(), busy: true, status: "running", phase: "first-round",
     mode: "fast", question: "內鬼模式問題", activeProviders: providers,
-    transcript: engine.snapshot(),
+    transcript,
     workflowCheckpoint: { stage: "submitting", provider: "chatgpt", phase: "first-round" },
   }, mockCreateIdleState);
 
@@ -349,6 +351,112 @@ test("an interrupted summary dispatch goes to repair instead of resend", () => {
     [{ provider: "gemini", phase: "summary" }]);
 });
 
+test("interrupted summary without an existing repair pause rebuilds only missing jobs", () => {
+  const stored = resumedRepairState();
+  stored.phase = "summary";
+  stored.mode = "fast";
+  const engine = new DebateEngine(["chatgpt", "gemini", "grok"], "chatgpt", 2, { summaryStrategy: "allAnonymous" });
+  engine.start("續跑測試");
+  for (const provider of engine.participatingProviders) engine.recordAnswer(provider, `${provider} 回答`);
+  for (const provider of engine.participatingProviders) engine.recordCritique(provider, `${provider} 第一輪互評`, 1);
+  for (const provider of engine.participatingProviders) engine.recordCritique(provider, `${provider} 第二輪互評`, 2);
+  stored.transcript = engine.snapshot();
+  stored.summaries = { chatgpt: "已完成總結" };
+  stored.summaryProvider = "chatgpt";
+  stored.workflowCheckpoint = { provider: "gemini", phase: "summary", stage: "submitting" };
+  delete stored.repairPause;
+
+  const result = recoverSession(stored, mockCreateIdleState);
+  assert.equal(result.state.status, "waiting_for_user");
+  assert.deepEqual(result.state.repairPause.remainingJobs.map(({ provider }) => provider), ["grok"]);
+  assert.deepEqual(pendingReplyRepairs(result.state).map(({ provider, phase }) => ({ provider, phase })), [
+    { provider: "gemini", phase: "summary" },
+  ]);
+  assert.equal(result.state.summaries.chatgpt, "已完成總結");
+});
+
+test("interrupted reveal without a repair pause asks for uncertain reaction and preserves completed reactions", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini", "grok"], "chatgpt", 2, { interactionStyle: "imposter" });
+  engine.start("內鬼揭曉恢復");
+  for (const provider of engine.participatingProviders) engine.recordAnswer(provider, `${provider} 回答`);
+  for (const provider of engine.participatingProviders) engine.recordCritique(provider, `${provider} 第一輪互評`, 1);
+  for (const provider of engine.participatingProviders) engine.recordCritique(provider, `${provider} 第二輪互評`, 2);
+  engine.buildRevealJobs();
+  engine.recordReveal("chatgpt", "已完成反應");
+  const stored = {
+    savedAt: Date.now(), busy: true, status: "running", phase: "reveal", mode: "fast",
+    activeProviders: engine.activeProviders, transcript: engine.snapshot(), workflowCheckpoint: {
+      provider: "gemini", phase: "reveal", stage: "submitted",
+    },
+  };
+
+  const result = recoverSession(stored, mockCreateIdleState);
+  assert.equal(result.state.status, "waiting_for_user");
+  assert.equal(result.state.transcript.reveal.reactions.chatgpt, "已完成反應");
+  assert.deepEqual(result.state.repairPause.remainingJobs.map(({ provider }) => provider), ["grok"]);
+  assert.deepEqual(pendingReplyRepairs(result.state).map(({ provider, phase }) => ({ provider, phase })), [
+    { provider: "gemini", phase: "reveal" },
+  ]);
+});
+
+test("a prepared user-turn checkpoint recovers every undispatched critique from the saved turn", () => {
+  const providers = ["chatgpt", "gemini", "grok"];
+  const engine = new DebateEngine(providers, "chatgpt", 2, { openEnded: true });
+  engine.start("新手動 turn 恢復");
+  for (const provider of providers) engine.recordAnswer(provider, `${provider} 首輪回答`);
+  const round = engine.addChatRound("剛剛新增的補充");
+  engine.buildUserMessageJobs("剛剛新增的補充", round);
+  const stored = {
+    savedAt: Date.now(), busy: true, status: "running", phase: "critique", mode: "chat",
+    activeProviders: providers, transcript: engine.snapshot(),
+    workflowCheckpoint: { stage: "prepared", phase: "critique", round: 1 },
+  };
+
+  const result = recoverSession(stored, mockCreateIdleState);
+  assert.equal(result.state.status, "waiting_for_user");
+  assert.deepEqual(result.state.repairPause.remainingJobs.map(({ provider }) => provider), providers);
+  assert.ok(result.state.repairPause.remainingJobs.every((job) => job.prompt.includes("剛剛新增的補充")));
+  assert.equal(pendingReplyRepairs(result.state).length, 0);
+});
+
+test("a prepared-turn checkpoint keeps only an uncertain critique in manual repair", () => {
+  const providers = ["chatgpt", "gemini", "grok"];
+  const engine = new DebateEngine(providers, "chatgpt", 2, { openEnded: true });
+  engine.start("新手動 turn 恢復");
+  for (const provider of providers) engine.recordAnswer(provider, `${provider} 首輪回答`);
+  const round = engine.addChatRound("補充內容");
+  engine.buildUserMessageJobs("補充內容", round);
+  const stored = {
+    savedAt: Date.now(), busy: true, status: "running", phase: "critique", mode: "chat",
+    activeProviders: providers, transcript: engine.snapshot(),
+    workflowCheckpoint: { stage: "submitting", provider: "chatgpt", phase: "critique", round: 1 },
+  };
+
+  const result = recoverSession(stored, mockCreateIdleState);
+  assert.deepEqual(result.state.repairPause.remainingJobs.map(({ provider }) => provider), ["gemini", "grok"]);
+  assert.deepEqual(pendingReplyRepairs(result.state).map(({ provider, phase }) => ({ provider, phase })), [
+    { provider: "chatgpt", phase: "critique" },
+  ]);
+});
+
+test("interrupted source-summary without a repair pause requires manual repair, never resends", () => {
+  const stored = resumedRepairState();
+  stored.phase = "source-summary";
+  stored.mode = "summary";
+  stored.sourceProvider = "chatgpt";
+  stored.summaryProvider = "chatgpt";
+  stored.recoveryPrompts = { chatgpt: { phase: "source-summary", prompt: "來源總結提示" } };
+  stored.workflowCheckpoint = { provider: "chatgpt", phase: "source-summary", stage: "submitting" };
+  delete stored.repairPause;
+
+  const result = recoverSession(stored, mockCreateIdleState);
+  assert.equal(result.state.status, "waiting_for_user");
+  assert.deepEqual(result.state.repairPause.remainingJobs, []);
+  assert.deepEqual(pendingReplyRepairs(result.state).map(({ provider, phase }) => ({ provider, phase })), [
+    { provider: "chatgpt", phase: "source-summary" },
+  ]);
+});
+
 test("interrupted first-round imposter recovery does not reconstruct roles from a prior phase", () => {
   const stored = resumedRepairState();
   stored.transcript.interactionStyle = "imposter";
@@ -363,4 +471,59 @@ test("interrupted first-round imposter recovery does not reconstruct roles from 
   assert.equal(result.engine, null);
   assert.equal(result.state.transcript.answers.chatgpt, "已手動補齊");
   assert.equal(result.state.transcript.imposterProvider, "gemini");
+});
+
+test("interrupted imposter opening resumes unsubmitted jobs with the saved role and prompt", () => {
+  const providers = ["chatgpt", "gemini", "grok"];
+  const engine = new DebateEngine(providers, "chatgpt", 2, { interactionStyle: "imposter" });
+  engine.start("原始內鬼題目");
+  engine.state.imposterProvider = "gemini";
+  const stored = {
+    savedAt: Date.now(), busy: true, status: "running", mode: "fast", phase: "first-round",
+    activeProviders: providers, transcript: engine.snapshot(),
+    workflowCheckpoint: { stage: "submitting", provider: "chatgpt", phase: "first-round" },
+  };
+
+  const result = recoverSession(stored, mockCreateIdleState);
+  assert.equal(result.state.status, "waiting_for_user");
+  assert.deepEqual(result.state.repairPause.remainingJobs.map(({ provider }) => provider), ["gemini", "grok"]);
+  assert.match(result.state.repairPause.remainingJobs.find(({ provider }) => provider === "gemini").prompt, /遊戲內鬼任務/);
+  assert.ok(result.state.repairPause.remainingJobs.find(({ provider }) => provider === "gemini").prompt.includes("原始內鬼題目"));
+  assert.doesNotMatch(result.state.repairPause.remainingJobs.find(({ provider }) => provider === "grok").prompt, /遊戲內鬼任務/);
+  assert.deepEqual(pendingReplyRepairs(result.state).map(({ provider }) => provider), ["chatgpt"]);
+});
+
+test("interrupted imposter opening never resends the assigned role's uncertain prompt", () => {
+  const providers = ["chatgpt", "gemini", "grok"];
+  const engine = new DebateEngine(providers, "chatgpt", 2, { interactionStyle: "imposter" });
+  engine.start("原始內鬼題目");
+  engine.state.imposterProvider = "gemini";
+  const stored = {
+    savedAt: Date.now(), busy: true, status: "running", mode: "fast", phase: "first-round",
+    activeProviders: providers, transcript: engine.snapshot(),
+    workflowCheckpoint: { stage: "submitted", provider: "gemini", phase: "first-round" },
+  };
+
+  const result = recoverSession(stored, mockCreateIdleState);
+  assert.equal(result.state.status, "waiting_for_user");
+  assert.equal(result.state.repairPause.remainingJobs.some(({ provider }) => provider === "gemini"), false);
+  assert.deepEqual(pendingReplyRepairs(result.state).map(({ provider }) => provider), ["gemini"]);
+  assert.match(result.state.transcript.answers.gemini, /不會自動重送/);
+  assert.ok(result.state.repairPause.remainingJobs.every(({ prompt }) => !prompt.includes("遊戲內鬼任務")));
+});
+
+test("interrupted imposter opening preserves an explicit no-imposter assignment", () => {
+  const providers = ["chatgpt", "gemini"];
+  const engine = new DebateEngine(providers, "chatgpt", 2, { interactionStyle: "imposter" });
+  engine.start("原始內鬼題目");
+  engine.state.imposterProvider = null;
+  const stored = {
+    savedAt: Date.now(), busy: true, status: "running", mode: "fast", phase: "first-round",
+    activeProviders: providers, transcript: engine.snapshot(),
+    workflowCheckpoint: { stage: "submitting", provider: "chatgpt", phase: "first-round" },
+  };
+
+  const result = recoverSession(stored, mockCreateIdleState);
+  assert.equal(result.state.status, "waiting_for_user");
+  assert.ok(result.state.repairPause.remainingJobs.every(({ prompt }) => !prompt.includes("遊戲內鬼任務")));
 });

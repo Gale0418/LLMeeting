@@ -233,6 +233,15 @@ export class DebateEngine {
         : null;
     }
 
+    return this.buildFirstRoundJobs();
+  }
+
+  buildFirstRoundJobs() {
+    const question = this.state.originalQuestion;
+    if (!question?.trim() || this.state.phase !== "first-round") {
+      throw new Error("First-round jobs require a saved first-round question");
+    }
+
     return providersInOrder(this.activeProviders).map((provider) => {
       let prompt = this.anonymous
         ? buildAnonymousFirstRoundPrompt(question)

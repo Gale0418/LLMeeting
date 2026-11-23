@@ -141,6 +141,14 @@
       && !/(?:^|\s)'[^']{1,240}'(?:$|[\s).,!?:;])/.test(value)
       && !/^(?:i think|i believe|the message|this message|the error|錯誤訊息|我認為|我覺得|他說|她說)\b/.test(value);
 
+    const retryAction = "(?:please )?(?:try|retry) again";
+    const retryTiming = " (?:later|in (?:a moment|(?:a few|[0-9]+) (?:seconds?|minutes?)))";
+    const standaloneRetry = new RegExp(`^${retryAction}${retryTiming}[.!]?$`);
+    const overloadNotice = standaloneRetry.test(value) ? value : value.replace(new RegExp(`[.!,: ]+${retryAction}(?:${retryTiming})?[.!]?$`), "")
+      .replace(/[，,。!：: ]*(?:請)?(?:稍後再試|稍後重試|重試|再試)[。.!]?$/, "");
+    const hasRetryInstruction = overloadNotice !== value;
+    const overloadText = overloadNotice.replace(/[。.!]$/, "");
+
     const patterns = [
       {
         code: "PROVIDER_QUOTA_EXCEEDED",
@@ -162,19 +170,17 @@
       {
         code: "PROVIDER_OVERLOADED",
         message: `${providerId} 服務目前超載`,
+        text: overloadText,
         tests: [
-          /server(?:s)? (?:are |is )?(?:overloaded|over capacity|busy)/,
-          /\bserver(?:s)?\b.*\b(?:reached|exceeded|at)\b.*\bcapacity\b/,
-          /\bserver(?:s)?\b.*\bcapacity\b.*\b(?:reached|exceeded|full)\b/,
-          /service (?:is )?(?:overloaded|temporarily unavailable)/,
-          /^(?:error:\s*)?(?:too many requests|we(?:'re| are) receiving too many requests|the server is receiving too many requests)(?:[.!]?(?:\s+(?:please\s+)?(?:try|retry) again(?: later)?[.!]?)?)?$/,
-          /\b(?:temporary|temporarily)\s+high demand\b/,
-          /\bhigh demand\b.*(?:try|retry|again|later|unavailable|capacity)/,
-          /(?:something went wrong|temporary error).*(?:try|retry|again)/,
-          /^(?:please )?(?:try|retry) again (?:later|in (?:a moment|(?:a few|\d+) (?:seconds?|minutes?)))[.!]?$/,
-          /伺服器(?:目前)?(?:超載|忙碌).*(?:稍後|重試|再試)/,
-          /服務(?:目前)?(?:超載|暫時無法使用).*(?:稍後|重試|再試)/,
-          /(?:發生錯誤|暫時錯誤).*(?:重試|再試|稍後)/,
+          /^(?:the |our )?servers? (?:(?:are|is) )?(?:currently )?(?:overloaded|over capacity|busy|at capacity)$/,
+          /^(?:the |our )?servers? (?:(?:has|have) )?(?:reached|exceeded) (?:its |their )?capacity$/,
+          /^(?:the |our )?servers? capacity (?:has been )?(?:reached|exceeded|full)$/,
+          /^(?:the |our )?service (?:is )?(?:overloaded|temporarily unavailable)$/,
+          /^(?:error:\s*)?(?:too many requests|we(?:'re| are) receiving too many requests|the server is receiving too many requests)$/,
+          /^(?:due to )?(?:temporary|temporarily) high demand$/,
+          /^(?:抱歉[，,。 ]*)?(?:伺服器|服務)(?:目前|暫時|已)?(?:超載|忙碌|無法使用)$/,
+          standaloneRetry,
+          ...(hasRetryInstruction ? [/^(?:something went wrong|temporary error|發生錯誤|暫時錯誤)$/] : []),
         ],
       },
       {
@@ -193,7 +199,7 @@
 
     for (const candidate of patterns) {
       if ((candidate.code !== "PROVIDER_QUOTA_EXCEEDED" || isCompactQuotaNotice)
-        && candidate.tests.some((pattern) => pattern.test(value))) {
+        && candidate.tests.some((pattern) => pattern.test(candidate.text ?? value))) {
         return { code: candidate.code, message: candidate.message };
       }
     }

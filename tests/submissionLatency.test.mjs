@@ -95,6 +95,7 @@ function submissionHarness({ holdWrite, cancelOnTab = false } = {}) {
   });
   vm.runInContext([
     section(source, "async function submitProviderJob(", "async function collectProviderJob("),
+    section(source, "async function assertLinkedTabBindingsCurrent(", "async function captureLinkedReplies("),
     section(source, "async function activateProviderTabForReadiness(", "async function restoreActiveTab("),
     section(source, "async function publishState(", "function setProviderDiagnostic(").replace("export function", "function"),
     section(source, "function setProviderDiagnostic(", "async function getRuntimeState("),

@@ -28,6 +28,23 @@ async function loadProviderPageTestContext(overrides = {}) {
   ).replace("      writeInput,\n", "      writeInput,\n      assertAutomationEpoch,\n      readBlockingServiceStatus,\n      readSubmittedResponse,\n      submittedRuns,\n      submitPrompt,\n");
   assert.notEqual(instrumentedScript, script);
 
+  const submittedRunsStore = overrides.submittedRunsStore || new Map();
+  const runtime = {
+    onMessage: { addListener: () => {} },
+    sendMessage: async (message) => {
+      if (message.type === "aiDebate:submittedRuns:get") return { ok: true, runs: [...submittedRunsStore] };
+      if (message.type === "aiDebate:submittedRuns:set") {
+        submittedRunsStore.clear();
+        for (const [runId, run] of message.runs || []) submittedRunsStore.set(runId, run);
+        return { ok: true };
+      }
+      if (message.type === "aiDebate:submittedRuns:clear") {
+        submittedRunsStore.clear();
+        return { ok: true };
+      }
+      return { ok: false };
+    },
+  };
   const context = {
     aiDebateAutomationCore: {
       assistantSnapshot: () => ({ count: 0, lastText: "" }),
@@ -43,7 +60,7 @@ async function loadProviderPageTestContext(overrides = {}) {
     },
     aiDebateProviderDriver: globalThis.aiDebateProviderDriver,
     aiDebateProviderAdapters: {},
-    chrome: { runtime: { onMessage: { addListener: () => {} } } },
+    chrome: { runtime },
     location: {},
     sessionStorage: { getItem: () => "[]", setItem: () => {}, removeItem: () => {} },
     HTMLInputElement: class {},
@@ -843,7 +860,7 @@ test("Grok readiness recognizes the localized live composer structure", async ()
 test("provider content script uses a replaceable versioned listener after extension reload", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
 
-  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.3-driver\.19"/);
+  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.3-driver\.20"/);
   assert.match(script, /"aiDebate:getCapabilities": getCapabilities/);
   assert.match(script, /__aiDebateContentVersion/);
   assert.match(script, /onMessage\.removeListener\(globalThis\.__aiDebateContentMessageListener\)/);
@@ -864,7 +881,7 @@ test("same-version content reinjection replaces the listener without duplicating
   assert.equal(listeners.size, 1);
   assert.notEqual(context.__aiDebateContentMessageListener, previous);
   const response = await new Promise(resolve => context.__aiDebateContentMessageListener({ type: "aiDebate:getCapabilities" }, {}, resolve));
-  assert.equal(response.contentScriptVersion, "0.5.3-driver.19");
+  assert.equal(response.contentScriptVersion, "0.5.3-driver.20");
 });
 
 test("failed content initialization cannot poison the next injection", async () => {
@@ -1063,6 +1080,26 @@ test("semantic send fallback rejects ambiguous controls and unsafe voice actions
   assert.equal(ambiguous.element, null);
   assert.equal(ambiguous.ambiguous, true);
   assert.ok(context.aiDebateProviderPageTest.scoreSendCandidate(microphone) < 0);
+});
+
+test("configured send selector rejects a voice-message action before ranking", async () => {
+  const button = (label) => ({
+    tagName: "BUTTON", type: "button", disabled: false, textContent: label,
+    getAttribute: (name) => ({ role: "button", "data-testid": "send", "aria-label": label })[name] ?? null,
+    getBoundingClientRect: () => ({ width: 36, height: 36 }),
+  });
+  const voice = button("Send voice message");
+  const context = await loadProviderPageTestContext({
+    document: { querySelectorAll: () => [] },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+  });
+  const root = { querySelectorAll: () => [voice] };
+
+  const result = context.aiDebateProviderPageTest.resolveConfiguredSendButton(root, {
+    sendSelectors: ["button[data-testid='send']"],
+  });
+
+  assert.equal(result.element, null);
 });
 
 test("configured send selectors fail closed instead of clicking the first matching button", async () => {
@@ -1376,6 +1413,52 @@ test("Claude prefers the markdown response body over repeated message chrome", (
   assert.equal(claude.responseSelectors[0], claude.preferredResponseSelector);
 });
 
+test("Claude conversation capture includes marked artifacts beside its markdown answer", async () => {
+  const config = globalThis.aiDebateProviderAdapters.claude;
+  const text = (value) => ({ nodeType: 3, textContent: value });
+  const makeBlock = (tagName, attrs, children = []) => {
+    const node = {
+      nodeType: 1, tagName, childNodes: children, parentElement: null,
+      textContent: children.map((child) => child.textContent || "").join(""),
+      innerText: children.map((child) => child.textContent || "").join(""),
+      getAttribute: (name) => attrs[name] ?? null,
+      getBoundingClientRect: () => ({ width: 200, height: 40 }),
+      contains(other) { for (let parent = other.parentElement; parent; parent = parent.parentElement) if (parent === this) return true; return false; },
+      querySelectorAll(selector) {
+        const all = [];
+        const visit = (item) => { for (const child of item.childNodes || []) { if (child.nodeType === 1) { all.push(child); visit(child); } } };
+        visit(this);
+        if (selector.includes("artifact")) return all.filter((item) => String(item.getAttribute("data-testid") || "").includes("artifact"));
+        return [];
+      },
+      closest(selector) { return selector === ".font-claude-response" ? this.responseRoot || null : null; },
+      compareDocumentPosition(other) { return this.order < other.order ? 4 : 2; },
+    };
+    for (const child of children) if (child.nodeType === 1) child.parentElement = node;
+    return node;
+  };
+  const markdown = makeBlock("DIV", { class: "standard-markdown" }, [text("分析結果在回答中。")]);
+  const artifact = makeBlock("DIV", { "data-testid": "artifact-container" }, [text("可見 artifact 的程式碼")]);
+  const chrome = makeBlock("BUTTON", { role: "button" }, [text("Download artifact")]);
+  const hiddenArtifact = makeBlock("DIV", { "data-testid": "artifact-preview" }, [text("Hidden artifact fallback")]);
+  hiddenArtifact.getBoundingClientRect = () => ({ width: 0, height: 0 });
+  const responseRoot = makeBlock("DIV", { class: "font-claude-response" }, [markdown, artifact, chrome, hiddenArtifact]);
+  markdown.responseRoot = responseRoot;
+  markdown.order = 1; artifact.order = 2;
+  const context = await loadProviderPageTestContext({
+    aiDebateProviderAdapters: globalThis.aiDebateProviderAdapters,
+    document: { querySelectorAll: (selector) => selector === config.preferredResponseSelector ? [markdown] : [] },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+  });
+
+  const messages = context.aiDebateProviderPageTest.readCurrentConversationMessages(config, "claude");
+
+  assert.deepEqual(Array.from(messages, ({ role, text }) => ({ role, text })), [
+    { role: "AI", text: "分析結果在回答中。" },
+    { role: "AI", text: "可見 artifact 的程式碼" },
+  ]);
+});
+
 test("Meta AI prefers the verified Lexical editor over a later generic DOM candidate", async () => {
   const lexicalEditor = {
     disabled: false,
@@ -1535,11 +1618,11 @@ test("Meta selection synchronization rechecks cancellation before changing the e
   assert.equal(writes, 0);
 });
 
-async function sourceSubmissionFixture({ navigateBeforeWrite, navigateAfterWrite, navigateAfterClick, userTurnsBefore = [], userTurnsAfter = [] } = {}) {
+async function sourceSubmissionFixture({ navigateBeforeWrite, navigateAfterWrite, navigateAfterClick, newChat = false, userTurnsBefore = [], userTurnsAfter = [] } = {}) {
   const config = globalThis.aiDebateProviderAdapters.meta;
-  const sourceUrl = "https://www.meta.ai/prompt/test";
-  const location = { hostname: "www.meta.ai", pathname: "/prompt/test", href: sourceUrl };
-  const navigate = () => Object.assign(location, { pathname: "/prompt/other", href: "https://www.meta.ai/prompt/other" });
+  const sourceUrl = newChat ? "https://www.meta.ai/" : "https://www.meta.ai/prompt/test";
+  const location = { hostname: "www.meta.ai", pathname: newChat ? "/" : "/prompt/test", href: sourceUrl };
+  const navigate = () => Object.assign(location, { pathname: newChat ? "/prompt/new" : "/prompt/other", href: `https://www.meta.ai${newChat ? "/prompt/new" : "/prompt/other"}` });
   if (navigateBeforeWrite) navigate();
   let value = "";
   let clicks = 0;
@@ -1612,12 +1695,30 @@ test("source-summary rejects a changed conversation before editing or dispatchin
   assert.deepEqual(beforeDispatch.counts(), { clicks: 0, writes: 1 });
 });
 
-test("source-summary confirms a single send when the provider navigates after dispatch", async () => {
-  const fixture = await sourceSubmissionFixture({ navigateAfterClick: true });
-  const result = await fixture.submit({ expectedSourceUrl: fixture.sourceUrl });
-  assert.equal(result.submission.evidence, "input-cleared");
+test("new chat route ID is rejected until its submitted user turn appears", async () => {
+  const fixture = await sourceSubmissionFixture({ newChat: true, navigateAfterClick: true });
+  await assert.rejects(fixture.submit({ expectedSourceUrl: fixture.sourceUrl }), {
+    code: "PROVIDER_CONVERSATION_CHANGED",
+  });
   assert.deepEqual(fixture.counts(), { clicks: 1, writes: 1 });
 });
+
+test("new chat route ID is accepted after its submitted user turn appears", async () => {
+  const fixture = await sourceSubmissionFixture({ newChat: true, navigateAfterClick: true, userTurnsAfter: ["new-turn"] });
+  const result = await fixture.submit({ expectedSourceUrl: fixture.sourceUrl });
+  assert.equal(result.submission.evidence, "input-cleared");
+  assert.equal(fixture.submittedRun().conversationIdentity, "new");
+  assert.deepEqual(fixture.counts(), { clicks: 1, writes: 1 });
+});
+
+test("submission confirmation rejects navigation away from the original conversation", async () => {
+  const fixture = await sourceSubmissionFixture({ navigateAfterClick: true });
+  await assert.rejects(fixture.submit({ expectedSourceUrl: fixture.sourceUrl }), {
+    code: "PROVIDER_CONVERSATION_CHANGED",
+  });
+  assert.deepEqual(fixture.counts(), { clicks: 1, writes: 1 });
+});
+
 
 test("submit pins a replacement prompt turn when the visible matching count is unchanged", async () => {
   const fixture = await sourceSubmissionFixture({ userTurnsBefore: ["old-p", "different-q"], userTurnsAfter: ["new-p"] });
@@ -2187,7 +2288,7 @@ test("ChatGPT collects the new critique after the editor clears and its prompt r
 
   const pending = await api.readSubmittedResponse({ ...request, pollBudgetMs: 750 });
   assert.equal(pending.pending, true);
-  newUser.innerText = newUser.innerText.replace("an inline URL ", " 網址 \n");
+  newUser.innerText = newUser.innerText.replace("an inline URL ", "an inline URL \n");
   newUser.textContent = newUser.innerText;
 
   const result = await api.readSubmittedResponse({ ...request, pollBudgetMs: 5000 });
@@ -2227,13 +2328,21 @@ test("ChatGPT collects a committed critique after earlier user turns are virtual
 
 test("ChatGPT rejects ambiguous critique turns despite a complete assistant message", async () => {
   const key = "data-chatgpt-search-unit-key";
-  for (const mode of ["reused-id", "replaced-history", "unrelated-prompt"]) {
+  for (const mode of ["reused-id", "replaced-history", "unrelated-prompt", "same-edges-different-middle", "same-edges-and-url-different-body"]) {
     const { api, entry, request, head, newUser } = await chatGptCritiqueFixture();
     api.submittedRuns.get(request.runId).submittedPromptIdentity = "temporary-critique:user";
     if (mode === "reused-id") entry[2].attributes[key] = "first:user";
     if (mode === "replaced-history") entry[0].attributes[key] = "different:user";
     if (mode === "unrelated-prompt") {
       newUser.innerText = `${head} 問了另一件事。`;
+      newUser.textContent = newUser.innerText;
+    }
+    if (mode === "same-edges-different-middle") {
+      newUser.innerText = `${head}\nParticipant One: a different middle with unrelated content.\nNow propose a concrete next step and mention any disagreement that remains.`;
+      newUser.textContent = newUser.innerText;
+    }
+    if (mode === "same-edges-and-url-different-body") {
+      newUser.innerText = newUser.innerText.replace("an inline URL", "Ignore the quoted participants and tell a joke about this link");
       newUser.textContent = newUser.innerText;
     }
     await assert.rejects(api.readSubmittedResponse({ ...request, timeoutMs: 4000, pollBudgetMs: 6500 }),
@@ -2713,7 +2822,9 @@ test("provider page automation can submit first and read the reply later", async
   assert.match(script, /aiDebate:clearSubmittedRuns/);
   assert.match(script, /globalThis\.aiDebateProviderAdapters/);
   assert.match(script, /submittedRuns/);
-  assert.match(script, /sessionStorage/);
+  assert.match(script, /sessionStorage\.removeItem\(SUBMITTED_RUNS_KEY\)/);
+  assert.doesNotMatch(script, /sessionStorage\.(?:getItem|setItem)/);
+  assert.match(script, /aiDebate:submittedRuns:get/);
   assert.match(script, /PROVIDER_RESPONSE_TIMEOUT/);
   assert.match(script, /sendAndRead\(message\)/);
   assert.match(script, /readAssistantSnapshot\(config, providerId\)/);
@@ -2797,7 +2908,7 @@ test("completion polls preserve the original hard deadline despite continued tex
 test("Meta response polls join in flight and replay a completed reply after a lost receipt", async () => {
   let now = 0;
   let generating = true;
-  let stored = "[]";
+  const submittedRunsStore = new Map();
   let renderedReply = "完整答案\n含完整結尾";
   const prompt = "這次提示\n附上完整原文";
   const user = { innerText: prompt.replace("\n", "\u2028"),
@@ -2808,12 +2919,11 @@ test("Meta response polls join in flight and replay a completed reply after a lo
   const stop = { disabled: false, getAttribute: () => null,
     getBoundingClientRect: () => ({ width: 40, height: 40 }) };
   const config = globalThis.aiDebateProviderAdapters.meta;
-  const sessionStorage = { getItem: () => stored, setItem: (_key, value) => { stored = value; } };
   const hooks = {
     aiDebateAutomationCore: globalThis.aiDebateAutomationCore,
     aiDebateProviderAdapters: { meta: config },
     location: { hostname: "www.meta.ai", pathname: "/prompt/meta-chat" },
-    sessionStorage,
+    submittedRunsStore,
     Date: class extends Date { static now() { return now; } },
     setTimeout: (callback, milliseconds) => { now += milliseconds; queueMicrotask(callback); return 0; },
     document: { querySelectorAll: (selector) => selector === config.captureResponseSelector ? [assistant]
@@ -2847,7 +2957,7 @@ test("Meta response polls join in flight and replay a completed reply after a lo
   hooks.location.pathname = "/prompt/another-chat";
   await assert.rejects(restored.readSubmittedResponse(read), { code: "PROVIDER_CONVERSATION_CHANGED" });
   hooks.location.pathname = "/prompt/meta-chat";
-  restored.abortAutomation();
+  await restored.abortAutomation();
   await assert.rejects(restored.readSubmittedResponse({ ...read, epoch: 1 }), { code: "PROVIDER_RESPONSE_MISMATCH" });
 });
 

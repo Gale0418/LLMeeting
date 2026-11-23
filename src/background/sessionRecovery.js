@@ -1,6 +1,7 @@
 import { DebateEngine } from "./debateEngine.js";
 import { normalizeProviderIds } from "../shared/providers.js";
 import { isRecoverableReply } from "../shared/meetingRecovery.js";
+import { originalRecoveryPrompt } from "../shared/recoveryPrompts.js";
 
 const INTERRUPTED_MESSAGE = "Chrome 背景程序在執行期間中斷，請重新開始這次操作。";
 const INVALID_SESSION_MESSAGE = "無法恢復先前對話，已回到待命狀態。";
@@ -20,7 +21,7 @@ function critiqueRoundFromPhase(phase) {
 }
 
 function recoverInterruptedRepairPause(normalized) {
-  const pause = normalized.repairPause;
+  const pause = normalized.repairPause || buildRepairPauseFromCheckpoint(normalized);
   if (!pause || !Array.isArray(pause.remainingJobs) || !normalized.transcript) return null;
 
   let engine;
@@ -33,7 +34,7 @@ function recoverInterruptedRepairPause(normalized) {
   const checkpoint = normalized.workflowCheckpoint;
   const phase = checkpoint?.phase || pause.pausedPhase || (pause.target === "answer" ? "first-round" : pause.target);
   const diagnostics = normalized.providerDiagnostics || {};
-  const notStartedStages = new Set(["idle", "opening-tab", "activating-tab"]);
+  const notStartedStages = new Set(["prepared", "idle", "opening-tab", "activating-tab"]);
   const remainingJobs = [];
   const uncertainJobs = [];
   let jobsToRecover = pause.remainingJobs;
@@ -133,11 +134,45 @@ function recoverInterruptedRepairPause(normalized) {
   };
 }
 
+function buildRepairPauseFromCheckpoint(normalized) {
+  const checkpoint = normalized.workflowCheckpoint;
+  const phase = checkpoint?.phase;
+  if (!checkpoint || !["summary", "source-summary", "reveal"].includes(phase) || !normalized.transcript) return null;
+
+  let engine;
+  try {
+    engine = DebateEngine.restore(normalized.transcript);
+  } catch (_error) {
+    return null;
+  }
+
+  let remainingJobs;
+  try {
+    if (phase === "summary") {
+      remainingJobs = engine.buildFinalJobs();
+    } else if (phase === "reveal") {
+      remainingJobs = engine.buildRevealJobs();
+    } else {
+      const provider = normalized.sourceProvider;
+      const prompt = originalRecoveryPrompt(normalized, provider, "source-summary");
+      if (!provider || !prompt) return null;
+      remainingJobs = [{ provider, phase, prompt }];
+    }
+  } catch (_error) {
+    return null;
+  }
+
+  const resumePlan = phase === "summary" ? { type: "summary", scheduler: "fast" }
+    : phase === "reveal" ? { type: "reveal", scheduler: "fast" }
+      : { type: "source-summary", scheduler: "fast" };
+  return { target: phase, pausedPhase: phase, remainingJobs, resumePlan };
+}
+
 function recoverInterruptedDebate(normalized, checkpoint) {
   const phase = checkpoint?.phase;
   const round = critiqueRoundFromPhase(phase);
   const firstRound = phase === "first-round";
-  const supportedStage = ["submitting", "submitted", "collecting", "meta-input-refresh", "overload-refresh"]
+  const supportedStage = ["prepared", "submitting", "submitted", "collecting", "meta-input-refresh", "overload-refresh"]
     .includes(checkpoint?.stage);
 
   if (!supportedStage || (!firstRound && !round) || !normalized.transcript) return null;
@@ -150,9 +185,18 @@ function recoverInterruptedDebate(normalized, checkpoint) {
   }
 
   const providers = engine.participatingProviders;
-  const originalQuestion = engine.snapshot().originalQuestion;
-  if (!providers.includes(checkpoint.provider) || !originalQuestion?.trim()) return null;
-  if (firstRound && engine.snapshot().interactionStyle === "imposter") return null;
+  const snapshot = engine.snapshot();
+  const originalQuestion = snapshot.originalQuestion;
+  if ((checkpoint.provider && !providers.includes(checkpoint.provider)) ||
+      (!checkpoint.provider && checkpoint.stage !== "prepared") || !originalQuestion?.trim()) return null;
+  if (firstRound && snapshot.interactionStyle === "imposter") {
+    const pausedPhase = normalized.repairPause?.pausedPhase ||
+      (normalized.repairPause?.target === "answer" ? "first-round" : normalized.repairPause?.target);
+    if (checkpoint.phase !== "first-round" || snapshot.phase !== "first-round" ||
+        !Object.hasOwn(snapshot, "imposterProvider") ||
+        (snapshot.imposterProvider !== null && !providers.includes(snapshot.imposterProvider)) ||
+        (normalized.repairPause && pausedPhase !== "first-round")) return null;
+  }
   if (!firstRound && round > engine.snapshot().critiqueRounds.length) return null;
 
   const jobsEngine = DebateEngine.restore(normalized.transcript);
@@ -160,7 +204,9 @@ function recoverInterruptedDebate(normalized, checkpoint) {
   try {
     const userMessage = normalized.transcript.critiqueRounds?.[round - 1]?.USER;
     phaseJobs = firstRound
-      ? jobsEngine.start(originalQuestion, { roundZero: normalized.transcript.roundZero })
+      ? snapshot.interactionStyle === "imposter"
+        ? jobsEngine.buildFirstRoundJobs()
+        : jobsEngine.start(originalQuestion, { roundZero: normalized.transcript.roundZero })
       : userMessage ? jobsEngine.buildUserMessageJobs(userMessage, round) : jobsEngine.buildCritiqueJobs(round);
   } catch (_error) {
     return null;

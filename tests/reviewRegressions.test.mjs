@@ -97,3 +97,27 @@ test('continuous response collection crosses phase timeouts but stops at the fix
     }
   }
 });
+
+
+test('ordinary overload advice remains reply text while direct service notices are classified', async () => {
+  await import('../src/content/automation-core.js');
+  const { classifyProviderResponseError } = globalThis.aiDebateAutomationCore;
+  for (const answer of [
+    'If the server is busy, queue the request.',
+    'The server is busy during these simulations, so use a queue.',
+    'The service is temporarily unavailable was the heading in the report.',
+    'High demand can make inventory unavailable, but the list is refreshed daily.',
+    '如果伺服器忙碌，請稍後再試，或直接切換到備援主機。',
+  ]) {
+    assert.equal(classifyProviderResponseError('chatgpt', answer), null, answer);
+  }
+  for (const notice of [
+    'The server is busy. Please try again in a few minutes.',
+    'The servers are overloaded. Please try again later.',
+    'The service is temporarily unavailable.',
+    'Due to temporary high demand, please try again later.',
+    '伺服器目前忙碌，請稍後再試。',
+  ]) {
+    assert.equal(classifyProviderResponseError('chatgpt', notice)?.code, 'PROVIDER_OVERLOADED', notice);
+  }
+});

@@ -511,6 +511,38 @@ test("imposter mode can run with no imposter assigned", () => {
   });
 });
 
+test("restored first-round jobs reuse the saved imposter role without drawing a new one", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini", "grok"], "chatgpt", 2, {
+    interactionStyle: "imposter",
+    isTheaterMode: true,
+    customPersonas: { gemini: "Gemini 的固定角色" },
+  });
+  engine.start("原始問題");
+  engine.state.imposterProvider = "gemini";
+  const expected = engine.buildFirstRoundJobs();
+  const restored = DebateEngine.restore(engine.snapshot());
+  const originalRandom = Math.random;
+  Math.random = () => { throw new Error("recovery must not choose a new role"); };
+  try {
+    const jobs = restored.buildFirstRoundJobs();
+    assert.deepEqual(jobs, expected);
+    assert.match(jobs.find(({ provider }) => provider === "gemini").prompt, /遊戲內鬼任務/);
+    assert.match(jobs.find(({ provider }) => provider === "gemini").prompt, /Gemini 的固定角色/);
+    assert.ok(jobs.filter(({ provider }) => provider !== "gemini").every(({ prompt }) => !prompt.includes("遊戲內鬼任務")));
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
+test("restored first-round jobs preserve an explicit no-imposter assignment", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 2, { interactionStyle: "imposter" });
+  engine.start("原始問題");
+  engine.state.imposterProvider = null;
+  const jobs = DebateEngine.restore(engine.snapshot()).buildFirstRoundJobs();
+
+  assert.ok(jobs.every(({ prompt }) => !prompt.includes("遊戲內鬼任務")));
+});
+
 test("imposter mode delays accusations until the final critique round", () => {
   withMockedRandom([0.25, 0], () => {
     const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 1, {

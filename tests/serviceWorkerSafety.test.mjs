@@ -44,7 +44,7 @@ test("provider readiness has a stable service-worker boundary and status mapping
 test("provider messaging repairs stale content scripts through a version handshake", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
-  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.3-driver\.19"/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.3-driver\.20"/);
   assert.match(script, /PROVIDER_DRIVER_CONTRACT_VERSION = 1/);
   assert.match(script, /"src\/content\/provider-driver\.js"/);
   assert.match(script, /type: "aiDebate:getCapabilities"/);
@@ -250,6 +250,30 @@ test("service worker persists workflow checkpoints and supports clearing local d
   assert.match(script, /aiDebate:clearSubmittedRuns/);
 });
 
+test("new user turns persist a not-yet-dispatched phase checkpoint with the transcript", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const recovery = await readFile("src/background/sessionRecovery.js", "utf8");
+  const nextRound = script.slice(script.indexOf("async function handleNextRound"), script.indexOf("async function runSequentialProviderJobs"));
+  const checkpoints = nextRound.match(/workflowCheckpoint: \{ stage: "prepared", phase: newRound === 1 \? "critique" : `critique-\$\{newRound\}`, round: newRound, updatedAt: Date\.now\(\) \}/g) || [];
+  const atomicCheckpoints = nextRound.match(/workflowCheckpoint: \{ stage: "prepared"[\s\S]{0,180}transcript: engine\.snapshot\(\),[\s\S]{0,30}await publishState\(runToken\)/g) || [];
+
+  assert.equal(checkpoints.length, 2);
+  assert.equal(atomicCheckpoints.length, 2);
+  assert.match(recovery, /\["prepared", "submitting", "submitted", "collecting"/);
+  assert.match(recovery, /!checkpoint\.provider && checkpoint\.stage !== "prepared"/);
+});
+
+test("linked-tab identity checks revalidate cancellation and reject pending navigation", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const startHandler = script.slice(script.indexOf('if (message.type === "aiDebate:start")'), script.indexOf('if (message.type === "aiDebate:checkReadiness")'));
+  const submit = script.slice(script.indexOf("async function submitProviderJob"), script.indexOf("async function collectProviderJob"));
+  const binding = script.slice(script.indexOf("function matchesLinkedTabBinding"), script.indexOf("async function captureLinkedReplies"));
+
+  assert.match(startHandler, /await assertLinkedTabBindingsCurrent\(initialContext\?\.linkedTabBindings\);\s*runController\.assertCurrent\(runToken\)/);
+  assert.match(submit, /await assertLinkedTabBindingsCurrent\(runtimeState\.linkedTabBindings\);\s*runController\.assertCurrent\(runToken\);[\s\S]*?appendArchiveEvent/);
+  assert.match(binding, /tab\.status === "complete"[\s\S]*?urls\.every\(\(url\) => url === binding\.url\)/);
+});
+
 test("provider overload and quota error codes survive the service-worker boundary", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
@@ -279,7 +303,7 @@ test("provider debug history is bounded, persisted, and keeps only approved diag
   }
   assert.match(script, /error\.debugDetails = sanitizeDebugDetails\(response\?\.debugDetails\)/);
   assert.match(script, /debugDetails: sanitizeDebugDetails\(error\.debugDetails\)/);
-  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.3-driver\.19"/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.3-driver\.20"/);
 });
 
 test("transient response read RPC failures retry the same run within the provider deadline", async () => {
@@ -766,7 +790,7 @@ test("readiness falls back to a fresh provider tab when the requested tab is sta
       async update() {},
       async sendMessage(_tabId, message) {
         if (message.type === "aiDebate:getCapabilities") {
-          return { contentScriptVersion: "0.5.3-driver.19", driverContractVersion: 1 };
+          return { contentScriptVersion: "0.5.3-driver.20", driverContractVersion: 1 };
         }
         return { ready: true, status: "ready", checks: {} };
       },

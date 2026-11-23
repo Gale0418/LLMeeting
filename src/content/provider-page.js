@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = "0.5.3-driver.19";
+  const CONTENT_SCRIPT_VERSION = "0.5.3-driver.20";
   const {
     assistantSnapshot,
     classifyProviderResponseError,
@@ -27,6 +27,9 @@
     return error;
   });
   const SUBMITTED_RUNS_KEY = "aiDebate.submittedRuns.v1";
+  const SUBMITTED_RUNS_GET = "aiDebate:submittedRuns:get";
+  const SUBMITTED_RUNS_SET = "aiDebate:submittedRuns:set";
+  const SUBMITTED_RUNS_CLEAR = "aiDebate:submittedRuns:clear";
   const RESPONSE_HARD_CAP_MS = 12 * 60 * 1000;
   const INPUT_WRITE_TIMEOUT_MS = 2000;
   const SUBMISSION_READY_TIMEOUT_MS = 3000;
@@ -47,10 +50,18 @@
   const contentExecutionId = (Number(globalThis.__aiDebateAutomationExecutionId) || 0) + 1;
   globalThis.__aiDebateAutomationExecutionId = contentExecutionId;
   let automationEpoch = 0;
-  const submittedRuns = loadSubmittedRuns();
+  const submittedRuns = new Map();
   const activeResponsePolls = new WeakMap();
   const PROVIDERS = globalThis.aiDebateProviderAdapters || {};
   let shadowRootCache = { expiresAt: 0, roots: [] };
+
+  // Remove only the extension's previous cache key. Never read or migrate its
+  // contents: Web Storage is shared with the provider page.
+  try {
+    sessionStorage.removeItem(SUBMITTED_RUNS_KEY);
+  } catch {
+    // Some provider pages can block sessionStorage.
+  }
 
   function createCompletionWindow(timeoutMs, startedAt = Date.now()) {
     const inactivityMs = Math.max(0, Number(timeoutMs) || 120000);
@@ -323,10 +334,10 @@
     };
   }
 
-  function abortAutomation() {
+  async function abortAutomation() {
     automationEpoch += 1;
     submittedRuns.clear();
-    persistSubmittedRuns();
+    await clearPersistedSubmittedRuns();
     return { ok: true, automationEpoch };
   }
 
@@ -564,13 +575,20 @@
     try {
       assertAutomationEpoch(epoch);
       const { providerId, config } = requireProviderPage(message.provider);
+      const initialConversationIdentity = readConversationIdentity(providerId);
+      const initialPromptCount = countUserMessages(config, message.prompt);
       const assertCurrentPage = () => {
         assertAutomationEpoch(epoch);
         assertProviderLocation(providerId, config);
       };
       const assertSourceConversation = () => {
         assertCurrentPage();
-        if (message.expectedSourceUrl && location.href !== message.expectedSourceUrl) {
+        const currentConversationIdentity = readConversationIdentity(providerId);
+        const newConversationHasSubmittedTurn = !initialConversationIdentity && currentConversationIdentity &&
+          countUserMessages(config, message.prompt) > initialPromptCount;
+        if ((initialConversationIdentity && currentConversationIdentity !== initialConversationIdentity) ||
+            (!initialConversationIdentity && currentConversationIdentity && !newConversationHasSubmittedTurn) ||
+            (message.expectedSourceUrl && location.href !== message.expectedSourceUrl && !newConversationHasSubmittedTurn)) {
           const error = new Error("來源對話分頁已變更，請重新啟動總結辯論。");
           error.code = "PROVIDER_CONVERSATION_CHANGED";
           throw error;
@@ -632,7 +650,7 @@
           message.prompt,
           userMessageCount,
           promptWasPresent,
-          assertCurrentPage,
+          assertSourceConversation,
           SUBMISSION_CONFIRM_TIMEOUT_MS,
           initiallyGenerating,
           { resolveInput: () => findInput(config), baseline, providerId },
@@ -666,7 +684,7 @@
         submittedAt: Date.now(),
         userTurnCount,
       });
-      persistSubmittedRuns();
+      await persistSubmittedRuns();
 
       return { ok: true, provider: providerId, runId, epoch, submission };
     } catch (error) {
@@ -677,8 +695,12 @@
   async function readSubmittedResponse(message) {
     let stage = "辨識頁面";
     try {
-      if (Number.isInteger(message.epoch)) assertAutomationEpoch(message.epoch);
       const { providerId, config } = requireProviderPage(message.provider);
+      if (!submittedRuns.has(message.runId)) {
+        await restoreSubmittedRuns(automationEpoch, contentExecutionId);
+      }
+      if (contentExecutionId !== globalThis.__aiDebateAutomationExecutionId) throw makeAutomationAbortError();
+      if (Number.isInteger(message.epoch)) assertAutomationEpoch(message.epoch);
       const run = submittedRuns.get(message.runId);
       if (!run || run.providerId !== providerId) {
         const error = new Error(`找不到 ${message.provider} 這次送出的等待紀錄。`);
@@ -725,7 +747,7 @@
     run.conversationIdentity ||= responseOptions.conversationIdentity;
     if (responseOptions.submittedPromptIdentity) run.submittedPromptIdentity = responseOptions.submittedPromptIdentity;
     if (responseCandidate === null && message.pollBudgetMs) {
-      persistSubmittedRuns();
+      await persistSubmittedRuns();
       return { ok: true, pending: true, provider: providerId, runId: message.runId };
     }
     const content = responseCandidate || readLastAssistantMessage(config, providerId);
@@ -742,7 +764,7 @@
     const completedReply = { ok: true, provider: providerId, content };
     submittedRuns.set(message.runId, { providerId, epoch: runEpoch, submittedAt: run.submittedAt,
       conversationIdentity: run.conversationIdentity, completedReply });
-    persistSubmittedRuns();
+    await persistSubmittedRuns();
     return completedReply;
   }
 
@@ -781,43 +803,50 @@
   async function clearSubmittedRuns() {
     automationEpoch += 1;
     submittedRuns.clear();
-    try {
-      sessionStorage.removeItem(SUBMITTED_RUNS_KEY);
-    } catch {
-      // Some provider pages can block sessionStorage.
-    }
+    await clearPersistedSubmittedRuns();
     return { ok: true };
   }
 
-  function loadSubmittedRuns() {
+  async function restoreSubmittedRuns(expectedEpoch, expectedExecutionId) {
     try {
-      const parsed = JSON.parse(sessionStorage.getItem(SUBMITTED_RUNS_KEY) || "[]");
-      const now = Date.now();
-      const TTL = 30 * 60 * 1000;
-      const entries = Array.isArray(parsed) ? parsed.filter((entry) =>
-        Array.isArray(entry) && typeof entry[0] === "string" && entry[1]?.providerId && (now - entry[1].submittedAt <= TTL)
-      ) : [];
-      for (const [, run] of entries) {
-        if (Number.isInteger(run.epoch)) automationEpoch = Math.max(automationEpoch, run.epoch);
+      const response = await chrome.runtime.sendMessage({ type: SUBMITTED_RUNS_GET });
+      if (automationEpoch !== expectedEpoch || contentExecutionId !== expectedExecutionId ||
+          expectedExecutionId !== globalThis.__aiDebateAutomationExecutionId) {
+        throw makeAutomationAbortError();
       }
-      return new Map(entries);
+      if (!response?.ok || !Array.isArray(response.runs)) return;
+      for (const entry of response.runs) {
+        if (!Array.isArray(entry) || typeof entry[0] !== "string" || !entry[1]?.providerId) continue;
+        if (!submittedRuns.has(entry[0])) submittedRuns.set(entry[0], entry[1]);
+        if (Number.isInteger(entry[1].epoch)) automationEpoch = Math.max(automationEpoch, entry[1].epoch);
+      }
     } catch {
-      return new Map();
+      if (automationEpoch !== expectedEpoch || contentExecutionId !== expectedExecutionId ||
+          expectedExecutionId !== globalThis.__aiDebateAutomationExecutionId) {
+        throw makeAutomationAbortError();
+      }
+      // The in-memory receipt remains usable if extension storage is unavailable.
     }
   }
 
-  function persistSubmittedRuns() {
+  async function persistSubmittedRuns() {
+    const now = Date.now();
+    const TTL = 30 * 60 * 1000; // 30 minutes
+    for (const [runId, run] of submittedRuns.entries()) {
+      if (now - run.submittedAt > TTL) submittedRuns.delete(runId);
+    }
     try {
-      const now = Date.now();
-      const TTL = 30 * 60 * 1000; // 30 minutes
-      for (const [runId, run] of submittedRuns.entries()) {
-        if (now - run.submittedAt > TTL) {
-          submittedRuns.delete(runId);
-        }
-      }
-      sessionStorage.setItem(SUBMITTED_RUNS_KEY, JSON.stringify([...submittedRuns]));
+      await chrome.runtime.sendMessage({ type: SUBMITTED_RUNS_SET, runs: [...submittedRuns] });
     } catch {
-      // Keep the current in-memory run when a provider blocks sessionStorage.
+      // Do not retry an already-submitted prompt when recovery storage fails.
+    }
+  }
+
+  async function clearPersistedSubmittedRuns() {
+    try {
+      await chrome.runtime.sendMessage({ type: SUBMITTED_RUNS_CLEAR });
+    } catch {
+      // The in-memory records are already cleared; persisted records expire.
     }
   }
 
@@ -1017,7 +1046,8 @@
       }
       for (const element of matches) {
         const isButton = element instanceof HTMLButtonElement || element.getAttribute("role") === "button";
-        if (!isButton || !isVisible(element) || (enabledOnly && !isSendButtonEnabled(element))) continue;
+        if (!isButton || isConflictingSendAction(element) || !isVisible(element) ||
+            (enabledOnly && !isSendButtonEnabled(element))) continue;
         candidates.push({
           element,
           strategy: "configured-send",
@@ -1042,7 +1072,8 @@
     const candidates = [];
     for (const selector of config.sendSelectors) {
       candidates.push(...Array.from(root.querySelectorAll(selector))
-        .filter((element) => element instanceof HTMLButtonElement || element.getAttribute("role") === "button")
+        .filter((element) => (element instanceof HTMLButtonElement || element.getAttribute("role") === "button") &&
+          !isConflictingSendAction(element))
         .filter(isVisible));
     }
     return [...new Set(candidates)];
@@ -1096,6 +1127,7 @@
     const candidates = Array.from(root.querySelectorAll("button, [role='button']"))
       .filter(isVisible)
       .filter((button) => !button.disabled && button.getAttribute("aria-disabled") !== "true")
+      .filter((button) => !isConflictingSendAction(button))
       .map((element) => ({
         element,
         strategy: "semantic-send-fallback",
@@ -1107,6 +1139,11 @@
       threshold: SEND_SCORE_THRESHOLD,
       ambiguityMargin: SEND_AMBIGUITY_MARGIN,
     });
+  }
+
+  function isConflictingSendAction(element) {
+    return /(?:stop|cancel|upload|attach|microphone|voice|record|停止|取消|上傳|附件|語音|錄音)/i
+      .test(sendCandidateIdentity(element));
   }
 
   function scoreSendCandidate(element) {
@@ -1639,7 +1676,7 @@
     if (!latest || (submittedPromptIdentity && readUserTurnIdentity(latest) !== submittedPromptIdentity)) return null;
     const displayed = readConversationElementText(latest, providerId);
     if (userMessageContainsPrompt(displayed, prompt)) return latest;
-    return submittedPromptIdentity && providerId === "chatgpt" && hasMatchingChatGptPromptEdges(displayed, prompt) ? latest : null;
+    return submittedPromptIdentity && providerId === "chatgpt" && matchesChatGptRenderedPrompt(displayed, prompt) ? latest : null;
   }
 
   function findAppendedChatGptPromptIdentity(config, prompt, previous) {
@@ -1655,17 +1692,19 @@
     const identity = readUserTurnIdentity(latest);
     if (!identity || previous.includes(identity)) return "";
 
-    // Prompt edges distinguish a transformed long prompt from a manual turn.
     const displayed = readConversationElementText(latest, "chatgpt");
-    return userMessageContainsPrompt(displayed, prompt) || hasMatchingChatGptPromptEdges(displayed, prompt) ? identity : "";
+    return userMessageContainsPrompt(displayed, prompt) || matchesChatGptRenderedPrompt(displayed, prompt) ? identity : "";
   }
 
-  function hasMatchingChatGptPromptEdges(message, prompt) {
+  function matchesChatGptRenderedPrompt(message, prompt) {
     const expected = normalizePromptMatchText(prompt);
-    const displayed = normalizePromptMatchText(message);
-    const edgeLength = 48;
-    return expected.length > edgeLength * 2 && displayed.length > edgeLength * 2 &&
-      displayed.startsWith(expected.slice(0, edgeLength)) && displayed.endsWith(expected.slice(-edgeLength));
+    if (!expected) return false;
+    const expectedWords = expected.split(" ");
+    const displayedWords = normalizePromptMatchText(message).split(" ");
+    // The rendered chat may omit a link's scheme. All other prompt words
+    // must still match so a different turn cannot claim this run's reply.
+    return expectedWords.length === displayedWords.length && expectedWords.every((word, index) =>
+      displayedWords[index] === word || displayedWords[index] === word.replace(/^https?:\/\/(?=\S)/i, ""));
   }
 
   function readAssistantSnapshot(config, providerId, prompt = "", submittedPromptIdentity = "") {
@@ -1732,6 +1771,13 @@
       ? collectElements([config.preferredResponseSelector]).filter(isVisible)
       : [];
     let assistantElements = preferred.length ? preferred : collectElements(config.responseSelectors).filter(isVisible);
+    if (providerId === "claude" && preferred.length) {
+      const artifactSelector = "[data-testid*='artifact' i], [aria-label*='artifact' i], [data-cds*='artifact' i]";
+      const responseRoots = new Set(preferred.map((element) => element.closest?.(".font-claude-response")).filter(Boolean));
+      const artifacts = [...responseRoots].flatMap((responseRoot) =>
+        [...responseRoot.querySelectorAll(artifactSelector)].filter(isVisible));
+      assistantElements = [...assistantElements, ...artifacts];
+    }
     if (!assistantElements.some((element) => String(element.innerText || element.textContent || "").trim())) {
       assistantElements = findSemanticAssistantResponses().filter(isVisible);
     }

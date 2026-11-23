@@ -100,7 +100,7 @@ test("continuation copies each successful reply once, retains user's words, and 
 });
 
 const source = await readFile("src/background/service-worker.js", "utf8");
-const recoverySource = source.slice(source.indexOf("async function captureLinkedReplies"), source.indexOf("function validateNextRound"));
+const recoverySource = source.slice(source.indexOf("function matchesLinkedTabBinding"), source.indexOf("function validateNextRound"));
 
 test("automatic resume rejects cancelled tokens or a cleared pause before changing state", async () => {
   const body = source.slice(source.indexOf("async function resumeRepairedMeeting"), source.indexOf("function recordProviderResult"));
@@ -166,7 +166,9 @@ test("capture only reads explicitly linked active tabs and restores the active t
   const context = runtimeHarness({
     runtimeState: { transcript: null, errors: [], busy: false },
     restoreActiveTab: async (tab) => { restored = tab.id; },
-    chrome: { tabs: { get: async (id) => ({ id }), sendMessage: async (id, payload) => {
+    chrome: { tabs: { get: async (id) => ({
+      id, status: "complete", url: id === 7 ? "https://chatgpt.com/c/fixture" : "https://grok.com/c/fixture",
+    }), sendMessage: async (id, payload) => {
       messages.push({ id, payload });
       return id === 8 ? { ok: false, error: "AI 還在生成" } : { ok: true, content: "完整回答" };
     } } },

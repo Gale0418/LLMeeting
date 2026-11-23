@@ -1,8 +1,8 @@
 # LLMeeting｜讓多個 AI 一起討論
 
-LLMeeting 是 Chrome 側欄擴充功能：把同一個問題交給多個 AI，集中閱讀各自的回答、互評與總結，方便比較共識和分歧。也能從既有對話接續討論，並下載完整會議紀錄。
+LLMeeting 是 Chrome 側欄擴充功能。把同一個問題交給多個 AI，集中閱讀各自的回答、互評與總結，方便比較共識和分歧。也能從既有對話接續討論，並下載完整會議紀錄。
 
-支援 ChatGPT、Claude、Gemini、Grok 與 Meta AI（Beta，預設關閉）。使用你已登入的 AI 網頁，免填 API 金鑰；訂閱、用量與地區限制依各服務及帳號而定。重要資訊請自行查證。
+支援 ChatGPT、Claude、Gemini、Grok 與 Meta AI（Beta，預設關閉）。LLMeeting 免費使用，直接用你已登入的 AI 網頁，免填 API 金鑰。各 AI 服務的訂閱、用量與地區限制依帳號而定。重要資訊請自行查證。
 
 ## 安裝與開始
 
@@ -19,11 +19,11 @@ LLMeeting 是 Chrome 側欄擴充功能：把同一個問題交給多個 AI，�
 
 ## 資料與隱私
 
-會議內容保存在瀏覽器本機，最長 24 小時，並在下次檢查時清除。問題與互評內容只會送到你選擇的 AI 網站，並依各服務的隱私政策處理；LLMeeting 不會將聊天內容傳送到開發者伺服器。下載的會議紀錄含有對話原文，請妥善保管。[隱私政策](store/privacy-policy.md)
+會議紀錄保存在瀏覽器本機，超過 24 小時會在下次檢查時清除。LLMeeting 只會將問題和用於互評的回覆送到你選擇的 AI 網站，由各服務依其隱私政策處理。下載的會議紀錄含有對話原文，請妥善保管。[隱私政策](store/privacy-policy.md)
 
 ## 開發與紀錄
 
-- `npm test`：執行回歸測試。
-- `npm run package`：打包擴充功能。
+- 執行 `npm test` 跑回歸測試。
+- 執行 `npm run package` 打包擴充功能。
 - [驗收與 smoke test 紀錄](MissionCenter/smoke-tests.md)
 - [Git 提交歷史](https://github.com/Gale0418/LLMeeting/commits/main/)
