@@ -65,6 +65,7 @@ test('continuous response collection crosses phase timeouts but stops at the fix
   const configuredCap = worker.match(/const PROVIDER_RESPONSE_HARD_CAP_MS = ([^;]+);/)?.[1];
   if (configuredCap) assert.equal(vm.runInNewContext(configuredCap), hardCap, 'worker and content hard caps must agree');
   const source = worker.slice(worker.indexOf('async function collectProviderJob('), worker.indexOf('async function readSubmittedResponseWithRetry('));
+  const routeCheck = worker.slice(worker.indexOf('async function applyLinkedConversationTransition('), worker.indexOf('async function captureLinkedReplies('));
   for (const phase of ['first-round','summary','source-summary']) {
     for (const completes of [true,false]) {
       let now = 0;
@@ -88,7 +89,7 @@ test('continuous response collection crosses phase timeouts but stops at the fix
           return completes && now>=600000 ? {ok:true, content:'Completed long reply'} : {ok:true, pending:true};
         },
       };
-      vm.runInNewContext(source+'\nglobalThis.collect = collectProviderJob;', context);
+      vm.runInNewContext([source, routeCheck, 'globalThis.collect = collectProviderJob;'].join('\n'), context);
       const result = await context.collect({provider:'grok', phase, tabId:7, runId:'one-submission'}, 1);
       assert.ok(calls.every(call => call.runId==='one-submission' && call.deadline===hardCap));
       assert.equal(now, completes ? 600000 : hardCap);

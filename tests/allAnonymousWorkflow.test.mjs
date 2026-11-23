@@ -4,7 +4,7 @@ import { DebateEngine } from "../src/background/debateEngine.js";
 
 const PROVIDER_CONTENT_VERSION = "0.5.3-driver.20";
 
-function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [], serverOverload = [], pendingReads = [], pauseFirstRead, navigateAfterConversationRead = "", navigateAfterConversationReadiness = "", pendingAfterConversationReadiness = "", initialUrl = "chrome://newtab/", initialCurrentState, conversationReplies = {} } = {}) {
+function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [], serverOverload = [], pendingReads = [], pauseFirstRead, navigateAfterConversationRead = "", navigateAfterConversationReadiness = "", pendingAfterConversationReadiness = "", navigateAfterSubmit = {}, transitionOnSubmit = {}, transitionOnRead = {}, initialUrl = "chrome://newtab/", initialCurrentState, conversationReplies = {} } = {}) {
   const tabs = new Map();
   const submitted = new Map();
   const readAttempts = new Map();
@@ -109,7 +109,21 @@ function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [],
           if (matchesFailure(failSubmit, message)) {
             return { ok: false, error: "mock submit failure", code: "MOCK_SUBMIT_FAILURE" };
           }
-          submitted.set(message.runId, { ...message });
+          submitted.set(message.runId, { ...message, tabId });
+          const transition = transitionOnSubmit[message.provider];
+          if (transition && message.phase === (transition.phase || "first-round")) {
+            const tab = tabs.get(tabId);
+            tab.url = transition.toUrl;
+            tab.pendingUrl = transition.toUrl;
+            return { ok: true, provider: message.provider, runId: message.runId,
+              conversationTransition: { fromUrl: transition.fromUrl, toUrl: transition.toUrl } };
+          }
+          const changedUrl = navigateAfterSubmit[message.provider];
+          if (changedUrl && message.phase === (changedUrl.phase || "first-round")) {
+            const tab = tabs.get(tabId);
+            tab.url = changedUrl.toUrl;
+            tab.pendingUrl = changedUrl.toUrl;
+          }
           return { ok: true, runId: message.runId };
         }
         if (message.type === "aiDebate:sendAndRead") {
@@ -138,6 +152,15 @@ function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [],
           }
           const pending = pendingReads.find((item) => item.provider === job.provider && item.phase === job.phase);
           if (pending && attempt <= pending.count) return { ok: true, pending: true, runId: message.runId };
+          const transition = transitionOnRead[job.provider];
+          if (transition && job.phase === (transition.phase || "first-round")) {
+            const tab = tabs.get(job.tabId);
+            tab.url = transition.toUrl;
+            tab.pendingUrl = transition.toUrl;
+            return { ok: true, provider: job.provider, runId: message.runId,
+              content: `${job.provider}:${job.phase}:${job.prompt}`,
+              conversationTransition: { fromUrl: transition.fromUrl, toUrl: transition.toUrl } };
+          }
           return { ok: true, content: `${job.provider}:${job.phase}:${job.prompt}` };
         }
         return { ok: true };
@@ -473,6 +496,67 @@ test("fast allAnonymous starts, answers, critiques, and summarizes independently
     assert.ok(summaries.every(({ prompt }) => /匿名|裁判|暱稱/.test(prompt)));
     assert.ok(summaries.every(({ prompt }) => !/ChatGPT|Gemini/.test(prompt)));
     assert.match(response.state.summary, /焦糖雲朵|星星果凍/);
+  });
+});
+
+test("anonymous summary uses a fresh tab even when its provider has a linked conversation", async () => {
+  await quickly(async () => {
+    const mock = createChromeMock({ initialUrl: "https://chatgpt.com/c/linked",
+      conversationReplies: { chatgpt: { ok: true, content: "AI:\n既有內容", empty: false, messageCount: 1 } } });
+    await loadWorker(mock, "anonymous-summary-linked-isolation");
+    const response = await dispatchAndWait(mock, { type: "aiDebate:start", mode: "fast",
+      question: "匿名總結不應回舊對話", activeProviders: ["chatgpt", "gemini"],
+      hookedTabs: { chatgpt: 1 }, summaryStrategy: "allAnonymous" }, "匿名摘要隔離");
+    assert.equal(response.state.status, "done");
+    const firstChatGpt = mock.sent.find((message) => message.type === "aiDebate:submitPrompt" && message.provider === "chatgpt");
+    const summary = mock.sent.find((message) => message.type === "aiDebate:submitPrompt" && message.provider === "chatgpt" && message.phase === "summary");
+    assert.equal(firstChatGpt.tabId, 1);
+    assert.notEqual(summary.tabId, 1);
+  });
+});
+
+test("an empty linked tab adopts only its receipt-confirmed first conversation route", async () => {
+  await quickly(async () => {
+    const fromUrl = "https://chatgpt.com/";
+    const toUrl = "https://chatgpt.com/c/created-by-this-submit";
+    const mock = createChromeMock({ initialUrl: fromUrl,
+      transitionOnSubmit: { chatgpt: { fromUrl, toUrl } },
+      transitionOnRead: { chatgpt: { fromUrl, toUrl } } });
+    await loadWorker(mock, "linked-empty-receipted-route-transition");
+    const response = await dispatchAndWait(mock, { type: "aiDebate:start", mode: "fast", question: "新對話問題",
+      activeProviders: ["chatgpt", "gemini"], hookedTabs: { chatgpt: 1 }, skipSummary: true }, "新對話路由更新");
+    assert.equal(response.state.status, "done");
+    assert.equal(mock.getTabs().find((tab) => tab.id === 1).url, toUrl);
+    assert.ok(mock.sent.some((message) => message.type === "aiDebate:submitPrompt" && message.provider === "chatgpt"));
+  });
+});
+
+test("an empty linked tab accepts a receipt-confirmed route that appears during response collection", async () => {
+  await quickly(async () => {
+    const fromUrl = "https://chatgpt.com/";
+    const toUrl = "https://chatgpt.com/c/created-during-poll";
+    const mock = createChromeMock({ initialUrl: fromUrl,
+      transitionOnRead: { chatgpt: { fromUrl, toUrl } } });
+    await loadWorker(mock, "linked-empty-delayed-receipted-route-transition");
+    const response = await dispatchAndWait(mock, { type: "aiDebate:start", mode: "fast", question: "新對話問題",
+      activeProviders: ["chatgpt", "gemini"], hookedTabs: { chatgpt: 1 }, skipSummary: true }, "延遲新對話路由更新");
+    assert.equal(response.state.status, "done");
+    assert.equal(mock.getTabs().find((tab) => tab.id === 1).url, toUrl);
+    const chatgptSubmits = mock.sent.filter((message) => message.type === "aiDebate:submitPrompt" && message.provider === "chatgpt");
+    assert.ok(chatgptSubmits.length > 1, "延遲回執完成後可安全接續後續輪次");
+  });
+});
+
+test("an unreceipted switch from an empty linked tab to another conversation stays blocked", async () => {
+  await quickly(async () => {
+    const mock = createChromeMock({ initialUrl: "https://chatgpt.com/",
+      navigateAfterSubmit: { chatgpt: { toUrl: "https://chatgpt.com/c/unrelated" } } });
+    await loadWorker(mock, "linked-empty-unreceipted-route-rejected");
+    const response = await dispatchAndWait(mock, { type: "aiDebate:start", mode: "fast", question: "新對話問題",
+      activeProviders: ["chatgpt", "gemini"], hookedTabs: { chatgpt: 1 }, skipSummary: true }, "拒絕無回執路由");
+    assert.equal(response.state.status, "waiting_for_user");
+    const chatgptSubmits = mock.sent.filter((message) => message.type === "aiDebate:submitPrompt" && message.provider === "chatgpt");
+    assert.equal(chatgptSubmits.length, 1, "後續 ChatGPT 輪次不得送進未驗證的新對話");
   });
 });
 

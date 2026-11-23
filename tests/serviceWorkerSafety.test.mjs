@@ -270,7 +270,7 @@ test("linked-tab identity checks revalidate cancellation and reject pending navi
   const binding = script.slice(script.indexOf("function matchesLinkedTabBinding"), script.indexOf("async function captureLinkedReplies"));
 
   assert.match(startHandler, /await assertLinkedTabBindingsCurrent\(initialContext\?\.linkedTabBindings\);\s*runController\.assertCurrent\(runToken\)/);
-  assert.match(submit, /await assertLinkedTabBindingsCurrent\(runtimeState\.linkedTabBindings\);\s*runController\.assertCurrent\(runToken\);[\s\S]*?appendArchiveEvent/);
+  assert.match(submit, /if \(!job\.forceNewTab\) \{\s*await assertLinkedTabBindingsCurrent\(runtimeState\.linkedTabBindings, job\.provider\);\s*\}\s*runController\.assertCurrent\(runToken\);[\s\S]*?appendArchiveEvent/);
   assert.match(binding, /tab\.status === "complete"[\s\S]*?urls\.every\(\(url\) => url === binding\.url\)/);
 });
 
@@ -854,6 +854,16 @@ test("service worker resolves chair strategies and routes anonymous summaries to
   assert.match(script, /anonymousReview/);
   assert.match(script, /forceNewTab: runtimeState\.summaryStrategy === "anonymousReview"/);
   assert.match(script, /getOrCreateProviderTab\(job\.provider, \{ forceNewTab: Boolean\(job\.forceNewTab\) \}\)/);
+  const submit = script.slice(script.indexOf("async function submitProviderJob("), script.indexOf("async function collectProviderJob"));
+  const collect = script.slice(script.indexOf("async function collectProviderJob("), script.indexOf("async function readSubmittedResponseWithRetry"));
+  assert.match(submit, /if \(job\.forceNewTab\) \{[\s\S]*?const \{ sourceTab: _sourceTab, \.\.\.freshJob \} = job/);
+  assert.match(submit, /forceNewTab: Boolean\(job\.forceNewTab\)/);
+  assert.match(submit, /return await submitProviderJob\([\s\S]*?forceNewTab: Boolean\(job\.forceNewTab\)/);
+  assert.match(submit, /runId: response\.runId \|\| runId,[\s\S]*?forceNewTab: Boolean\(job\.forceNewTab\)/);
+  assert.match(collect, /forceNewTab: Boolean\(submitted\.forceNewTab\)/);
+  assert.match(collect, /return await sendJob\([\s\S]*?forceNewTab: Boolean\(submitted\.forceNewTab\)/);
+  assert.match(script, /assertLinkedTabBindingsCurrent\(runtimeState\.linkedTabBindings, job\.provider\)/);
+  assert.match(script, /async function applyLinkedConversationTransition[\s\S]*?response\?\.conversationTransition/);
 });
 
 test("summary provider messages use a longer phase-aware timeout", async () => {

@@ -92,8 +92,30 @@ function finishControlOperation(operation) {
 function submittedRunsMessageProvider(sender) {
   if (sender?.id !== chrome.runtime.id || sender.frameId !== 0 || !Number.isInteger(sender.tab?.id)) return "";
   const documentUrl = sender.url;
-  if (!documentUrl || documentUrl !== sender.tab.url) return "";
-  return PROVIDERS.find((provider) => provider.matchPatterns.some((pattern) => urlMatchesPattern(documentUrl, pattern)))?.id || "";
+  const currentUrl = sender.tab.url;
+  let documentOrigin;
+  let currentOrigin;
+  try {
+    documentOrigin = new URL(documentUrl).origin;
+    currentOrigin = new URL(currentUrl).origin;
+  } catch (_error) {
+    return "";
+  }
+  if (!documentUrl || !currentUrl || documentOrigin !== currentOrigin) return "";
+  const provider = PROVIDERS.find((item) => item.matchPatterns.some((pattern) =>
+    urlMatchesPattern(documentUrl, pattern) && urlMatchesPattern(currentUrl, pattern),
+  ));
+  if (!provider) return "";
+  if (sender.tab.pendingUrl) {
+    try {
+      const pending = new URL(sender.tab.pendingUrl);
+      if (pending.origin !== currentOrigin ||
+        !provider.matchPatterns.some((pattern) => urlMatchesPattern(sender.tab.pendingUrl, pattern))) return "";
+    } catch (_error) {
+      return "";
+    }
+  }
+  return provider.id;
 }
 
 function submittedRunsStorageKey(tabId, providerId) {
@@ -1859,10 +1881,17 @@ async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
   const attempt = { provider: job.provider, phase: job.phase, round: job.round ?? 0, attemptId: runId };
   try {
     runController.assertCurrent(runToken);
-    await assertLinkedTabBindingsCurrent(runtimeState.linkedTabBindings);
+    if (!job.forceNewTab) {
+      await assertLinkedTabBindingsCurrent(runtimeState.linkedTabBindings, job.provider);
+    }
     runController.assertCurrent(runToken);
     const linkedBinding = runtimeState.linkedTabBindings?.[job.provider];
-    if (!job.sourceTab && linkedBinding) job = { ...job, sourceTab: linkedBinding };
+    if (job.forceNewTab) {
+      // A fresh/anonymous job must never fall back to a linked conversation,
+      // even when its caller carried a sourceTab from an earlier phase.
+      const { sourceTab: _sourceTab, ...freshJob } = job;
+      job = freshJob;
+    } else if (!job.sourceTab && linkedBinding) job = { ...job, sourceTab: linkedBinding };
     appendArchiveEvent({ ...attempt, stage: "prepared", prompt: job.prompt,
       ...(Number.isInteger(job.round) ? { sourceRound: job.round - 1 } : {}) });
     runtimeState = { ...runtimeState, recoveryPrompts: rememberRecoveryPrompt(runtimeState.recoveryPrompts, job) };
@@ -1914,6 +1943,10 @@ async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
     if (!response?.ok) {
       throw providerResponseError(response, "provider submit failed");
     }
+    await applyLinkedConversationTransition({
+      provider: job.provider, tabId: tab.id, runId, response, runToken,
+    });
+    runController.assertCurrent(runToken);
 
     appendArchiveEvent({ ...attempt, stage: "submitted", driverRunId: response.runId || runId });
     await setProviderDiagnostic(job.provider, {
@@ -1941,6 +1974,7 @@ async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
       tabId: tab.id,
       attemptId: runId,
       runId: response.runId || runId,
+      forceNewTab: Boolean(job.forceNewTab),
     };
   } catch (error) {
     if (isRunCancelledError(error)) {
@@ -1952,7 +1986,7 @@ async function submitProviderJob(job, runToken, metaInputRetryCount = 0) {
       try {
         await refreshMetaInputProvider(tab.id, job, runToken);
         return await submitProviderJob(
-          { ...job, forceNewTab: false },
+          { ...job, forceNewTab: Boolean(job.forceNewTab) },
           runToken,
           metaInputRetryCount + 1,
         );
@@ -2039,6 +2073,11 @@ async function collectProviderJob(submitted, runToken, overloadRetryCount = 0) {
     if (!response?.ok) {
       throw providerResponseError(response, "provider returned empty response");
     }
+    await applyLinkedConversationTransition({
+      provider: submitted.provider, tabId: submitted.tabId, runId: submitted.runId,
+      response, runToken,
+    });
+    runController.assertCurrent(runToken);
 
     appendArchiveEvent({ ...attempt, stage: "received", response: response.content });
     setProviderDiagnostic(submitted.provider, {
@@ -2073,7 +2112,7 @@ async function collectProviderJob(submitted, runToken, overloadRetryCount = 0) {
           runToken,
         );
         return await sendJob(
-          { ...submitted, forceNewTab: false },
+          { ...submitted, forceNewTab: Boolean(submitted.forceNewTab) },
           runToken,
           overloadRetryCount + 1,
         );
@@ -3032,8 +3071,9 @@ async function collectLinkedRoundZero(message, token) {
   return { ...buildRoundZero(replies, message.question), linkedTabBindings };
 }
 
-async function assertLinkedTabBindingsCurrent(bindings = {}) {
+async function assertLinkedTabBindingsCurrent(bindings = {}, onlyProvider = null) {
   for (const [provider, binding] of Object.entries(bindings || {})) {
+    if (onlyProvider && provider !== onlyProvider) continue;
     const config = PROVIDERS.find((item) => item.id === provider);
     if (!binding || !Number.isInteger(binding.id) || typeof binding.url !== "string" || !binding.url || !config) {
       throw Object.assign(new Error("指定的對話分頁資訊不完整，請重新選擇來源分頁。"), { code: "PROVIDER_CONVERSATION_CHANGED" });
@@ -3043,6 +3083,58 @@ async function assertLinkedTabBindingsCurrent(bindings = {}) {
       throw Object.assign(new Error("指定的對話分頁已切換，請重新選擇來源分頁。"), { code: "PROVIDER_CONVERSATION_CHANGED" });
     }
   }
+}
+
+async function applyLinkedConversationTransition({ provider, tabId, runId, response, runToken }) {
+  const transition = response?.conversationTransition;
+  if (!transition) return false;
+  runController.assertCurrent(runToken);
+  const binding = runtimeState.linkedTabBindings?.[provider];
+  if (!binding || binding.id !== tabId) return false;
+  const config = PROVIDERS.find((item) => item.id === provider);
+  const validReceipt = response.provider === provider && response.runId === runId &&
+    typeof transition.fromUrl === "string" && typeof transition.toUrl === "string" &&
+    Boolean(transition.toUrl) && transition.toUrl !== transition.fromUrl && Boolean(config) &&
+    config.matchPatterns.some((pattern) => urlMatchesPatternForReadiness(transition.toUrl, pattern)) &&
+    !isProviderLoginTab({ url: transition.toUrl }, config);
+  const initialBinding = binding?.empty === true && binding.id === tabId &&
+    binding.url === transition.fromUrl;
+  const replayedReceipt = binding?.empty === false && binding.id === tabId &&
+    binding.url === transition.toUrl && binding.transitionFromUrl === transition.fromUrl &&
+    binding.transitionRunId === runId;
+  if (!validReceipt || (!initialBinding && !replayedReceipt)) {
+    throw Object.assign(new Error("新對話路由回執與原始空白分頁不符，已停止後續送出。"), {
+      code: "PROVIDER_CONVERSATION_CHANGED",
+    });
+  }
+  const currentTab = await chrome.tabs.get(tabId);
+  runController.assertCurrent(runToken);
+  if (currentTab.id !== tabId || currentTab.status !== "complete" ||
+    currentTab.url !== transition.toUrl ||
+    (currentTab.pendingUrl && currentTab.pendingUrl !== transition.toUrl) ||
+    !isProviderTabReady(currentTab, config) || isProviderLoginTab(currentTab, config)) {
+    throw Object.assign(new Error("新對話路由尚未穩定或與回執不符，已停止後續送出。"), {
+      code: "PROVIDER_CONVERSATION_CHANGED",
+    });
+  }
+  if (replayedReceipt) return true;
+  runController.assertCurrent(runToken);
+  runtimeState = {
+    ...runtimeState,
+    linkedTabBindings: {
+      ...runtimeState.linkedTabBindings,
+      [provider]: { ...binding, url: transition.toUrl, empty: false,
+        transitionFromUrl: transition.fromUrl, transitionRunId: runId },
+    },
+  };
+  const saved = await publishState(runToken);
+  runController.assertCurrent(runToken);
+  if (!saved) {
+    throw Object.assign(new Error("無法保存新對話分頁綁定，已停止後續送出。"), {
+      code: "MEETING_ARCHIVE_UNAVAILABLE",
+    });
+  }
+  return true;
 }
 
 function matchesLinkedTabBinding(tab, binding, config) {
@@ -3087,7 +3179,7 @@ async function captureLinkedReplies(message, token) {
           throw Object.assign(new Error(response?.error || "沒有可擷取的 AI 發言。"), { code: response?.code });
         }
         replies.push({ ok: true, provider, content: response.content,
-          ...(message.readConversation ? { binding: { id: tab.id, url: linkedUrl } } : {}),
+          ...(message.readConversation ? { binding: { id: tab.id, url: linkedUrl, empty: emptyConversation } } : {}),
           ...(message.readConversation ? { empty: emptyConversation, messageCount: response.messageCount,
             loadedMessageCount: response.loadedMessageCount, messages: response.messages, omission: response.omission } : {}) });
       } catch (error) {

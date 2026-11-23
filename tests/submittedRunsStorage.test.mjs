@@ -13,6 +13,7 @@ const storageCode = source.slice(start, end);
 function createStorageHarness() {
   const values = new Map();
   const context = {
+    URL,
     Date: class extends Date { static now() { return 2_000_000; } },
     PROVIDERS: [
       { id: "chatgpt", matchPatterns: ["https://chatgpt.com/*"] },
@@ -41,15 +42,20 @@ function createStorageHarness() {
   return { context, values };
 }
 
-test("submitted-run storage bridge rejects unrelated frames, URLs, and providers", () => {
+test("submitted-run storage bridge permits same-origin SPA routes but rejects unrelated frames and origins", () => {
   const { context } = createStorageHarness();
   const sender = { id: "extension-id", frameId: 0, tab: { id: 4, url: "https://chatgpt.com/c/one" }, url: "https://chatgpt.com/c/one" };
 
   assert.equal(context.submittedRunsMessageProvider(sender), "chatgpt");
+  assert.equal(context.submittedRunsMessageProvider({ ...sender,
+    tab: { ...sender.tab, url: "https://chatgpt.com/c/two" } }), "chatgpt");
   assert.equal(context.submittedRunsMessageProvider({ ...sender, frameId: 3 }), "");
   assert.equal(context.submittedRunsMessageProvider({ ...sender, id: "other-extension" }), "");
+  assert.equal(context.submittedRunsMessageProvider({ ...sender, tab: { ...sender.tab, id: undefined } }), "");
   assert.equal(context.submittedRunsMessageProvider({ ...sender, url: "https://claude.ai/chat" }), "");
   assert.equal(context.submittedRunsMessageProvider({ ...sender, tab: { ...sender.tab, url: "https://claude.ai/chat" } }), "");
+  assert.equal(context.submittedRunsMessageProvider({ ...sender, tab: { ...sender.tab, pendingUrl: "https://claude.ai/chat" } }), "");
+  assert.equal(context.submittedRunsMessageProvider({ ...sender, tab: { ...sender.tab, pendingUrl: "not a url" } }), "");
 });
 
 test("submitted-run storage is tab/provider scoped and prunes expired entries", async () => {

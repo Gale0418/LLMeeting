@@ -576,7 +576,11 @@
       assertAutomationEpoch(epoch);
       const { providerId, config } = requireProviderPage(message.provider);
       const initialConversationIdentity = readConversationIdentity(providerId);
-      const initialPromptCount = countUserMessages(config, message.prompt);
+      const initialPageUrl = String(location.href || "");
+      const boundSourceUrl = message.expectedSourceUrl === initialPageUrl ? initialPageUrl : "";
+      const initialUserTurnIdentities = readUserMessageElements(config).sort(compareDocumentOrder).map(readUserTurnIdentity);
+      const initialPromptCount = countMatchingUserMessages(config, providerId, message.prompt);
+      let submissionActionInvoked = false;
       const assertCurrentPage = () => {
         assertAutomationEpoch(epoch);
         assertProviderLocation(providerId, config);
@@ -584,11 +588,15 @@
       const assertSourceConversation = () => {
         assertCurrentPage();
         const currentConversationIdentity = readConversationIdentity(providerId);
-        const newConversationHasSubmittedTurn = !initialConversationIdentity && currentConversationIdentity &&
-          countUserMessages(config, message.prompt) > initialPromptCount;
+        const possibleNewConversationRoute = submissionActionInvoked && !initialConversationIdentity &&
+          currentConversationIdentity && String(location.href || "") !== initialPageUrl;
+        const newConversationHasSubmittedTurn = Boolean(possibleNewConversationRoute && hasVerifiedNewSubmittedTurn(
+          config, providerId, message.prompt, initialPromptCount, initialUserTurnIdentities,
+        ));
         if ((initialConversationIdentity && currentConversationIdentity !== initialConversationIdentity) ||
-            (!initialConversationIdentity && currentConversationIdentity && !newConversationHasSubmittedTurn) ||
-            (message.expectedSourceUrl && location.href !== message.expectedSourceUrl && !newConversationHasSubmittedTurn)) {
+            (!initialConversationIdentity && currentConversationIdentity && !possibleNewConversationRoute) ||
+            (message.expectedSourceUrl && location.href !== message.expectedSourceUrl &&
+              !possibleNewConversationRoute && !newConversationHasSubmittedTurn)) {
           const error = new Error("來源對話分頁已變更，請重新啟動總結辯論。");
           error.code = "PROVIDER_CONVERSATION_CHANGED";
           throw error;
@@ -596,7 +604,7 @@
       };
 
       const baseline = readAssistantSnapshot(config, providerId);
-      const baselinePromptCount = countUserMessages(config, message.prompt);
+      const baselinePromptCount = countMatchingUserMessages(config, providerId, message.prompt);
       stage = "尋找輸入框";
       const input = await waitFor(() => findInput(config), 30000, `找不到 ${message.provider} 的輸入框，請確認已登入並開啟聊天頁面。`, assertSourceConversation);
       const blockingStatus = readBlockingServiceStatus(config, providerId);
@@ -613,7 +621,7 @@
       const previousUserTurnIdentities = readUserMessageElements(config).sort(compareDocumentOrder).map(readUserTurnIdentity);
       const previousUserTurns = new Set(previousUserTurnIdentities.filter(Boolean));
       const previousConversationIdentity = readConversationIdentity(providerId);
-      const userMessageCount = countUserMessages(config, message.prompt);
+      const userMessageCount = countMatchingUserMessages(config, providerId, message.prompt);
       const userTurnCount = countUserMessages(config);
       const promptWasPresent = isPromptStillPresent(input, message.prompt);
       const initiallyGenerating = isGenerating(config);
@@ -631,6 +639,7 @@
             throw createSubmissionReadinessError(providerId === "chatgpt" ? "ChatGPT" : providerId);
           }
           currentButton.click();
+          submissionActionInvoked = true;
           return true;
         },
         pressEnter: () => {
@@ -642,6 +651,7 @@
           actionInput.focus();
           assertSourceConversation();
           dispatchEnter(actionInput);
+          submissionActionInvoked = true;
         },
         promptStillPresent: () => isPromptStillPresent(input, message.prompt),
         confirmSubmission: () => observeProviderSubmission(
@@ -658,6 +668,20 @@
         providerName: providerId === "meta" ? "Meta AI" : providerId[0].toUpperCase() + providerId.slice(1),
       });
 
+      const postSubmitConversationIdentity = readConversationIdentity(providerId);
+      if (!initialConversationIdentity && postSubmitConversationIdentity &&
+          String(location.href || "") !== initialPageUrl &&
+          !hasVerifiedNewSubmittedTurn(config, providerId, message.prompt, initialPromptCount, initialUserTurnIdentities)) {
+        await waitForOptional(() => hasVerifiedNewSubmittedTurn(
+          config, providerId, message.prompt, initialPromptCount, initialUserTurnIdentities,
+        ) ? true : null, Math.min(SUBMISSION_CONFIRM_TIMEOUT_MS, 2000), assertSourceConversation);
+        if (!hasVerifiedNewSubmittedTurn(config, providerId, message.prompt, initialPromptCount, initialUserTurnIdentities)) {
+          const error = new Error("新對話網址尚未對應到這次送出的提示，已停止擷取。");
+          error.code = "PROVIDER_CONVERSATION_CHANGED";
+          throw error;
+        }
+      }
+
       const runId = message.runId || createRunId(providerId, message.phase);
       assertAutomationEpoch(epoch);
       const latestPromptTurn = readUserTurnIdentity(findLatestPromptTurn(config, providerId, message.prompt));
@@ -665,6 +689,7 @@
       const canCheckChatGptAppend = providerId === "chatgpt" &&
         (previousConversationIdentity ? previousConversationIdentity === conversationIdentity : userTurnCount === 0) &&
         previousUserTurns.size === previousUserTurnIdentities.length;
+      const keepPreviousTurnIdentities = canCheckChatGptAppend || !initialConversationIdentity;
       // The background has consumed this provider's previous answer before
       // submitting its next prompt. Keep only the latest completed reply.
       for (const [previousRunId, previousRun] of submittedRuns) {
@@ -678,15 +703,24 @@
         baselinePromptCount,
         submittedPromptIdentity: latestPromptTurn && !previousUserTurns.has(latestPromptTurn) ? latestPromptTurn : "",
         conversationIdentity,
-        ...(canCheckChatGptAppend ? { previousUserTurnIdentities } : {}),
+        ...(keepPreviousTurnIdentities ? { previousUserTurnIdentities } : {}),
+        initialConversationIdentity,
+        sourceUrl: boundSourceUrl,
         errorBaseline,
         prompt: message.prompt,
         submittedAt: Date.now(),
         userTurnCount,
       });
+      const conversationTransition = boundSourceUrl && !initialConversationIdentity && conversationIdentity &&
+        String(location.href || "") !== boundSourceUrl &&
+        hasVerifiedNewSubmittedTurn(config, providerId, message.prompt, initialPromptCount, initialUserTurnIdentities)
+        ? { fromUrl: initialPageUrl, toUrl: String(location.href || "") }
+        : undefined;
+      if (conversationTransition) submittedRuns.get(runId).conversationTransition = conversationTransition;
       await persistSubmittedRuns();
 
-      return { ok: true, provider: providerId, runId, epoch, submission };
+      return { ok: true, provider: providerId, runId, epoch, submission,
+        ...(conversationTransition ? { conversationTransition } : {}) };
     } catch (error) {
       throw createStageError(stage, error);
     }
@@ -740,15 +774,18 @@
     run.responseState ||= {};
     const responseOptions = { pollBudgetMs: message.pollBudgetMs, state: run.responseState,
       baselinePromptCount: run.baselinePromptCount, submittedPromptIdentity: run.submittedPromptIdentity,
-      conversationIdentity: run.conversationIdentity, previousUserTurnIdentities: run.previousUserTurnIdentities };
+      conversationIdentity: run.conversationIdentity, previousUserTurnIdentities: run.previousUserTurnIdentities,
+      initialConversationIdentity: run.initialConversationIdentity, sourceUrl: run.sourceUrl };
     const responseCandidate = await waitForCompletion(config, providerId, message.timeoutMs || 120000, run.baseline, run.prompt, run.errorBaseline, () => assertAutomationEpoch(runEpoch), run.userTurnCount,
       responseOptions);
     assertAutomationEpoch(runEpoch);
     run.conversationIdentity ||= responseOptions.conversationIdentity;
+    if (responseOptions.conversationTransition) run.conversationTransition = responseOptions.conversationTransition;
     if (responseOptions.submittedPromptIdentity) run.submittedPromptIdentity = responseOptions.submittedPromptIdentity;
     if (responseCandidate === null && message.pollBudgetMs) {
       await persistSubmittedRuns();
-      return { ok: true, pending: true, provider: providerId, runId: message.runId };
+      return { ok: true, pending: true, provider: providerId, runId: message.runId,
+        ...(run.conversationTransition ? { conversationTransition: run.conversationTransition } : {}) };
     }
     const content = responseCandidate || readLastAssistantMessage(config, providerId);
     if (!content) {
@@ -761,7 +798,8 @@
 
     assertAutomationEpoch(runEpoch);
     // Keep the final receipt after sendResponse in case the message port closes.
-    const completedReply = { ok: true, provider: providerId, content };
+    const completedReply = { ok: true, provider: providerId, runId: message.runId, content,
+      ...(run.conversationTransition ? { conversationTransition: run.conversationTransition } : {}) };
     submittedRuns.set(message.runId, { providerId, epoch: runEpoch, submittedAt: run.submittedAt,
       conversationIdentity: run.conversationIdentity, completedReply });
     await persistSubmittedRuns();
@@ -1424,7 +1462,13 @@
         error.debugDetails = { expectedUserTurns: userTurnCount + 1, actualUserTurns };
         throw error;
       }
-      const promptTurns = countUserMessages(config, prompt);
+      const now = Date.now();
+      if (now >= Math.min(completionWindow.inactivityDeadline, completionWindow.hardDeadline)) break;
+      if (now >= pollDeadline) {
+        saveProgress();
+        return null;
+      }
+      const promptTurns = countMatchingUserMessages(config, providerId, prompt);
       const currentConversationIdentity = readConversationIdentity(providerId);
       if (options.conversationIdentity && options.conversationIdentity !== currentConversationIdentity) {
         const error = new Error("provider 分頁已切換到其他對話，已停止擷取回覆。");
@@ -1433,18 +1477,22 @@
       }
       // A brand-new chat can receive its route ID after the user turn is rendered.
       if (!options.conversationIdentity && currentConversationIdentity &&
-          promptTurns > (options.baselinePromptCount ?? 0)) {
+          promptTurns > (options.baselinePromptCount ?? 0) &&
+          hasVerifiedNewSubmittedTurn(config, providerId, prompt, options.baselinePromptCount ?? 0,
+            options.previousUserTurnIdentities || [], Boolean(options.sourceUrl))) {
         options.conversationIdentity = currentConversationIdentity;
+        if (options.sourceUrl && String(location.href || "") !== options.sourceUrl) {
+          options.conversationTransition = { fromUrl: options.sourceUrl, toUrl: String(location.href || "") };
+        }
+      } else if (!options.conversationIdentity && !options.initialConversationIdentity &&
+          currentConversationIdentity && options.sourceUrl && String(location.href || "") !== options.sourceUrl) {
+        // A late route change without the exact newly submitted turn is not a
+        // safe conversation binding. Keep waiting; never inspect that chat's reply.
+        saveProgress();
+        await delay(Math.min(100, Math.max(1, pollDeadline - Date.now())));
+        continue;
       }
       assertProviderLocation(providerId, config);
-      const now = Date.now();
-      if (now >= Math.min(completionWindow.inactivityDeadline, completionWindow.hardDeadline)) {
-        break;
-      }
-      if (now >= pollDeadline) {
-        saveProgress();
-        return null;
-      }
 
       const pageError = readBlockingServiceStatus(config, providerId) || readKnownProviderPageError(config, providerId, errorBaseline);
       if (pageError) {
@@ -1614,7 +1662,7 @@
       if (!initiallyGenerating && isGenerating(config)) {
         return "generation-started";
       }
-      if (countUserMessages(config, prompt) > initialUserMessageCount) {
+      if (countMatchingUserMessages(config, options.providerId, prompt) > initialUserMessageCount) {
         return "user-message-added";
       }
       // A fast answer can finish before the stop control is observed.
@@ -1641,6 +1689,29 @@
 
   function countUserMessages(config, prompt) {
     return readUserMessageTexts(config).filter((text) => !prompt || userMessageContainsPrompt(text, prompt)).length;
+  }
+
+  function countMatchingUserMessages(config, providerId, prompt) {
+    return readUserMessageTexts(config).filter((text) => !prompt || userMessageContainsPrompt(text, prompt) ||
+      (providerId === "chatgpt" && matchesChatGptRenderedPrompt(text, prompt))).length;
+  }
+
+  function isExactSubmittedTurn(messageText, providerId, prompt) {
+    const actual = normalizePromptMatchText(messageText);
+    const expected = normalizePromptMatchText(prompt);
+    if (!actual || !expected) return false;
+    return providerId === "chatgpt"
+      ? matchesChatGptRenderedPrompt(actual, expected)
+      : actual === expected;
+  }
+
+  function hasVerifiedNewSubmittedTurn(config, providerId, prompt, baselinePromptCount, previousIdentities = [], requireIdentity = false) {
+    if (countMatchingUserMessages(config, providerId, prompt) <= baselinePromptCount) return false;
+    const latest = readUserMessageElements(config).sort(compareDocumentOrder).at(-1);
+    if (!latest || !isExactSubmittedTurn(readConversationElementText(latest, providerId), providerId, prompt)) return false;
+    const identity = readUserTurnIdentity(latest);
+    if (identity && previousIdentities.includes(identity)) return false;
+    return !requireIdentity || Boolean(identity);
   }
 
   function userMessageContainsPrompt(messageText, prompt) {

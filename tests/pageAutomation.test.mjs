@@ -1618,19 +1618,26 @@ test("Meta selection synchronization rechecks cancellation before changing the e
   assert.equal(writes, 0);
 });
 
-async function sourceSubmissionFixture({ navigateBeforeWrite, navigateAfterWrite, navigateAfterClick, newChat = false, userTurnsBefore = [], userTurnsAfter = [] } = {}) {
-  const config = globalThis.aiDebateProviderAdapters.meta;
-  const sourceUrl = newChat ? "https://www.meta.ai/" : "https://www.meta.ai/prompt/test";
-  const location = { hostname: "www.meta.ai", pathname: newChat ? "/" : "/prompt/test", href: sourceUrl };
-  const navigate = () => Object.assign(location, { pathname: newChat ? "/prompt/new" : "/prompt/other", href: `https://www.meta.ai${newChat ? "/prompt/new" : "/prompt/other"}` });
+async function sourceSubmissionFixture({ provider = "meta", navigateBeforeWrite, navigateAfterWrite, navigateAfterClick, newChat = false, prompt: promptOverride, userTurnIdentity = true, userTurnsBefore = [], userTurnsAfter = [] } = {}) {
+  const config = globalThis.aiDebateProviderAdapters[provider];
+  const isChatGpt = provider === "chatgpt";
+  const hostname = isChatGpt ? "chatgpt.com" : "www.meta.ai";
+  const sourceUrl = isChatGpt ? "https://chatgpt.com/" : newChat ? "https://www.meta.ai/" : "https://www.meta.ai/prompt/test";
+  const sourcePath = isChatGpt ? "/" : newChat ? "/" : "/prompt/test";
+  const targetPath = isChatGpt ? "/c/new" : newChat ? "/prompt/new" : "/prompt/other";
+  const location = { hostname, pathname: sourcePath, href: sourceUrl };
+  const navigate = () => Object.assign(location, { pathname: targetPath, href: `https://${hostname}${targetPath}` });
   if (navigateBeforeWrite) navigate();
   let value = "";
   let clicks = 0;
   let writes = 0;
-  const prompt = "原問題\n\n互評引用\n完整尾端";
+  const prompt = promptOverride || (isChatGpt
+    ? "分析這個網址 https://example.com/report?q=1 並提出建議。"
+    : "原問題\n\n互評引用\n完整尾端");
+  const renderedPrompt = isChatGpt ? prompt.replace("https://", "") : prompt;
   const userTurns = (ids) => ids.map((id, index) => ({
-    innerText: id.startsWith("different") ? "後來的另一題" : prompt, order: index,
-    getAttribute: (name) => name === "data-message-id" ? id : null,
+    innerText: id.startsWith("different") ? "後來的另一題" : renderedPrompt, order: index,
+    getAttribute: (name) => name === "data-message-id" && userTurnIdentity ? id : null,
     getBoundingClientRect: () => ({ width: 320, height: 80 }),
     contains(other) { return other === this; },
     compareDocumentPosition(other) { return this.order < other.order ? 4 : 2; },
@@ -1669,9 +1676,12 @@ async function sourceSubmissionFixture({ navigateBeforeWrite, navigateAfterWrite
     getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
   });
   const submit = (options) => context.aiDebateProviderPageTest.submitPrompt({
-    provider: "meta", prompt, phase: "critique-1", runId: "meta-regression", ...options,
+    provider, prompt, phase: "critique-1", runId: "meta-regression", ...options,
   });
-  return { submit, sourceUrl, counts: () => ({ clicks, writes }),
+  return { submit, sourceUrl, navigate, counts: () => ({ clicks, writes }),
+    readResponse: (options = {}) => context.aiDebateProviderPageTest.readSubmittedResponse({
+      provider, runId: "meta-regression", ...options,
+    }),
     submittedRun: () => context.aiDebateProviderPageTest.submittedRuns.get("meta-regression") };
 }
 
@@ -1708,7 +1718,106 @@ test("new chat route ID is accepted after its submitted user turn appears", asyn
   const result = await fixture.submit({ expectedSourceUrl: fixture.sourceUrl });
   assert.equal(result.submission.evidence, "input-cleared");
   assert.equal(fixture.submittedRun().conversationIdentity, "new");
+  assert.equal(result.conversationTransition.fromUrl, fixture.sourceUrl);
+  assert.equal(result.conversationTransition.toUrl, "https://www.meta.ai/prompt/new");
   assert.deepEqual(fixture.counts(), { clicks: 1, writes: 1 });
+});
+
+test("unbound new chat accepts its exact submitted turn without a transition receipt", async () => {
+  const fixture = await sourceSubmissionFixture({
+    provider: "chatgpt", newChat: true, navigateAfterClick: true, userTurnsAfter: ["chatgpt-new-turn"],
+  });
+  const result = await fixture.submit();
+  assert.equal(result.ok, true);
+  assert.equal(result.conversationTransition, undefined);
+});
+
+test("ChatGPT accepts a new route when the committed prompt only omits the URL scheme", async () => {
+  const fixture = await sourceSubmissionFixture({
+    provider: "chatgpt", newChat: true, navigateAfterClick: true, userTurnsAfter: ["chatgpt-new-turn"],
+  });
+  const result = await fixture.submit({ expectedSourceUrl: fixture.sourceUrl });
+  assert.equal(result.submission.evidence, "input-cleared");
+  assert.equal(fixture.submittedRun().conversationIdentity, "new");
+  assert.equal(fixture.submittedRun().baselinePromptCount, 0);
+  assert.equal(result.conversationTransition.fromUrl, fixture.sourceUrl);
+  assert.equal(result.conversationTransition.toUrl, "https://chatgpt.com/c/new");
+});
+
+test("ChatGPT uses rendered URL matching for both new-chat prompt baselines", async () => {
+  const fixture = await sourceSubmissionFixture({
+    provider: "chatgpt", newChat: true, navigateAfterClick: true,
+    userTurnsBefore: ["existing-matching-turn"], userTurnsAfter: ["existing-matching-turn", "new-matching-turn"],
+  });
+  const result = await fixture.submit({ expectedSourceUrl: fixture.sourceUrl });
+  assert.equal(fixture.submittedRun().baselinePromptCount, 1);
+  assert.equal(fixture.submittedRun().conversationIdentity, "new");
+  assert.equal(result.conversationTransition.fromUrl, fixture.sourceUrl);
+  assert.equal(result.conversationTransition.toUrl, "https://chatgpt.com/c/new");
+});
+
+test("ChatGPT rejects a new route whose appended turn changes the prompt body", async () => {
+  const fixture = await sourceSubmissionFixture({
+    provider: "chatgpt", newChat: true, navigateAfterClick: true, userTurnsAfter: ["different-new-turn"],
+  });
+  await assert.rejects(fixture.submit({ expectedSourceUrl: fixture.sourceUrl }), {
+    code: "PROVIDER_CONVERSATION_CHANGED",
+  });
+});
+
+test("new chat route change before Send is rejected even when its visible turn matches", async () => {
+  const fixture = await sourceSubmissionFixture({
+    provider: "chatgpt", newChat: true, navigateAfterWrite: true, userTurnsBefore: ["matched-before-send"],
+  });
+  await assert.rejects(fixture.submit({ expectedSourceUrl: fixture.sourceUrl }), {
+    code: "PROVIDER_CONVERSATION_CHANGED",
+  });
+  assert.deepEqual(fixture.counts(), { clicks: 0, writes: 1 });
+});
+
+test("new chat route proof is returned when the committed turn is observed during polling", async () => {
+  const fixture = await sourceSubmissionFixture({
+    provider: "chatgpt", newChat: true, userTurnsAfter: ["chatgpt-new-turn"],
+  });
+  const submitted = await fixture.submit({ expectedSourceUrl: fixture.sourceUrl });
+  assert.equal(submitted.conversationTransition, undefined);
+
+  fixture.navigate();
+  const pending = await fixture.readResponse({ pollBudgetMs: 600 });
+
+  assert.equal(pending.pending, true);
+  assert.equal(pending.provider, "chatgpt");
+  assert.equal(pending.runId, "meta-regression");
+  assert.equal(pending.conversationTransition.fromUrl, fixture.sourceUrl);
+  assert.equal(pending.conversationTransition.toUrl, "https://chatgpt.com/c/new");
+  assert.equal(fixture.submittedRun().conversationIdentity, "new");
+});
+
+test("linked delayed route without user-turn identity does not adopt the new chat", async () => {
+  const fixture = await sourceSubmissionFixture({
+    provider: "chatgpt", newChat: true, userTurnsAfter: ["chatgpt-new-turn"], userTurnIdentity: false,
+  });
+  await fixture.submit({ expectedSourceUrl: fixture.sourceUrl });
+  fixture.navigate();
+  const pending = await fixture.readResponse({ pollBudgetMs: 600 });
+  assert.equal(pending.pending, true);
+  assert.equal(pending.conversationTransition, undefined);
+  assert.equal(fixture.submittedRun().conversationIdentity, null);
+});
+
+test("late route without the submitted turn never returns a transition proof", async () => {
+  const fixture = await sourceSubmissionFixture({
+    provider: "chatgpt", newChat: true, userTurnsAfter: ["different-existing-turn"],
+  });
+  const submitted = await fixture.submit({ expectedSourceUrl: fixture.sourceUrl });
+  assert.equal(submitted.conversationTransition, undefined);
+
+  fixture.navigate();
+  const pending = await fixture.readResponse({ pollBudgetMs: 600 });
+
+  assert.equal(pending.pending, true);
+  assert.equal(pending.conversationTransition, undefined);
+  assert.equal(fixture.submittedRun().conversationIdentity, null);
 });
 
 test("submission confirmation rejects navigation away from the original conversation", async () => {
@@ -2293,6 +2402,8 @@ test("ChatGPT collects the new critique after the editor clears and its prompt r
 
   const result = await api.readSubmittedResponse({ ...request, pollBudgetMs: 5000 });
   assert.equal(result.content, "第二輪完整回覆\n保留結尾");
+  assert.equal(result.provider, "chatgpt");
+  assert.equal(result.runId, request.runId);
   assert.equal(run.submittedPromptIdentity, "critique:user");
   assert.deepEqual(Array.from(run.previousUserTurnIdentities), ["first:user"]);
   assert.equal(sends(), 1);
