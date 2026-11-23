@@ -1,0 +1,36 @@
+{
+  "operationId": "llmeeting-webstore-053-20261123",
+  "task": "LLM-T82",
+  "itemId": "cjombmcmgifhanenolhaeepbpnlchjdp",
+  "target": "Chrome Web Store Developer Dashboard",
+  "statusUrl": "https://chrome.google.com/webstore/devconsole/2150e654-f5ed-4a22-9468-3eee6fd2b9b2/cjombmcmgifhanenolhaeepbpnlchjdp/edit/status",
+  "packageUrl": "https://chrome.google.com/webstore/devconsole/2150e654-f5ed-4a22-9468-3eee6fd2b9b2/cjombmcmgifhanenolhaeepbpnlchjdp/edit/package",
+  "releaseVersion": "0.5.3",
+  "packageFile": "dist/llmeeting-0.5.3.zip",
+  "packageSize": 2886922,
+  "packageSha256": "959352b5d883c5e2f3169db82f6ff1935e3545b304f064cf9ed33d895265f121",
+  "sourceCommit": "222f897864c2dc1d09f2ed4fa9f26ce42ec71523",
+  "previousDraftVersion": "0.5.2",
+  "previousPublishedVersion": "0.5.2",
+  "state": "submitted",
+  "result": "confirmed",
+  "requestedPublishMode": "automatic",
+  "recordedAt": "2026-11-23T09:14:14+08:00",
+  "draftVersion": "0.5.3",
+  "publishedVersion": "0.5.2",
+  "uploadConfirmedAt": "2026-11-23T09:15:33+08:00",
+  "storePhase": "pending-review",
+  "dashboardStatus": "已提交審查",
+  "checkedLocales": {
+    "zh-TW": 1087,
+    "en": 2402,
+    "ja": 1138
+  },
+  "autoPublish": true,
+  "confirmedAt": "2026-11-23T09:17:19+08:00",
+  "verification": [
+    "套件頁確認上傳版號 0.5.3，三語詳細說明含 OWO+ 免費與使用已登入網頁版。",
+    "送審確認對話框勾選通過審查後自動發布。",
+    "Google 顯示「你已將擴充功能提交審查」。送審前最後核對的公開版本為 0.5.2。"
+  ]
+}

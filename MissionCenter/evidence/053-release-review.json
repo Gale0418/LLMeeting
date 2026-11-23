@@ -243,14 +243,21 @@
       "scope": "CodeRabbit 修補複驗",
       "result": "verified",
       "evidence": "初查 130 檔與修補複查 16 檔共使用兩次。第二次的三項修正以本機回歸、實際 Chromium 的受控合成頁與最終封裝重驗。"
+    },
+    {
+      "scope": "最後候選獨立查核",
+      "result": "verified",
+      "evidence": "獨立讀取確認 641 項 Node 通過、2 輪 CodeRabbit 正常完成、正式 ZIP SHA-256 與大小相符。另核對匿名分頁重試隔離、回執冪等和新對話合成驗證的覆蓋。"
     }
   ],
   "store": {
-    "phase": "ready-to-upload",
+    "phase": "pending-review",
     "publishedVersion": "0.5.2",
-    "requestedPublishMode": "automatic"
+    "autoPublish": true,
+    "receipts": "evidence/webstore-053-20261123.json"
   },
   "remaining": [
-    "尚未取得五家登入帳號完整長會議的實機證據"
+    "尚未取得五家登入帳號完整長會議的實機證據",
+    "尚無法以合成覆蓋判定空白分頁送出後同時切到含完全相同最新提示的舊對話。"
   ]
 }

@@ -2,7 +2,7 @@
 
 Node 641/641，隔離 Chromium 獨立側欄 101 項及原生側欄 51 項通過，ZIP 59 檔逐一驗證。第 1 次審查 130 檔／12 項、第 2 次審查 16 檔／3 項。
 
-Chrome 商店公開版為 0.5.2。0.5.3 準備上傳並選擇審查通過後自動發布。LLM-T82 保留 Review，五家登入態整場驗收仍待完成。[候選驗證](evidence/053-release-review.json)
+Chrome 商店確認 0.5.3 已提交審查，送審已勾選通過後自動發布。公開版為 0.5.2。[商店回執](evidence/webstore-053-20261123.json)LLM-T82 保留 Review，五家登入態整場驗收仍待完成。[候選驗證](evidence/053-release-review.json)
 
 ---
 
