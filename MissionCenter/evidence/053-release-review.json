@@ -1,0 +1,256 @@
+{
+  "date": "2026-11-23",
+  "task": "LLM-T82",
+  "package": {
+    "path": "dist/llmeeting-0.5.3.zip",
+    "version": "0.5.3",
+    "sha256": "959352b5d883c5e2f3169db82f6ff1935e3545b304f064cf9ed33d895265f121",
+    "bytes": 2886922,
+    "entries": 59,
+    "crc": "passed",
+    "matchesWorkspace": true,
+    "matchesGitSource": true,
+    "sourceCommit": "222f897864c2dc1d09f2ed4fa9f26ce42ec71523",
+    "manifestPermissionChange": false,
+    "driver": "0.5.3-driver.20",
+    "existingPackageMatched": false
+  },
+  "sourceBranch": "main",
+  "tests": {
+    "nodePassed": 641,
+    "nodeTotal": 641,
+    "browser": {
+      "summary": "隔離 Chromium 獨立側欄 101 項及原生側欄 51 項通過",
+      "standalone": {
+        "status": "pass",
+        "checks": 101
+      },
+      "native": {
+        "status": "pass",
+        "checks": 51
+      },
+      "uiProofFiles": {
+        "src/sidepanel/styles.css": "35d39b35818b2151bc65b2cb9235d02431d8bb4e7ad53378fcbff9be42564e71",
+        "src/sidepanel/index.html": "82a7acd6980bdda0912d6338ab6f0caa94f5cf2a44970e83a561fc2ff40c360c",
+        "src/options/styles.css": "32622f511f526cebf51b6b6ca1eefe3e6e97ed4b0e41ee22cd9e30f67df3999b",
+        "tests/browser/experienceChecks.mjs": "d149cffb452374a58915319c3f4f83e912ff6b59b7eaccfcd10059c27944032f"
+      },
+      "reportSha256": "5dc9263e5b52b84c23dc633c9acb89e7357c4703ac8fbb434fbb2b4b36b7f93a",
+      "isolatedProfile": true,
+      "syntheticProviderTrafficOnly": true,
+      "pageErrors": 0,
+      "reducedMotionSettings": "另以獨立 Chromium 確認系統減少動態時會阻止切換，套用雙頁測試覆寫後正常。"
+    }
+  },
+  "codeRabbit": {
+    "limitPerHour": 3,
+    "limitFilesPerRun": 150,
+    "scope": "現行與早先的執行程式、合成測試、三語設定和技術文件。排除大型生成文案、二進位素材、鎖檔、私有紀錄與未追蹤輸出。",
+    "runs": [
+      {
+        "attempt": 1,
+        "startedAt": "2026-11-23T08:09:11+08:00",
+        "submittedPaths": 130,
+        "exitCode": 0,
+        "completedAt": "2026-11-23T08:17:06+08:00",
+        "result": "completed",
+        "filesReviewed": 130,
+        "issues": 12,
+        "dispositions": [
+          {
+            "id": 1,
+            "severity": "major",
+            "path": "docs/superpowers/plans/2026-06-18-core-regression-repairs.md",
+            "line": 463,
+            "title": "Share the in-flight hydration operation.",
+            "disposition": "historical",
+            "evidence": "舊計畫摘錄。目前 ensureRuntimeInitialized 重用 initializationPromise，讀取失敗時才重設以利重試。"
+          },
+          {
+            "id": 2,
+            "severity": "major",
+            "path": "docs/superpowers/plans/2026-06-19-regression-repair-and-easter-egg.md",
+            "line": 513,
+            "title": "Share the in-flight initialization operation.",
+            "disposition": "historical",
+            "evidence": "另一份舊計畫摘錄。現行背景初始化共用同一個進行中 promise，無須改舊方案。"
+          },
+          {
+            "id": 3,
+            "severity": "major",
+            "path": "src/background/sessionRecovery.js",
+            "line": 143,
+            "title": "Recover interrupted summary and reveal requests without resending them.",
+            "disposition": "fixed",
+            "evidence": "摘要、來源總結與揭曉從 checkpoint 建立補貼流程。可能已派送者只等待人工作答，尚未派送者才能接著送。"
+          },
+          {
+            "id": 4,
+            "severity": "major",
+            "path": "src/background/service-worker.js",
+            "line": 2986,
+            "title": "Keep linked replies bound to the conversation that supplied them.",
+            "disposition": "fixed",
+            "evidence": "讀取、送出及 preflight 都重新核對原分頁 URL 與 pendingURL。使用相同供應商不同對話會被攔下，等待中的過期 run token 也不改狀態。"
+          },
+          {
+            "id": 5,
+            "severity": "major",
+            "path": "src/background/service-worker.js",
+            "line": 1533,
+            "title": "Persist the new turn's dispatch state with the turn.",
+            "disposition": "fixed",
+            "evidence": "手動新增輪次與 prepared checkpoint 同次保存，復原能辨識未派送輪次並保留已送出項目。"
+          },
+          {
+            "id": 6,
+            "severity": "major",
+            "path": "src/background/sessionRecovery.js",
+            "line": 155,
+            "title": "Recover the imposter opening without choosing a new imposter.",
+            "disposition": "fixed",
+            "evidence": "重用純建構函式，以原本保存的內鬼角色或明確無內鬼重建未送出的提示。未知角色或 phase 不一致時保留停止，可能已派送者只走人工補回。"
+          },
+          {
+            "id": 7,
+            "severity": "major",
+            "path": "src/content/automation-core.js",
+            "line": 166,
+            "title": "Do not classify ordinary answer text as an overload notice.",
+            "disposition": "fixed",
+            "evidence": "重現一般回答中的 server is busy 被當成超載。改為辨識完整服務通知與附帶重試句，保留已知中英文通知與指定秒數。"
+          },
+          {
+            "id": 8,
+            "severity": "major",
+            "path": "src/content/provider-page.js",
+            "line": 152,
+            "title": "Do not treat partial coverage as a complete assistant turn.",
+            "disposition": "fixed",
+            "evidence": "Claude Markdown 旁同一回覆容器的可見 artifact 現在一併取出。回歸涵蓋隱藏替代內容與 UI 按鈕不納入。"
+          },
+          {
+            "id": 9,
+            "severity": "major",
+            "path": "src/content/provider-page.js",
+            "line": 1024,
+            "title": "Exclude non-send actions before applying the configured score.",
+            "disposition": "fixed",
+            "evidence": "在按鈕評分前篩掉 voice、upload 等衝突動作，合成測試證明只有 Send voice message 時不會誤按。"
+          },
+          {
+            "id": 10,
+            "severity": "major",
+            "path": "src/content/provider-page.js",
+            "line": 818,
+            "title": "Keep run recovery data in extension-owned storage.",
+            "disposition": "fixed",
+            "evidence": "改由背景在擴充功能的 session storage 保管，以分頁和供應商分隔。合成 Chromium 驗證重載續讀、切換對話拒絕、舊頁面快取移除及關閉分頁清理。"
+          },
+          {
+            "id": 11,
+            "severity": "major",
+            "path": "src/content/provider-page.js",
+            "line": 635,
+            "title": "Keep submission confirmation bound to the original conversation.",
+            "disposition": "fixed",
+            "evidence": "送出確認持續核對原對話；接續新對話需要新增且提示相符的使用者訊息。切到舊對話的合成案例已拒絕。"
+          },
+          {
+            "id": 12,
+            "severity": "major",
+            "path": "tests/browser/experienceChecks.mjs",
+            "line": 55,
+            "title": "Apply the reduced-motion override to the settings page too.",
+            "disposition": "fixed",
+            "evidence": "用獨立 Chromium 重現減少動態效果讓設定頁驗收卡在禁用勾選框，設定頁與側欄現在同時使用測試媒體覆寫。"
+          }
+        ]
+      },
+      {
+        "attempt": 2,
+        "startedAt": "2026-11-23T08:43:17+08:00",
+        "submittedPaths": 16,
+        "exitCode": 0,
+        "completedAt": "2026-11-23T08:52:44+08:00",
+        "result": "completed",
+        "filesReviewed": 16,
+        "issues": 3,
+        "dispositions": [
+          {
+            "id": 1,
+            "severity": "major",
+            "path": "src/content/provider-page.js",
+            "line": 587,
+            "title": "Use rendered-prompt matching for the new-conversation check.",
+            "disposition": "fixed",
+            "evidence": "已在獨立 Chromium 重現新對話的網址 scheme 省略時被誤判。提交證據以實際 click/Enter 後的完整提示判斷，保留新對話及原有綁定邏輯。"
+          },
+          {
+            "id": 2,
+            "severity": "major",
+            "path": "src/background/service-worker.js",
+            "line": 1862,
+            "title": "Advance the linked binding after a submission-created conversation URL change.",
+            "disposition": "fixed",
+            "evidence": "空白來源分頁只用同一供應商、同 tab、同 run 的可信 from/to 回執改綁。立即和延遲兩種 Chromium 路徑通過。背景驗證 no-receipt 拒絕及同回執冪等。Chrome 同源 SPA 轉址的續讀暫存可持續使用。"
+          },
+          {
+            "id": 3,
+            "severity": "major",
+            "path": "src/background/service-worker.js",
+            "line": 1865,
+            "title": "Do not assign the linked source tab to jobs that force a new tab.",
+            "disposition": "fixed",
+            "evidence": "匿名總結優先另開分頁，忽略既有 linked sourceTab。Meta 與超載重試保留隔離選擇，合成工作流和核對都通過。"
+          }
+        ]
+      }
+    ]
+  },
+  "additionalChecks": [
+    {
+      "scope": "ChatGPT 提示辨識",
+      "result": "fixed",
+      "evidence": "合成案例重現首尾與網址相同但中段不同的訊息被誤認。現在比對完整內容，只容許已觀察的空白及 URL scheme 顯示差異。"
+    },
+    {
+      "scope": "Chrome 商店既有版本",
+      "result": "confirmed",
+      "evidence": "後台曾讀得公開版 0.5.2、草稿 0.5.2，現有項目允許上傳新版。"
+    },
+    {
+      "scope": "README",
+      "result": "verified",
+      "evidence": "收斂為產品用途、安裝、隱私、開發入口及歷史連結。"
+    },
+    {
+      "scope": "視覺及操作",
+      "result": "verified",
+      "evidence": "核對 320px 合成修復畫面與原生側欄重開畫面，本機測試覆蓋三語、設定、健康狀態與草稿。"
+    },
+    {
+      "scope": "續讀暫存隔離",
+      "result": "verified",
+      "evidence": "以真實的擴充背景及 content script 在合成 Chromium 頁面驗證。相同分頁重載回傳已收齊的回覆、跨對話拒絕、關閉分頁清除暫存。Driver 雙端同步至 0.5.3-driver.20。"
+    },
+    {
+      "scope": "準備度獨立核對",
+      "result": "verified",
+      "evidence": "核對 README、兩層 Chromium 摘要與報告、擴充套件 manifest 版號及權限；隔離 profile 使用合成資料。"
+    },
+    {
+      "scope": "CodeRabbit 修補複驗",
+      "result": "verified",
+      "evidence": "初查 130 檔與修補複查 16 檔共使用兩次。第二次的三項修正以本機回歸、實際 Chromium 的受控合成頁與最終封裝重驗。"
+    }
+  ],
+  "store": {
+    "phase": "ready-to-upload",
+    "publishedVersion": "0.5.2",
+    "requestedPublishMode": "automatic"
+  },
+  "remaining": [
+    "尚未取得五家登入帳號完整長會議的實機證據"
+  ]
+}
