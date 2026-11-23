@@ -843,7 +843,7 @@ test("Grok readiness recognizes the localized live composer structure", async ()
 test("provider content script uses a replaceable versioned listener after extension reload", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
 
-  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.2-driver\.15"/);
+  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.3-driver\.19"/);
   assert.match(script, /"aiDebate:getCapabilities": getCapabilities/);
   assert.match(script, /__aiDebateContentVersion/);
   assert.match(script, /onMessage\.removeListener\(globalThis\.__aiDebateContentMessageListener\)/);
@@ -864,7 +864,7 @@ test("same-version content reinjection replaces the listener without duplicating
   assert.equal(listeners.size, 1);
   assert.notEqual(context.__aiDebateContentMessageListener, previous);
   const response = await new Promise(resolve => context.__aiDebateContentMessageListener({ type: "aiDebate:getCapabilities" }, {}, resolve));
-  assert.equal(response.contentScriptVersion, "0.5.2-driver.15");
+  assert.equal(response.contentScriptVersion, "0.5.3-driver.19");
 });
 
 test("failed content initialization cannot poison the next injection", async () => {
@@ -2126,6 +2126,118 @@ test("virtualized P/A then Q/B then P never reuses answer A when only the old P 
       { baselinePromptCount: 1, conversationIdentity: "test-thread", submittedPromptIdentity, pollBudgetMs: 3500 },
     );
     assert.equal(result, null);
+  }
+});
+
+async function chatGptCritiqueFixture() {
+  const config = globalThis.aiDebateProviderAdapters.chatgpt;
+  const head = "Round two critique. Read the following quoted participants before replying.";
+  const tail = "Now propose a concrete next step and mention any disagreement that remains.";
+  const prompt = `${head}\nParticipant One: an inline URL https://example.com/reply?q=1\n${tail}`;
+  const displayed = prompt.replace("https://example.com/reply?q=1", "example.com/reply?q=1");
+  const key = "data-chatgpt-search-unit-key";
+  const entry = [
+    { role: "User", text: "原本的問題", attributes: { [key]: "first:user" } },
+    { role: "AI", text: "第一輪舊回答", attributes: { "data-chatgpt-selection-message-id": "first-reply" } },
+    { role: "User", text: displayed, attributes: { [key]: "critique:user" } },
+    { role: "AI", text: "第二輪完整回覆\n保留結尾", attributes: { "data-chatgpt-selection-message-id": "critique-reply" } },
+  ];
+  const fixture = conversationFixture(entry);
+  const [oldUser, oldReply, newUser, newReply] = fixture.nodes;
+  let value = "";
+  let sends = 0;
+  let mountNewTurn = false;
+  const editor = {
+    tagName: "DIV", isConnected: true, focus() {},
+    get innerText() { return value; },
+    getAttribute: (name) => ({ contenteditable: "true", role: "textbox" })[name] ?? null,
+    getBoundingClientRect: () => ({ width: 320, height: 80 }),
+    closest: () => composer,
+  };
+  const send = {
+    getAttribute: (name) => ({ role: "button", "data-testid": "send-button" })[name] ?? null,
+    getBoundingClientRect: () => ({ width: 40, height: 40 }),
+    click() { sends++; value = ""; },
+  };
+  const composer = { querySelectorAll: (selector) => selector === config.sendSelectors[0] ? [send] : [] };
+  const context = await loadProviderPageTestContext({ ...fixture.context,
+    location: { hostname: "chatgpt.com", pathname: "/c/critique-thread" },
+    document: {
+      querySelectorAll(selector) {
+        if (selector === config.preferredInputSelector) return [editor];
+        if (selector === config.userMessageSelectors[0]) return mountNewTurn ? [oldUser, newUser] : [oldUser];
+        if (selector === config.responseSelectors[0]) return mountNewTurn ? [oldReply, newReply] : [oldReply];
+        return [];
+      },
+      getSelection: () => ({ selectAllChildren() {} }),
+      execCommand: (_command, _ui, text) => { value = text; return true; },
+    },
+  });
+  const api = context.aiDebateProviderPageTest;
+  const request = { provider: "chatgpt", phase: "critique-1", runId: "critique" };
+  await api.submitPrompt({ ...request, prompt });
+  mountNewTurn = true;
+  return { api, entry, request, head, newUser, sends: () => sends };
+}
+
+test("ChatGPT collects the new critique after the editor clears and its prompt renders differently", async () => {
+  const { api, request, sends, newUser } = await chatGptCritiqueFixture();
+  const run = api.submittedRuns.get(request.runId);
+  assert.equal(run.submittedPromptIdentity, "");
+
+  const pending = await api.readSubmittedResponse({ ...request, pollBudgetMs: 750 });
+  assert.equal(pending.pending, true);
+  newUser.innerText = newUser.innerText.replace("an inline URL ", " 網址 \n");
+  newUser.textContent = newUser.innerText;
+
+  const result = await api.readSubmittedResponse({ ...request, pollBudgetMs: 5000 });
+  assert.equal(result.content, "第二輪完整回覆\n保留結尾");
+  assert.equal(run.submittedPromptIdentity, "critique:user");
+  assert.deepEqual(Array.from(run.previousUserTurnIdentities), ["first:user"]);
+  assert.equal(sends(), 1);
+});
+
+test("ChatGPT rebinds an optimistic critique ID after the same submitted prompt renders", async () => {
+  const { api, request, sends } = await chatGptCritiqueFixture();
+  const run = api.submittedRuns.get(request.runId);
+  run.submittedPromptIdentity = "temporary-critique:user";
+  const pending = await api.readSubmittedResponse({ ...request, pollBudgetMs: 750 });
+  assert.equal(pending.pending, true);
+  assert.equal(run.submittedPromptIdentity, "critique:user");
+
+  const result = await api.readSubmittedResponse({ ...request, pollBudgetMs: 5000 });
+  assert.equal(result.content, "第二輪完整回覆\n保留結尾");
+  assert.equal(sends(), 1);
+});
+
+test("ChatGPT collects a committed critique after earlier user turns are virtualized", async () => {
+  const { api, request, newUser, sends } = await chatGptCritiqueFixture();
+  const run = api.submittedRuns.get(request.runId);
+  run.submittedPromptIdentity = "temporary-critique:user";
+  run.previousUserTurnIdentities = ["virtualized-away:user", "first:user"];
+  run.userTurnCount = 2;
+  newUser.innerText = run.prompt;
+  newUser.textContent = run.prompt;
+
+  const result = await api.readSubmittedResponse({ ...request, pollBudgetMs: 5000 });
+  assert.equal(result.content, "第二輪完整回覆\n保留結尾");
+  assert.equal(run.submittedPromptIdentity, "critique:user");
+  assert.equal(sends(), 1);
+});
+
+test("ChatGPT rejects ambiguous critique turns despite a complete assistant message", async () => {
+  const key = "data-chatgpt-search-unit-key";
+  for (const mode of ["reused-id", "replaced-history", "unrelated-prompt"]) {
+    const { api, entry, request, head, newUser } = await chatGptCritiqueFixture();
+    api.submittedRuns.get(request.runId).submittedPromptIdentity = "temporary-critique:user";
+    if (mode === "reused-id") entry[2].attributes[key] = "first:user";
+    if (mode === "replaced-history") entry[0].attributes[key] = "different:user";
+    if (mode === "unrelated-prompt") {
+      newUser.innerText = `${head} 問了另一件事。`;
+      newUser.textContent = newUser.innerText;
+    }
+    await assert.rejects(api.readSubmittedResponse({ ...request, timeoutMs: 4000, pollBudgetMs: 6500 }),
+      (error) => error.code === "PROVIDER_RESPONSE_TIMEOUT" && error.debugDetails?.reason === "submitted-user-turn-not-found", mode);
   }
 });
 

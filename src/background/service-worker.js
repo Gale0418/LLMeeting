@@ -2035,6 +2035,7 @@ async function collectProviderJob(submitted, runToken, overloadRetryCount = 0) {
 async function readSubmittedResponseWithRetry(submitted, tabId, deadline, runToken) {
   const maxTransientRetries = 3;
   let transientRetries = 0;
+  const listenerRepairState = { attempted: false };
   while (true) {
     runController.assertCurrent(runToken);
     const remainingMs = deadline - Date.now();
@@ -2051,7 +2052,7 @@ async function readSubmittedResponseWithRetry(submitted, tabId, deadline, runTok
       const readPromise = sendProviderMessage(tabId, submitted, "aiDebate:readSubmittedResponse", {
         runId: submitted.runId,
         pollBudgetMs: Math.min(RESPONSE_POLL_BUDGET_MS, remainingMs),
-      }, { deadline: rpcDeadline, dispatchState });
+      }, { deadline: rpcDeadline, dispatchState, listenerRepairState, runToken });
       const response = await providerRpc(readPromise, "收集 AI 回覆", rpcBudgetMs, dispatchState);
       runController.assertCurrent(runToken);
       return response;
@@ -2204,7 +2205,7 @@ async function refreshMetaInputProvider(tabId, job, runToken) {
   runController.assertCurrent(runToken);
 }
 
-const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.2-driver.15";
+const PROVIDER_CONTENT_SCRIPT_VERSION = "0.5.3-driver.19";
 const PROVIDER_DRIVER_CONTRACT_VERSION = 1;
 
 function isProviderLoginTab(tab, provider) {
@@ -2287,7 +2288,7 @@ async function sendProviderReadinessMessage(tabId, job, type = "aiDebate:checkRe
   }
 }
 
-async function ensureProviderContentScript(tabId, { deadline = Infinity, repair = false } = {}) {
+async function ensureProviderContentScript(tabId, { deadline = Infinity, repair = false, submitTab } = {}) {
   const budget = (limit) => {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
@@ -2299,12 +2300,24 @@ async function ensureProviderContentScript(tabId, { deadline = Infinity, repair 
   };
   let capabilities = null;
   if (!repair) {
-    try {
-      const timeoutMs = budget(1500);
-      capabilities = await providerRpc(chrome.tabs.sendMessage(tabId, { type: "aiDebate:getCapabilities" }), "capabilities", timeoutMs);
-    } catch (error) {
-      if (!/(?:receiving end does not exist|could not establish connection|extension context invalidated)/i.test(error.message)) throw error;
-      // A missing or invalidated listener is repaired by the local injection below.
+    const attempts = submitTab ? 2 : 1;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const timeoutMs = budget(attempt === 0 ? 1500 : 5000);
+        capabilities = await providerRpc(chrome.tabs.sendMessage(tabId, { type: "aiDebate:getCapabilities" }), "capabilities", timeoutMs);
+        break;
+      } catch (error) {
+        if (isDefinitelyMissingProviderListener(error)) break;
+        if (error.code !== "PROVIDER_RPC_TIMEOUT" || attempt + 1 >= attempts) throw error;
+        // The handshake is read-only. Retry it before any prompt can be sent.
+        const currentTab = await chrome.tabs.get(tabId);
+        if (!isExpectedProviderTab(currentTab, submitTab.provider) ||
+          (currentTab.pendingUrl || currentTab.url) !== submitTab.url) {
+          throw Object.assign(new Error("Provider 分頁在送出提示前已導覽，已停止送出。"), {
+            code: "PROVIDER_CONVERSATION_CHANGED",
+          });
+        }
+      }
     }
   }
   if (
@@ -2322,7 +2335,7 @@ async function ensureProviderContentScript(tabId, { deadline = Infinity, repair 
       "src/content/provider-page.js",
     ],
   }), "content injection", injectionTimeoutMs);
-  const handshakeTimeoutMs = budget(1500);
+  const handshakeTimeoutMs = budget(submitTab ? 5000 : 1500);
   capabilities = await providerRpc(chrome.tabs.sendMessage(tabId, { type: "aiDebate:getCapabilities" }), "capabilities after injection", handshakeTimeoutMs);
   if (
     capabilities?.contentScriptVersion !== PROVIDER_CONTENT_SCRIPT_VERSION ||
@@ -2351,7 +2364,16 @@ async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", ex
   let providerReadDispatched = false;
   try {
     tab = await chrome.tabs.get(tabId);
-    await ensureProviderContentScript(tabId, options);
+    if (type === "aiDebate:readSubmittedResponse") {
+      // A successful submit already proved that this driver was installed.
+      // Probe capabilities only after a definite missing-listener response;
+      // a timed-out capabilities handshake can strand every collection.
+      assertSubmittedReadTabReady(tab, job.provider);
+    } else if (type === "aiDebate:submitPrompt") {
+      await ensureProviderContentScript(tabId, { ...options, submitTab: { provider: job.provider, url: tab.pendingUrl || tab.url } });
+    } else {
+      await ensureProviderContentScript(tabId, options);
+    }
     if (type === "aiDebate:submitPrompt" && job.sourceTab) {
       tab = await chrome.tabs.get(tabId);
       if (tab.id !== job.sourceTab.id || !job.sourceTab.url || tab.url !== job.sourceTab.url || tab.status !== "complete") {
@@ -2371,8 +2393,41 @@ async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", ex
       return await providerRpc(chrome.tabs.sendMessage(tabId, payload), "readiness DOM", Math.min(5000, remaining));
     }
     if (type === "aiDebate:readSubmittedResponse") {
+      runController.assertCurrent(options.runToken);
+      assertBeforeDeadline(options.deadline);
       providerReadDispatched = true;
       if (options.dispatchState) options.dispatchState.providerReadDispatched = true;
+      try {
+        return await chrome.tabs.sendMessage(tabId, payload);
+      } catch (error) {
+        if (!isDefinitelyMissingProviderListener(error) || options.listenerRepairState?.attempted) throw error;
+        options.listenerRepairState.attempted = true;
+        runController.assertCurrent(options.runToken);
+        assertBeforeDeadline(options.deadline);
+        const currentTab = await chrome.tabs.get(tabId);
+        if ((currentTab.url || currentTab.pendingUrl) !== (tab.url || tab.pendingUrl)) {
+          throw Object.assign(new Error("Provider 分頁在收集期間已導覽，已停止擷取這次回覆。"), {
+            code: "PROVIDER_CONVERSATION_CHANGED",
+          });
+        }
+        assertSubmittedReadTabReady(currentTab, job.provider);
+        runController.assertCurrent(options.runToken);
+        await ensureProviderContentScript(tabId, { deadline: options.deadline, repair: true });
+        runController.assertCurrent(options.runToken);
+        assertBeforeDeadline(options.deadline);
+        const repairedTab = await chrome.tabs.get(tabId);
+        if ((repairedTab.url || repairedTab.pendingUrl) !== (tab.url || tab.pendingUrl)) {
+          throw Object.assign(new Error("Provider 分頁在修復等待器時已導覽，已停止擷取這次回覆。"), {
+            code: "PROVIDER_CONVERSATION_CHANGED",
+          });
+        }
+        assertSubmittedReadTabReady(repairedTab, job.provider);
+        runController.assertCurrent(options.runToken);
+        assertBeforeDeadline(options.deadline);
+        // Retrying the same runId is safe: the content script deduplicates its
+        // active poll and caches a completed reply. Never resubmit the prompt.
+        return await chrome.tabs.sendMessage(tabId, payload);
+      }
     }
     return await chrome.tabs.sendMessage(tabId, payload);
   } catch (error) {
@@ -2384,6 +2439,35 @@ async function sendProviderMessage(tabId, job, type = "aiDebate:sendAndRead", ex
     }
     throw wrapped;
   }
+}
+
+function assertSubmittedReadTabReady(tab, providerId) {
+  // A submitted run can be readable while Chrome still reports loading after
+  // a single-page route change. The driver validates the run and conversation.
+  if (!isExpectedProviderTab(tab, providerId)) {
+    throw Object.assign(new Error("Provider 分頁已變更或尚未就緒，已停止擷取這次回覆。"), {
+      code: "PROVIDER_CONVERSATION_CHANGED",
+    });
+  }
+}
+
+function isExpectedProviderTab(tab, providerId) {
+  const provider = PROVIDERS.find((item) => item.id === providerId);
+  if (!provider || !tab?.url) return false;
+  return [tab.url, tab.pendingUrl].filter(Boolean).every((url) =>
+    provider.matchPatterns.some((pattern) => urlMatchesPatternForReadiness(url, pattern)) &&
+    !isProviderLoginTab({ url }, provider),
+  );
+}
+
+function assertBeforeDeadline(deadline) {
+  if (Number.isFinite(deadline) && deadline - Date.now() <= 0) {
+    throw Object.assign(new Error("等待 AI 回覆逾時"), { code: "PROVIDER_RESPONSE_TIMEOUT" });
+  }
+}
+
+function isDefinitelyMissingProviderListener(error) {
+  return /(?:receiving end does not exist|could not establish connection|extension context invalidated)/i.test(error?.message || "");
 }
 
 function getProviderTimeoutMs(phase) {

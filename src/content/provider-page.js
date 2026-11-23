@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = "0.5.2-driver.15";
+  const CONTENT_SCRIPT_VERSION = "0.5.3-driver.19";
   const {
     assistantSnapshot,
     classifyProviderResponseError,
@@ -592,7 +592,9 @@
         : await waitForOptional(() => findSendButton(config, input), 3000, assertSourceConversation);
       assertSourceConversation();
       const errorBaseline = readProviderErrorFingerprintBaseline(config, providerId);
-      const previousUserTurns = new Set(readUserMessageElements(config).map(readUserTurnIdentity).filter(Boolean));
+      const previousUserTurnIdentities = readUserMessageElements(config).sort(compareDocumentOrder).map(readUserTurnIdentity);
+      const previousUserTurns = new Set(previousUserTurnIdentities.filter(Boolean));
+      const previousConversationIdentity = readConversationIdentity(providerId);
       const userMessageCount = countUserMessages(config, message.prompt);
       const userTurnCount = countUserMessages(config);
       const promptWasPresent = isPromptStillPresent(input, message.prompt);
@@ -641,6 +643,10 @@
       const runId = message.runId || createRunId(providerId, message.phase);
       assertAutomationEpoch(epoch);
       const latestPromptTurn = readUserTurnIdentity(findLatestPromptTurn(config, providerId, message.prompt));
+      const conversationIdentity = readConversationIdentity(providerId);
+      const canCheckChatGptAppend = providerId === "chatgpt" &&
+        (previousConversationIdentity ? previousConversationIdentity === conversationIdentity : userTurnCount === 0) &&
+        previousUserTurns.size === previousUserTurnIdentities.length;
       // The background has consumed this provider's previous answer before
       // submitting its next prompt. Keep only the latest completed reply.
       for (const [previousRunId, previousRun] of submittedRuns) {
@@ -653,7 +659,8 @@
         baseline,
         baselinePromptCount,
         submittedPromptIdentity: latestPromptTurn && !previousUserTurns.has(latestPromptTurn) ? latestPromptTurn : "",
-        conversationIdentity: readConversationIdentity(providerId),
+        conversationIdentity,
+        ...(canCheckChatGptAppend ? { previousUserTurnIdentities } : {}),
         errorBaseline,
         prompt: message.prompt,
         submittedAt: Date.now(),
@@ -711,11 +718,12 @@
     run.responseState ||= {};
     const responseOptions = { pollBudgetMs: message.pollBudgetMs, state: run.responseState,
       baselinePromptCount: run.baselinePromptCount, submittedPromptIdentity: run.submittedPromptIdentity,
-      conversationIdentity: run.conversationIdentity };
+      conversationIdentity: run.conversationIdentity, previousUserTurnIdentities: run.previousUserTurnIdentities };
     const responseCandidate = await waitForCompletion(config, providerId, message.timeoutMs || 120000, run.baseline, run.prompt, run.errorBaseline, () => assertAutomationEpoch(runEpoch), run.userTurnCount,
       responseOptions);
     assertAutomationEpoch(runEpoch);
     run.conversationIdentity ||= responseOptions.conversationIdentity;
+    if (responseOptions.submittedPromptIdentity) run.submittedPromptIdentity = responseOptions.submittedPromptIdentity;
     if (responseCandidate === null && message.pollBudgetMs) {
       persistSubmittedRuns();
       return { ok: true, pending: true, provider: providerId, runId: message.runId };
@@ -1358,7 +1366,9 @@
     const startedAt = Number.isFinite(state.startedAt) ? state.startedAt : Date.now();
     state.startedAt = startedAt;
     let completionWindow = state.completionWindow || createCompletionWindow(timeoutMs, startedAt);
-    const submittedPromptIdentity = options.submittedPromptIdentity;
+    const usesAnchoredScope = Boolean(config.userMessageSelectors?.length && Number.isInteger(options.baselinePromptCount));
+    let submittedPromptIdentity = options.submittedPromptIdentity;
+    let submittedTurnStillVisible = false;
     let lastVisibleText = state.lastVisibleText ?? readAssistantSnapshot(config, providerId, prompt, submittedPromptIdentity).lastText;
     let generationObserved = Boolean(state.generationObserved);
     let lastGeneratingAt = Number(state.lastGeneratingAt) || 0;
@@ -1404,7 +1414,17 @@
         throw createProviderResponseError(pageError.classification, pageError.content);
       }
 
-      const usesAnchoredScope = Boolean(config.userMessageSelectors?.length && Number.isInteger(options.baselinePromptCount));
+      let currentPromptTurn = usesAnchoredScope ? findLatestPromptTurn(config, providerId, prompt, undefined, submittedPromptIdentity) : null;
+      if (usesAnchoredScope && providerId === "chatgpt" && (!submittedPromptIdentity || !currentPromptTurn) &&
+          options.conversationIdentity && Array.isArray(options.previousUserTurnIdentities)) {
+        const renderedIdentity = findAppendedChatGptPromptIdentity(config, prompt, options.previousUserTurnIdentities);
+        if (renderedIdentity) {
+          // ChatGPT can replace the optimistic message ID when it commits the
+          // same prompt. Rebind only against an unchanged visible history.
+          submittedPromptIdentity = options.submittedPromptIdentity = renderedIdentity;
+          currentPromptTurn = findLatestPromptTurn(config, providerId, prompt, undefined, submittedPromptIdentity);
+        }
+      }
       const current = !usesAnchoredScope || submittedPromptIdentity || promptTurns > options.baselinePromptCount
         ? readAssistantSnapshot(config, providerId, prompt, submittedPromptIdentity)
         : assistantSnapshot([]);
@@ -1413,9 +1433,7 @@
       const hasFreshCandidate = Boolean(currentText) &&
         (usesAnchoredScope || hasFreshAssistantResponse(candidateBaseline, current)) &&
         !isPromptEcho(prompt, currentText);
-      const currentPromptTurn = usesAnchoredScope ? findLatestPromptTurn(config, providerId, prompt) : null;
-      const submittedTurnStillVisible = !usesAnchoredScope || Boolean(currentPromptTurn &&
-        (!submittedPromptIdentity || readUserTurnIdentity(currentPromptTurn) === submittedPromptIdentity));
+      submittedTurnStillVisible = !usesAnchoredScope || Boolean(currentPromptTurn);
       if (hasFreshCandidate) {
         candidateBuffer = updateResponseCandidateBuffer(candidateBuffer, candidateBaseline, current, prompt, Date.now());
       } else if (!submittedTurnStillVisible) {
@@ -1452,6 +1470,7 @@
 
     const error = new Error("等待 AI 回覆逾時");
     error.code = "PROVIDER_RESPONSE_TIMEOUT";
+    if (usesAnchoredScope && !submittedTurnStillVisible) error.debugDetails = { reason: "submitted-user-turn-not-found" };
     throw error;
   }
 
@@ -1588,9 +1607,13 @@
   }
 
   function userMessageContainsPrompt(messageText, prompt) {
-    const normalizedMessage = normalizeInputText(messageText).replace(/\s+/g, " ");
-    const normalizedPrompt = normalizeInputText(prompt).replace(/\s+/g, " ");
+    const normalizedMessage = normalizePromptMatchText(messageText);
+    const normalizedPrompt = normalizePromptMatchText(prompt);
     return Boolean(normalizedPrompt) && normalizedMessage.includes(normalizedPrompt);
+  }
+
+  function normalizePromptMatchText(text) {
+    return normalizeInputText(text).replace(/\s+/g, " ");
   }
 
   function readUserMessageTexts(config) {
@@ -1611,9 +1634,38 @@
       element?.getAttribute?.("data-turn-id") || "";
   }
 
-  function findLatestPromptTurn(config, providerId, prompt, elements = readUserMessageElements(config)) {
+  function findLatestPromptTurn(config, providerId, prompt, elements = readUserMessageElements(config), submittedPromptIdentity = "") {
     const latest = elements.sort(compareDocumentOrder).at(-1);
-    return latest && userMessageContainsPrompt(readConversationElementText(latest, providerId), prompt) ? latest : null;
+    if (!latest || (submittedPromptIdentity && readUserTurnIdentity(latest) !== submittedPromptIdentity)) return null;
+    const displayed = readConversationElementText(latest, providerId);
+    if (userMessageContainsPrompt(displayed, prompt)) return latest;
+    return submittedPromptIdentity && providerId === "chatgpt" && hasMatchingChatGptPromptEdges(displayed, prompt) ? latest : null;
+  }
+
+  function findAppendedChatGptPromptIdentity(config, prompt, previous) {
+    const turns = readUserMessageElements(config).sort(compareDocumentOrder);
+    const visibleHistoryCount = turns.length - 1;
+    if (visibleHistoryCount < 0 || visibleHistoryCount > previous.length ||
+        (previous.length > 0 && visibleHistoryCount === 0)) return "";
+    // ChatGPT can virtualize earlier history. Require the remaining history to
+    // be an unchanged suffix immediately before the newly committed user turn.
+    const visibleHistory = previous.slice(previous.length - visibleHistoryCount);
+    if (visibleHistory.some((id, index) => id !== readUserTurnIdentity(turns[index]))) return "";
+    const latest = turns.at(-1);
+    const identity = readUserTurnIdentity(latest);
+    if (!identity || previous.includes(identity)) return "";
+
+    // Prompt edges distinguish a transformed long prompt from a manual turn.
+    const displayed = readConversationElementText(latest, "chatgpt");
+    return userMessageContainsPrompt(displayed, prompt) || hasMatchingChatGptPromptEdges(displayed, prompt) ? identity : "";
+  }
+
+  function hasMatchingChatGptPromptEdges(message, prompt) {
+    const expected = normalizePromptMatchText(prompt);
+    const displayed = normalizePromptMatchText(message);
+    const edgeLength = 48;
+    return expected.length > edgeLength * 2 && displayed.length > edgeLength * 2 &&
+      displayed.startsWith(expected.slice(0, edgeLength)) && displayed.endsWith(expected.slice(-edgeLength));
   }
 
   function readAssistantSnapshot(config, providerId, prompt = "", submittedPromptIdentity = "") {
@@ -1628,8 +1680,8 @@
     const userElements = collectElements(config.userMessageSelectors).filter(isVisible);
     let matchingUser;
     if (prompt && config.userMessageSelectors?.length) {
-      matchingUser = findLatestPromptTurn(config, providerId, prompt, collapseNestedConversationElements(userElements));
-      if (!matchingUser || (submittedPromptIdentity && readUserTurnIdentity(matchingUser) !== submittedPromptIdentity)) {
+      matchingUser = findLatestPromptTurn(config, providerId, prompt, collapseNestedConversationElements(userElements), submittedPromptIdentity);
+      if (!matchingUser) {
         return assistantSnapshot([]);
       }
     }

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DebateEngine } from "../src/background/debateEngine.js";
 
-const PROVIDER_CONTENT_VERSION = "0.5.2-driver.15";
+const PROVIDER_CONTENT_VERSION = "0.5.3-driver.19";
 
 function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [], serverOverload = [], pendingReads = [], pauseFirstRead, initialUrl = "chrome://newtab/", initialCurrentState, conversationReplies = {} } = {}) {
   const tabs = new Map();
@@ -864,6 +864,35 @@ test("pending source-summary reads poll one submitted run until completion", asy
     assert.equal(reads.length, 4, "the same submitted run should be polled until the fourth read completes");
     assert.ok(reads.every((message) => message.runId === submits[0].runId));
     assert.equal(response.state.sourceSummary.startsWith("chatgpt:source-summary:"), true);
+  });
+});
+
+test("a completed GPT critique reaches the transcript even if the capability probe stalls after sending", async () => {
+  await quickly(async () => {
+    const mock = createChromeMock({ pendingReads: [{ provider: "chatgpt", phase: "critique", count: 2 }] });
+    const sendMessage = mock.chrome.tabs.sendMessage.bind(mock.chrome.tabs);
+    let critique;
+    let stalledProbes = 0;
+    mock.chrome.tabs.sendMessage = async (tabId, message) => {
+      if (critique && tabId === critique.tabId && message.type === "aiDebate:getCapabilities") {
+        stalledProbes++;
+        return new Promise(() => {});
+      }
+      const result = await sendMessage(tabId, message);
+      if (message.provider === "chatgpt" && message.phase === "critique" && message.type === "aiDebate:submitPrompt") {
+        critique = { tabId, runId: message.runId };
+      }
+      return result;
+    };
+    await loadWorker(mock, "critique-without-repeated-capabilities");
+    const { state } = await dispatchAndWait(mock, { type: "aiDebate:start", mode: "fast",
+      question: "合成測試問題", activeProviders: ["chatgpt", "gemini"], debateRounds: 1, skipSummary: true }, "GPT 第二輪收集");
+
+    assert.equal(state.status, "done");
+    assert.match(state.transcript.critiqueRounds[0].chatgpt, /^chatgpt:critique:/);
+    assert.equal(stalledProbes, 0);
+    const messages = mock.sent.filter((item) => item.runId === critique.runId);
+    assert.deepEqual(messages.map((item) => item.type), ["aiDebate:submitPrompt", ...Array(3).fill("aiDebate:readSubmittedResponse")]);
   });
 });
 

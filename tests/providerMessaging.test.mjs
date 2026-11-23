@@ -18,6 +18,7 @@ function createProviderMessagingHarness({ sendMessage, getTab, executeScript, ti
     PROVIDER_CONTROL_TIMEOUT_MS: 3000,
     READINESS_TIMEOUT_MS: 15000,
     PROVIDERS: [{ id: "chatgpt", matchPatterns: ["https://chatgpt.com/*"] }],
+    runController: { assertCurrent() {} },
     URL,
     chrome: {
       tabs: {
@@ -82,6 +83,85 @@ test("sendProviderMessage succeeds when the current content script is ready", as
   assert.deepEqual(calls.messages.map(({ payload }) => payload.type), ["aiDebate:getCapabilities", "aiDebate:sendAndRead"]);
 });
 
+test("submitted response reads bypass capabilities and keep the known run id", async () => {
+  const { api, calls } = createProviderMessagingHarness({
+    getTab: async (tabId) => ({ id: tabId, status: "loading", url: "https://chatgpt.com/c/new-conversation" }),
+    sendMessage: async (_tabId, payload) => {
+      assert.equal(payload.type, "aiDebate:readSubmittedResponse");
+      assert.equal(payload.runId, "chatgpt:critique-2:known");
+      return { ok: true, pending: false, content: "round two reply" };
+    },
+  });
+  const listenerRepairState = { attempted: false };
+
+  const response = await api.sendProviderMessage(7, job, "aiDebate:readSubmittedResponse", {
+    runId: "chatgpt:critique-2:known", pollBudgetMs: 100,
+  }, { deadline: Date.now() + 1000, runToken: 1, listenerRepairState });
+
+  assert.equal(response.content, "round two reply");
+  assert.deepEqual(calls.messages.map(({ payload }) => payload.type), ["aiDebate:readSubmittedResponse"]);
+  assert.equal(calls.injections.length, 0);
+});
+
+test("submitted response reads reject pending navigation outside the provider or to its login page", async () => {
+  for (const pendingUrl of ["https://example.com/", "https://chatgpt.com/auth/login"]) {
+    const { api, calls } = createProviderMessagingHarness({
+      getTab: async (tabId) => ({ id: tabId, status: "loading", url: "https://chatgpt.com/c/current", pendingUrl }),
+    });
+    await assert.rejects(api.sendProviderMessage(7, job, "aiDebate:readSubmittedResponse", {
+      runId: "chatgpt:critique-2:known",
+    }, { runToken: 1 }), (error) => error.code === "PROVIDER_CONVERSATION_CHANGED");
+    assert.equal(calls.messages.length, 0);
+    assert.equal(calls.injections.length, 0);
+  }
+});
+
+test("submitted response repairs only a definite missing listener, then retries the same run", async () => {
+  let readAttempts = 0;
+  const { api, calls } = createProviderMessagingHarness({
+    sendMessage: async (_tabId, payload) => {
+      if (payload.type === "aiDebate:getCapabilities") {
+        return { contentScriptVersion: providerContentScriptVersion, driverContractVersion: 1 };
+      }
+      if (payload.type === "aiDebate:readSubmittedResponse") {
+        readAttempts += 1;
+        assert.equal(payload.runId, "chatgpt:critique-2:known");
+        if (readAttempts === 1) throw new Error("Could not establish connection. Receiving end does not exist.");
+        return { ok: true, pending: false, content: "round two reply" };
+      }
+      throw new Error(`unexpected message ${payload.type}`);
+    },
+  });
+
+  const response = await api.sendProviderMessage(7, job, "aiDebate:readSubmittedResponse", {
+    runId: "chatgpt:critique-2:known", pollBudgetMs: 100,
+  }, { deadline: Date.now() + 1000, runToken: 1, listenerRepairState: { attempted: false } });
+
+  assert.equal(response.content, "round two reply");
+  assert.equal(readAttempts, 2);
+  assert.equal(calls.injections.length, 1);
+  assert.deepEqual(calls.messages.map(({ payload }) => payload.type), [
+    "aiDebate:readSubmittedResponse",
+    "aiDebate:getCapabilities",
+    "aiDebate:readSubmittedResponse",
+  ]);
+});
+
+test("ambiguous submitted read failures do not inject another driver", async () => {
+  const { api, calls } = createProviderMessagingHarness({
+    sendMessage: async (_tabId, payload) => {
+      assert.equal(payload.type, "aiDebate:readSubmittedResponse");
+      throw new Error("message channel closed before a reply was received");
+    },
+  });
+
+  await assert.rejects(api.sendProviderMessage(7, job, "aiDebate:readSubmittedResponse", {
+    runId: "chatgpt:critique-2:known", pollBudgetMs: 100,
+  }, { deadline: Date.now() + 1000, runToken: 1, listenerRepairState: { attempted: false } }), /message channel closed/);
+  assert.equal(calls.injections.length, 0);
+  assert.deepEqual(calls.messages.map(({ payload }) => payload.type), ["aiDebate:readSubmittedResponse"]);
+});
+
 test("capabilities with no receiver trigger exactly one content script injection", async () => {
   let attempts = 0;
   const { api, calls } = createProviderMessagingHarness({
@@ -131,6 +211,39 @@ test("mutating provider send is not retried after a channel interruption", async
   await assert.rejects(api.sendProviderMessage(10, job), /channel closed/i);
   assert.equal(submitted, 1);
   assert.equal(calls.messages.filter(({ payload }) => payload.type === "aiDebate:sendAndRead").length, 1);
+});
+
+test("submit retries a timed-out capability probe but dispatches the prompt only once", async () => {
+  let probes = 0;
+  const { api, calls } = createProviderMessagingHarness({
+    timeoutScale: 0.001,
+    sendMessage: async (_tabId, payload) => {
+      if (payload.type !== "aiDebate:getCapabilities") return { ok: true };
+      if (++probes === 1) return new Promise(() => {});
+      return { contentScriptVersion: providerContentScriptVersion, driverContractVersion: 1 };
+    },
+  });
+
+  assert.deepEqual(await api.sendProviderMessage(7, job, "aiDebate:submitPrompt", { runId: "known" }), { ok: true });
+  assert.deepEqual(calls.messages.map(({ payload }) => payload.type), [
+    "aiDebate:getCapabilities", "aiDebate:getCapabilities", "aiDebate:submitPrompt",
+  ]);
+  assert.deepEqual(calls.readinessTimeouts, [1500, 5000]);
+  assert.equal(calls.injections.length, 0);
+});
+
+test("submit does not retry the probe or send a prompt if the tab changes conversations", async () => {
+  let tabReads = 0;
+  const { api, calls } = createProviderMessagingHarness({
+    timeoutScale: 0.001,
+    getTab: async (id) => ({ id, status: "loading", url: `https://chatgpt.com/c/${++tabReads}` }),
+    sendMessage: async () => new Promise(() => {}),
+  });
+
+  await assert.rejects(api.sendProviderMessage(7, job, "aiDebate:submitPrompt"),
+    (error) => error.code === "PROVIDER_CONVERSATION_CHANGED");
+  assert.deepEqual(calls.messages.map(({ payload }) => payload.type), ["aiDebate:getCapabilities"]);
+  assert.equal(calls.injections.length, 0);
 });
 
 test("wrong provider URL prevents readiness messaging", async () => {

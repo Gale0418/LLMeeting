@@ -44,13 +44,33 @@ test("provider readiness has a stable service-worker boundary and status mapping
 test("provider messaging repairs stale content scripts through a version handshake", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
-  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.2-driver\.15"/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.3-driver\.19"/);
   assert.match(script, /PROVIDER_DRIVER_CONTRACT_VERSION = 1/);
   assert.match(script, /"src\/content\/provider-driver\.js"/);
   assert.match(script, /type: "aiDebate:getCapabilities"/);
   assert.match(script, /capabilities\?\.contentScriptVersion !== PROVIDER_CONTENT_SCRIPT_VERSION/);
   assert.match(script, /await ensureProviderContentScript\(tabId, options\)/);
   assert.match(script, /CONTENT_SCRIPT_VERSION_MISMATCH/);
+});
+
+test("collecting a known submitted run bypasses capability probes and repairs only a missing listener", async () => {
+  const script = await readFile("src/background/service-worker.js", "utf8");
+  const sendStart = script.indexOf("async function sendProviderMessage");
+  const sendEnd = script.indexOf("function getProviderTimeoutMs", sendStart);
+  const messaging = script.slice(sendStart, sendEnd);
+  const retryStart = script.indexOf("async function readSubmittedResponseWithRetry");
+  const retryEnd = script.indexOf("async function sendJob", retryStart);
+  const retry = script.slice(retryStart, retryEnd);
+
+  assert.match(messaging, /if \(type === "aiDebate:readSubmittedResponse"\) \{[\s\S]*?assertSubmittedReadTabReady\(tab, job\.provider\);\s*\} else if \(type === "aiDebate:submitPrompt"\) \{\s*await ensureProviderContentScript/);
+  assert.match(messaging, /isDefinitelyMissingProviderListener\(error\)/);
+  assert.match(messaging, /options\.listenerRepairState\?\.attempted/);
+  assert.match(messaging, /ensureProviderContentScript\(tabId, \{ deadline: options\.deadline, repair: true \}\)/);
+  assert.match(messaging, /assertBeforeDeadline\(options\.deadline\)/);
+  assert.match(retry, /const listenerRepairState = \{ attempted: false \}/);
+  assert.match(retry, /runId: submitted\.runId/);
+  assert.match(script, /function isDefinitelyMissingProviderListener/);
+  assert.match(script, /function assertSubmittedReadTabReady/);
 });
 
 test("debate warms and checks provider tabs sequentially before creating a formal engine run", async () => {
@@ -259,7 +279,7 @@ test("provider debug history is bounded, persisted, and keeps only approved diag
   }
   assert.match(script, /error\.debugDetails = sanitizeDebugDetails\(response\?\.debugDetails\)/);
   assert.match(script, /debugDetails: sanitizeDebugDetails\(error\.debugDetails\)/);
-  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.2-driver\.15"/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.3-driver\.19"/);
 });
 
 test("transient response read RPC failures retry the same run within the provider deadline", async () => {
@@ -317,14 +337,14 @@ test("read retry repeats after a lost collection reply and an undispatched capab
   const readinessStart = script.indexOf("// Read-only checks can be retried", transientStart);
   const source = `${script.slice(retryStart, retryEnd)}\n${script.slice(transientStart, readinessStart)}\nglobalThis.runRead = readSubmittedResponseWithRetry;`;
 
-  const execute = ({ sendProviderMessage, isCancelled = () => false, delay = async () => {} }) => {
+  const execute = ({ sendProviderMessage, isCancelled = () => false, delay = async () => {}, now = Date.now }) => {
     const context = {
       RESPONSE_POLL_BUDGET_MS: 12000,
       runController: { assertCurrent() { if (isCancelled()) throw Object.assign(new Error("cancelled"), { code: "RUN_CANCELLED" }); } },
       providerRpc: async (promise) => promise,
       sendProviderMessage,
       delay,
-      Date,
+      Date: { now },
     };
     vm.runInNewContext(source, context);
     return context.runRead;
@@ -383,13 +403,14 @@ test("read retry repeats after a lost collection reply and an undispatched capab
   }
 
   let deadlineAttempts = 0;
+  let clock = 1000;
   const deadlineRead = execute({ sendProviderMessage() {
     deadlineAttempts += 1;
     return Promise.reject(Object.assign(new Error("capabilities timeout"), {
       code: "PROVIDER_RPC_TIMEOUT", rpcStage: "capabilities", providerReadDispatched: false,
     }));
-  }, delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)) });
-  await assert.rejects(deadlineRead(submitted, 4, Date.now() + 20, 1), (error) => error.code === "PROVIDER_RESPONSE_TIMEOUT");
+  }, now: () => clock, delay: async (ms) => { clock += ms; } });
+  await assert.rejects(deadlineRead(submitted, 4, clock + 20, 1), (error) => error.code === "PROVIDER_RESPONSE_TIMEOUT");
   assert.equal(deadlineAttempts, 1);
 
   let cancelled = false;
@@ -745,7 +766,7 @@ test("readiness falls back to a fresh provider tab when the requested tab is sta
       async update() {},
       async sendMessage(_tabId, message) {
         if (message.type === "aiDebate:getCapabilities") {
-          return { contentScriptVersion: "0.5.2-driver.15", driverContractVersion: 1 };
+          return { contentScriptVersion: "0.5.3-driver.19", driverContractVersion: 1 };
         }
         return { ready: true, status: "ready", checks: {} };
       },
