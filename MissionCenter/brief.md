@@ -1,16 +1,16 @@
 <!-- Generated materialized view. Do not edit directly; rebuild from canonical MissionCenter files. -->
-<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=a9acea1e23b6ed8284021675d4143c392e5921786c2a8144f02521658d85d6e3 -->
+<!-- mission-center-derived schema=1.0 fingerprint-format=sha256-v2-lf source-fingerprint=82c7a395edcaf5d00dcca1384bfd2dfa5de0c34651a9b2990486c5da5635a1ec -->
 # 任務簡報
 
-- 最後整理: 2026-11-22
-- 來源指紋: `a9acea1e23b6ed8284021675d4143c392e5921786c2a8144f02521658d85d6e3`
+- 最後整理: 2026-11-25
+- 來源指紋: `82c7a395edcaf5d00dcca1384bfd2dfa5de0c34651a9b2990486c5da5635a1ec`
 - 唯一真實來源: `tasks.md`
 - 專案: LLMeeting
-- 北極星: 驗證長會議的回覆擷取、保存與續跑，完成 0.5.2 封裝與商店草稿
-- 週期: v0.5.2-release-candidate
+- 北極星: 驗證長會議的回覆擷取、保存與續跑，完成 0.5.3 的封裝、送審與自動發布設定
+- 週期: v0.5.3-release-candidate
 
-## 今日摘要 · 2026-11-22
-- [2026-11-22T15:18:07.752+08:00] Driver .15 完成 ChatGPT 寫入驗證與 Meta 回覆逾時修正。 | reason: 實機偵錯紀錄顯示提示驗證失敗與回覆通訊逾時。 | impact: Node 回歸 595/595，隔離 Chromium 獨立頁 101 項、原生側欄 51 項通過，ZIP 59 檔 CRC 與逐位元比對通過。CodeRabbit 審查 128 檔，唯一一項經核對為審查副本省略語系檔所致。Git 和候選 ZIP 都含英、日、繁中語系與有效的擴充功能說明。LLM-T82 保持 Review，待五家登入態實測。
+## 今日摘要 · 2026-11-25
+- [2026-11-25T21:46:33+08:00] 啟動先並行開啟分頁再依序檢查，新增等待中離席與手動補入，已取得的回覆可補完，修補新對話提示確認。 | reason: 使用者回報網頁載入太慢與自動回覆缺漏。 | impact: Node 661 項、Chromium 獨立側欄 101 項與原生側欄 52 項、ZIP 59 檔通過。CodeRabbit 初查 125 檔、複查 10 檔，初查 0 項，複查 2 項經查已由現行程式與測試覆蓋；另修正偵錯匯出的舊回覆洩漏及編輯儲存失敗重試。 五家登入態實測待驗。[本次驗收](evidence/053-driver21-main-20261125.json)
 
 ## 重要護欄 (0)
 - 無

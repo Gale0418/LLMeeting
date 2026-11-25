@@ -3780,5 +3780,12 @@ export const UI_COPY = [
   { "id": "meetingArchive.legacyReadOnly", "source": "無法讀取完整會議，僅顯示舊版保留的紀錄。", "zh_TW": "無法讀取完整會議，目前顯示舊版保留的紀錄。", "en": "Couldn't read the full meeting. The previous version's saved record is shown.", "ja": "会議全体を読み取れなかったため、旧バージョンの保存記録を表示しています。" },
   { "id": "meetingArchive.repairWriteFailed", "source": "無法保存補入的回覆，請再試一次。", "zh_TW": "無法保存補入的回覆，請再試一次。", "en": "Couldn't save the pasted reply. Please try again.", "ja": "貼り付けた回答を保存できませんでした。もう一度お試しください。" },
   { "id": "sourceSummary.conversationChanged", "source": "來源對話分頁已變更，請重新啟動總結辯論。", "zh_TW": "來源對話分頁已變更，請重新啟動總結辯論。", "en": "The source conversation changed. Start the summary debate again.", "ja": "元の会話が変わりました。要約ディベートをやり直してください。" },
-  { "id": "meetingArchive.writeFailed", "source": "無法保存會議進度，這則提示尚未送出。", "zh_TW": "無法保存會議進度，這則提示尚未送出。", "en": "The meeting couldn't be saved. This prompt is still unsent.", "ja": "会議の進行状況を保存できませんでした。このプロンプトは未送信です。" }
+  { "id": "meetingArchive.writeFailed", "source": "無法保存會議進度，這則提示尚未送出。", "zh_TW": "無法保存會議進度，這則提示尚未送出。", "en": "The meeting couldn't be saved. This prompt is still unsent.", "ja": "会議の進行状況を保存できませんでした。このプロンプトは未送信です。" },
+  { "id": "manualReply.pendingBusy", "source": "若 AI 網頁已完成這個階段的回覆，可直接貼上補入。", "zh_TW": "若 AI 網頁已完成這個階段的回覆，可直接貼上補入。", "en": "If the AI page has finished this stage, paste its reply here.", "ja": "AIのページでこの段階の回答が完了していれば、ここに貼り付けて補完できます。" },
+  { "id": "manualReply.alreadyCaptured", "source": "這段 AI 回覆已自動取得，已保留原回覆；你貼上的草稿仍保留。", "zh_TW": "這段 AI 回覆已自動取得，已保留原回覆；你貼上的草稿仍保留。", "en": "This AI reply has already arrived, so it was kept. Your pasted draft is still here.", "ja": "このAIの回答はすでに取得済みのため、そのまま保持しました。貼り付けた下書きは残っています。" },
+  { "id": "manualReply.viewLatest", "source": "請取消視窗後查看最新內容。", "zh_TW": "請取消視窗後查看最新內容。", "en": "Close this editor to view the latest reply.", "ja": "この編集画面を閉じて、最新の回答を確認してください。" },
+  { "id": "manualReply.noPendingSlot", "source": "這個階段目前沒有可補入的待回覆項目；你貼上的草稿仍保留。", "zh_TW": "這個階段目前沒有可補入的待回覆項目；你貼上的草稿仍保留。", "en": "There is no pending reply for this stage. Your pasted draft is still here.", "ja": "この段階に補完できる保留中の回答はありません。貼り付けた下書きは残っています。" },
+  { "id": "manualReply.summaryStale", "source": "這份總結依據的是修改前的回覆。", "zh_TW": "這份總結依據的是修改前的回覆。", "en": "This summary is based on the reply before it was edited.", "ja": "この要約は編集前の回答に基づいています。" },
+  { "id": "manualReply.edited", "source": "已手動修改 AI 回覆", "zh_TW": "已手動修改 AI 回覆", "en": "AI reply manually edited", "ja": "AIの回答を手動で編集しました" },
+  { "id": "manualReply.editSavePending", "source": "回覆已套用，尚未存入本機。你可以再按一次儲存。", "zh_TW": "回覆已套用，尚未存入本機。你可以再按一次儲存。", "en": "The edit is applied and still needs to be saved on this device. Select Save again.", "ja": "回答の変更は反映されました。端末に保存するには、もう一度保存を押してください。" }
 ];

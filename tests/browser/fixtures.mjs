@@ -21,6 +21,14 @@ export function meeting(scenario = 'critique') {
   if (scenario === 'first-round') {
     state.transcript.answers = {};
     state.message = 'ChatGPT：等待回答原始問題';
+    state.manualReplySlots = [{ provider: 'chatgpt', phase: 'first-round', attemptId: 'fixture-chatgpt' }];
+  } else if (scenario === 'critique') {
+    state.manualReplySlots = providers.filter(id => !state.departedProviders.includes(id))
+      .map(provider => ({ provider, phase: 'critique', attemptId: `fixture-${provider}` }));
+  } else if (scenario === 'live-actions') {
+    state.phase = 'first-round';
+    state.transcript.answers = { chatgpt: rawReply };
+    state.manualReplySlots = [{ provider: 'gemini', phase: 'first-round', attemptId: 'fixture-gemini' }];
   } else if (scenario === 'summary') {
     state.summaryStrategy = 'allAnonymous';
     state.message = '彙整總結';

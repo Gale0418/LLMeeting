@@ -165,20 +165,26 @@ const playScenes = attachPlayScenes({
 
 chatTranscript?.addEventListener("click", async (event) => {
   const button = event.target.closest?.("[data-depart-provider]");
-  if (!button || button.disabled || latestState?.busy || recoveryActionPending) return;
+  if (!button || button.disabled || recoveryActionPending) return;
   if (manualReplyTarget && !manualReplyEditor.hidden && manualReplyInput.value.trim()) {
     setManualReplyStatus("請先完成或取消目前的補回覆，再讓 AI 離席；草稿仍保留。");
     return;
   }
   const provider = button.dataset.departProvider;
   const phase = button.dataset.departPhase;
-  const expectedContent = manualReplyContent(latestState, provider, phase);
-  if (!isRecoverableReply(expectedContent)) return;
+  const pendingSlot = manualReplyPendingSlot(latestState, provider, phase);
+  const attemptId = button.dataset.departAttemptId || "";
+  const isPendingDeparture = Boolean(attemptId);
+  if (isPendingDeparture) {
+    if (!latestState?.busy || pendingSlot?.attemptId !== attemptId || manualReplyContent(latestState, provider, phase)) return;
+  } else if (!isRecoverableReply(manualReplyContent(latestState, provider, phase))) return;
+  const expectedContent = isPendingDeparture ? "" : manualReplyContent(latestState, provider, phase);
   recoveryActionPending = true;
   button.disabled = true;
   try {
     const response = await chrome.runtime.sendMessage({ type: "aiDebate:departProvider", provider, phase, expectedContent,
-      sessionId: latestState.transcript?.sessionId, originalQuestion: latestState.transcript?.originalQuestion });
+      ...(isPendingDeparture ? { attemptId } : {}), sessionId: latestState.transcript?.sessionId,
+      originalQuestion: latestState.transcript?.originalQuestion });
     if (!response?.ok) throw new Error(response?.error || "無法讓 AI 離席");
     if (manualReplyTarget?.provider === provider) {
       manualReplyEditor.hidden = true;
@@ -202,25 +208,33 @@ chatTranscript?.addEventListener("click", (event) => {
     return;
   }
   const button = event.target.closest?.("[data-repair-provider]");
-  if (!button || button.disabled || latestState?.busy || recoveryActionPending) return;
+  if (!button || button.disabled || recoveryActionPending) return;
   const provider = button.dataset.repairProvider;
   const phase = button.dataset.repairPhase;
   const content = manualReplyContent(latestState, provider, phase);
-  if (!isRecoverableReply(content)) return;
+  const pendingSlot = !content && latestState?.busy ? manualReplyPendingSlot(latestState, provider, phase) : null;
+  const isEdit = Boolean(content && !isRecoverableReply(content));
+  if (!isRecoverableReply(content) && !pendingSlot && !isEdit) return;
   const { sessionId, originalQuestion } = latestState.transcript;
-  const nextTarget = { provider, phase, expectedContent: content, sessionId, originalQuestion };
+  const nextTarget = { provider, phase, expectedContent: content, sessionId, originalQuestion, ...(isEdit ? {mode: "edit"} : {}),
+    ...(pendingSlot?.attemptId != null ? {attemptId: pendingSlot.attemptId} : {}) };
   // A draft belongs to one specific fault, even when two sessions use the same provider and round.
   if (manualReplyTarget && !manualReplyEditor.hidden && manualReplyInput.value.trim() &&
       (manualReplyTarget.provider !== provider || manualReplyTarget.phase !== phase ||
-        manualReplyTarget.sessionId !== sessionId || manualReplyTarget.expectedContent !== content)) {
+        manualReplyTarget.sessionId !== sessionId || manualReplyTarget.expectedContent !== content ||
+        manualReplyTarget.attemptId !== nextTarget.attemptId)) {
     setManualReplyStatus("請先完成或取消目前這段補回覆，再選擇另一格。");
     return;
   }
+  const sameEditTarget = isEdit && manualReplyTarget?.mode === "edit" && manualReplyTarget.provider === provider &&
+    manualReplyTarget.phase === phase && manualReplyTarget.sessionId === sessionId &&
+    manualReplyTarget.expectedContent === content;
   manualReplyTarget = nextTarget;
   document.querySelector("#manualReplyTarget").textContent = uiText(`${meetingSpeakerLabel(latestState, provider)} · ${manualReplyPhaseLabel(phase)} · 手動補回覆`);
   setManualReplyStatus("");
   manualReplyEditor.hidden = false;
   saveManualReplyBtn.disabled = false;
+  if (!sameEditTarget) manualReplyInput.value = isEdit ? content : "";
   manualReplyInput.focus();
 });
 
@@ -232,10 +246,25 @@ document.querySelector("#cancelManualReplyBtn")?.addEventListener("click", () =>
 });
 
 saveManualReplyBtn?.addEventListener("click", async () => {
-  if (!manualReplyTarget || latestState?.busy || recoveryActionPending) return;
+  if (!manualReplyTarget || recoveryActionPending) return;
   const content = manualReplyInput.value;
   if (!content.trim() || content.length > MAX_MANUAL_REPLY_CHARS) {
     setManualReplyStatus("請貼上 1–12,000 字元的 AI 回覆；過長的內容請先精簡，內容不會自動截斷。");
+    return;
+  }
+  const currentReply = manualReplyContent(latestState, manualReplyTarget.provider, manualReplyTarget.phase);
+  if (manualReplyTarget.mode === "edit" && currentReply !== manualReplyTarget.expectedContent) {
+    setManualReplyStatus("這段 AI 回覆已更新；你的草稿仍保留，請取消後重新選擇最新內容。");
+    saveManualReplyBtn.disabled = true;
+    return;
+  }
+  if (latestState?.busy && manualReplyTarget.mode !== "edit" && currentReply && !isRecoverableReply(currentReply)) {
+    setManualReplyStatus("這段 AI 回覆已自動取得，已保留原回覆；你貼上的草稿仍保留。", "請取消視窗後查看最新內容。");
+    return;
+  }
+  if (latestState?.busy && manualReplyTarget.mode !== "edit" && !isRecoverableReply(currentReply) &&
+      manualReplyPendingSlot(latestState, manualReplyTarget.provider, manualReplyTarget.phase)?.attemptId !== manualReplyTarget.attemptId) {
+    setManualReplyStatus("這個階段目前沒有可補入的待回覆項目；你貼上的草稿仍保留。");
     return;
   }
   recoveryActionPending = true;
@@ -244,13 +273,29 @@ saveManualReplyBtn?.addEventListener("click", async () => {
   manualReplyInput.disabled = true;
   setManualReplyStatus("正在補入回覆…");
   try {
-    const response = await chrome.runtime.sendMessage({ type: "aiDebate:repairReply", ...manualReplyTarget, content });
+    const submittedTarget = manualReplyTarget;
+    const currentContent = manualReplyContent(latestState, manualReplyTarget.provider, manualReplyTarget.phase);
+    const response = await chrome.runtime.sendMessage({ type: "aiDebate:repairReply", ...manualReplyTarget,
+      ...(manualReplyTarget.mode === "edit" ? { mode: "edit" } : {}),
+      expectedContent: isRecoverableReply(currentContent) ? currentContent : manualReplyTarget.expectedContent, content });
     if (!response?.ok) throw new Error(response?.error || "補入失敗，貼上的內容已保留。");
+    if (response.saved === false && submittedTarget.mode === "edit") {
+      if (manualReplyTarget === submittedTarget) {
+        manualReplyTarget.expectedContent = response.appliedContent;
+        const current = await chrome.runtime.sendMessage({ type: "aiDebate:getState" });
+        renderState(current?.state || response.state);
+        if (manualReplyTarget === submittedTarget && submittedTarget.sessionId === latestState?.transcript?.sessionId &&
+            manualReplyContent(latestState, submittedTarget.provider, submittedTarget.phase) === response.appliedContent) {
+          setManualReplyStatus("回覆已套用，尚未存入本機。你可以再按一次儲存。");
+        }
+      }
+      return;
+    }
     manualReplyEditor.hidden = true;
     manualReplyTarget = null;
     manualReplyInput.value = "";
-    if (response.autoResuming) {
-      // The resumed run may already have published a newer state than this ack.
+    if (response.autoResuming || response.state?.busy) {
+      // The running meeting may already have published a newer state than this ack.
       const current = await chrome.runtime.sendMessage({ type: "aiDebate:getState" });
       renderState(current?.state || response.state);
     } else {
@@ -261,7 +306,13 @@ saveManualReplyBtn?.addEventListener("click", async () => {
   } finally {
     recoveryActionPending = false;
     manualReplyInput.disabled = false;
-    saveManualReplyBtn.disabled = Boolean(latestState?.busy);
+    const target = manualReplyTarget;
+    const targetReply = target && manualReplyContent(latestState, target.provider, target.phase);
+    const staleTarget = target && target.sessionId !== latestState?.transcript?.sessionId;
+    const staleEdit = target?.mode === "edit" && targetReply !== target.expectedContent;
+    const unavailablePending = target && latestState?.busy && target.mode !== "edit" &&
+      (targetReply ? !isRecoverableReply(targetReply) : !hasManualReplyPendingSlot(latestState, target.provider, target.phase));
+    saveManualReplyBtn.disabled = Boolean(staleTarget || staleEdit || unavailablePending);
     setActionButtonsDisabled(Boolean(latestState?.busy));
     if (latestState) renderChatBubbles(latestState);
   }
@@ -1190,6 +1241,7 @@ function renderChatBubbles(state) {
           <div class="bubble-group summary ${safeProviderClass(sourceProvider)} loading">
           <div class="bubble-meta">${escapeHTML(uiText(`${providerLabel(sourceProvider)} 正在總結`))}</div>
           <div class="bubble-content"><span class="loading-dots">${uiText("整理上下文中")}<span>.</span><span>.</span><span>.</span></span></div>
+          ${replyRecoveryControls(state, sourceProvider, "source-summary", "", { allowBusyPending: true })}
          </div>
       `);
       return;
@@ -1213,15 +1265,16 @@ function renderChatBubbles(state) {
   }
 
   // 2. 第一輪回答
-  if (state.sourceProvider && isRecoverableReply(state.sourceSummary)) {
+  if (state.sourceProvider && (state.sourceSummary || (state.busy && hasManualReplyPendingSlot(state, state.sourceProvider, "source-summary")))) {
     html += `<div class="bubble-group assistant ${safeProviderClass(state.sourceProvider)}">
       <div class="bubble-meta">${escapeHTML(uiText(`${meetingSpeakerLabel(state, state.sourceProvider)} · 來源總結`))}</div>
-      <div class="bubble-content">${formatReplyContent(state.sourceSummary)}</div>
-      ${replyRecoveryControls(state, state.sourceProvider, "source-summary", state.sourceSummary)}
+      <div class="bubble-content">${state.sourceSummary ? formatReplyContent(state.sourceSummary) : `<span class="loading-dots">${uiText("整理上下文中")}<span>.</span><span>.</span><span>.</span></span>`}</div>
+      ${replyRecoveryControls(state, state.sourceProvider, "source-summary", state.sourceSummary || "", { allowBusyPending: true })}
     </div>`;
   }
   const answers = transcript.answers || {};
   const activeSet = new Set(state.activeProviders || fallbackProviderIds);
+  const departedSet = new Set([...(state.departedProviders || []), ...(transcript.departedProviders || [])]);
   
   // 檢查是否有任何啟用的 provider 開始有回答或在回答中
   const hasFirstRound = Array.from(activeSet).some(p => answers[p] || state.phase === "first-round");
@@ -1230,10 +1283,13 @@ function renderChatBubbles(state) {
     for (const providerId of activeSet) {
       const content = answers[providerId];
       if (!content && state.phase === "first-round") {
+        if (departedSet.has(providerId)) continue;
+        const loadingLabel = hasManualReplyPendingSlot(state, providerId, "first-round") ? "思考生成中" : "等待開始";
         html += `
             <div class="bubble-group assistant ${safeProviderClass(providerId)} loading">
             <div class="bubble-meta">${escapeHTML(meetingSpeakerLabel(state, providerId))}</div>
-            <div class="bubble-content"><span class="loading-dots">${uiText("思考生成中")}<span>.</span><span>.</span><span>.</span></span></div>
+            <div class="bubble-content"><span class="loading-dots">${uiText(loadingLabel)}<span>.</span><span>.</span><span>.</span></span></div>
+            ${replyRecoveryControls(state, providerId, "first-round", "", { allowBusyPending: true })}
           </div>
         `;
       } else if (content) {
@@ -1241,7 +1297,7 @@ function renderChatBubbles(state) {
           <div class="bubble-group assistant ${safeProviderClass(providerId)}">
             <div class="bubble-meta">${escapeHTML(meetingSpeakerLabel(state, providerId))}</div>
             <div class="bubble-content">${formatReplyContent(content)}</div>
-            ${replyRecoveryControls(state, providerId, "first-round", content)}
+            ${replyRecoveryControls(state, providerId, "first-round", content, { allowBusyPending: true })}
           </div>
         `;
       }
@@ -1275,11 +1331,16 @@ function renderChatBubbles(state) {
     for (const providerId of activeSet) {
       const content = critiques[providerId];
       if (!content && isActiveRound) {
+        if (departedSet.has(providerId)) continue;
         if (answers[providerId] && !answers[providerId].startsWith("[錯誤：")) {
+          const phase = roundNumber === 1 ? "critique" : `critique-${roundNumber}`;
+          const loadingLabel = hasManualReplyPendingSlot(state, providerId, phase)
+            ? (userMessage ? "思考生成中" : "撰寫互評中") : "等待開始";
           html += `
             <div class="bubble-group assistant ${safeProviderClass(providerId)} loading">
               <div class="bubble-meta">${escapeHTML(uiText(`${meetingSpeakerLabel(state, providerId)} ${userMessage ? "回應中" : "評析中"}`))}</div>
-              <div class="bubble-content"><span class="loading-dots">${uiText(userMessage ? "思考生成中" : "撰寫互評中")}<span>.</span><span>.</span><span>.</span></span></div>
+              <div class="bubble-content"><span class="loading-dots">${uiText(loadingLabel)}<span>.</span><span>.</span><span>.</span></span></div>
+              ${replyRecoveryControls(state, providerId, phase, "", { allowBusyPending: true })}
             </div>
           `;
         }
@@ -1288,7 +1349,7 @@ function renderChatBubbles(state) {
             <div class="bubble-group assistant ${safeProviderClass(providerId)} critique">
             <div class="bubble-meta">${escapeHTML(uiText(`${meetingSpeakerLabel(state, providerId)} ${userMessage ? "回應" : "評析"}`))}</div>
             <div class="bubble-content">${formatReplyContent(content)}</div>
-            ${replyRecoveryControls(state, providerId, roundNumber === 1 ? "critique" : `critique-${roundNumber}`, content)}
+            ${replyRecoveryControls(state, providerId, roundNumber === 1 ? "critique" : `critique-${roundNumber}`, content, { allowBusyPending: isActiveRound })}
           </div>
         `;
       }
@@ -1308,7 +1369,8 @@ function renderChatBubbles(state) {
     const revealProviders = state.activeProviders || Object.keys(revealReactions);
     revealProviders.forEach((providerId) => {
       const reaction = revealReactions[providerId];
-      if (!reaction) return;
+      const pendingReaction = !reaction && state.busy && hasManualReplyPendingSlot(state, providerId, "reveal");
+      if (!reaction && !pendingReaction) return;
       const anonymousLabel = state.transcript?.anonymousNames?.[providerId];
       const label = state.reveal.anonymous
         ? anonymousLabel || uiText("匿名參與者（暱稱未取得）")
@@ -1316,8 +1378,8 @@ function renderChatBubbles(state) {
       html += `
         <div class="bubble-group assistant ${safeProviderClass(providerId)} reveal-reaction">
           <div class="bubble-meta">${escapeHTML(uiText(`${label} 的揭曉反應`))}</div>
-           <div class="bubble-content">${formatReplyContent(reaction)}</div>
-          ${replyRecoveryControls(state, providerId, "reveal", reaction)}
+           <div class="bubble-content">${reaction ? formatReplyContent(reaction) : `<span class="loading-dots">${uiText("思考生成中")}<span>.</span><span>.</span><span>.</span></span>`}</div>
+          ${replyRecoveryControls(state, providerId, "reveal", reaction || "", { allowBusyPending: true })}
         </div>
       `;
     });
@@ -1326,11 +1388,13 @@ function renderChatBubbles(state) {
     const judges = [...new Set([...(state.activeProviders || []), state.summaryProvider])].filter(Boolean);
     for (const judge of judges) {
       const content = state.summaries?.[judge];
+      if (!content && departedSet.has(judge)) continue;
       html += `
         <div class="bubble-group summary${!content && state.busy ? " loading" : ""}">
           <div class="bubble-meta">${escapeHTML(uiText(`${meetingSpeakerLabel(state, judge)} 的總結`))}</div>
+          ${state.summaryStale === true ? `<p class="reply-recovery-note">${escapeHTML(uiText("這份總結依據的是修改前的回覆。"))}</p>` : ""}
           <div class="bubble-content">${content ? formatReplyContent(content) : uiText(state.busy ? "彙整精華中…" : "總結未完成")}</div>
-          ${replyRecoveryControls(state, judge, "summary", content)}
+          ${replyRecoveryControls(state, judge, "summary", content || "", { allowBusyPending: true })}
         </div>`;
     }
   } else if (state.phase === "summary" && !state.summary && !state.summaries?.[state.summaryProvider]) {
@@ -1340,6 +1404,7 @@ function renderChatBubbles(state) {
         <div class="bubble-group summary ${safeProviderClass(sumProvider)} loading">
         <div class="bubble-meta">${escapeHTML(uiText(`${meetingSpeakerLabel(state, sumProvider)} 總結裁決中`))}</div>
         <div class="bubble-content"><span class="loading-dots">${uiText("彙整精華中")}<span>.</span><span>.</span><span>.</span></span></div>
+        ${replyRecoveryControls(state, sumProvider, "summary", "", { allowBusyPending: true })}
       </div>
     `;
   } else if (!state.reveal && (state.summary || state.summaries?.[state.summaryProvider])) {
@@ -1348,6 +1413,7 @@ function renderChatBubbles(state) {
       <div class="round-divider">最終裁決 👑</div>
       <div class="bubble-group summary ${safeProviderClass(sumProvider)}">
         <div class="bubble-meta">${escapeHTML(uiText(`${meetingSpeakerLabel(state, sumProvider)} 總結裁決`))}</div>
+        ${state.summaryStale === true ? `<p class="reply-recovery-note">${escapeHTML(uiText("這份總結依據的是修改前的回覆。"))}</p>` : ""}
         <div class="bubble-content">${formatReplyContent(state.summary || state.summaries?.[sumProvider] || "")}</div>
         ${replyRecoveryControls(state, sumProvider, "summary", state.summary || state.summaries?.[sumProvider])}
       </div>
@@ -1392,21 +1458,31 @@ function replaceChatTranscriptHTML(html) {
   lastRenderedChatHtml = html;
 }
 
-function replyRecoveryControls(state, provider, phase, content) {
+function replyRecoveryControls(state, provider, phase, content, { allowBusyPending = false } = {}) {
   if (isRecoverableReply(content) && [...(state.departedProviders || []), ...(state.transcript?.departedProviders || [])].includes(provider)) {
     return `<p class="reply-recovery-note">${escapeHTML(uiText("已離席；本場不再參與後續討論，先前發言仍保留。"))}</p>`;
   }
   const repaired = state.transcript?.manualRepairs?.findLast((entry) => entry.provider === provider && entry.phase === phase);
-  if (repaired) return `<p class="reply-recovery-note">已手動補入 AI 回覆</p>${repaired.originalError
-    ? `<details class="reply-recovery"><summary>查看原故障</summary><p>${escapeHTML(repaired.originalError)}</p></details>` : ""}`;
-  if (!isRecoverableReply(content)) return "";
-  const promptControls = recoveryPromptControls(state, provider, phase, { translate: uiText, escape: escapeHTML });
-  const hint = /未確認送出/.test(content)
+  if (repaired) return `<p class="reply-recovery-note">${escapeHTML(uiText(repaired.source === "edit" ? "已手動修改 AI 回覆" : "已手動補入 AI 回覆"))}</p>${repaired.source !== "edit" && repaired.originalError
+    ? `<details class="reply-recovery"><summary>${escapeHTML(uiText("查看原故障"))}</summary><p>${escapeHTML(repaired.originalError)}</p></details>` : ""}${content ? `<button type="button" class="secondary-action" data-repair-provider="${escapeHTML(provider)}" data-repair-phase="${escapeHTML(phase)}" ${recoveryActionPending ? "disabled" : ""}>${escapeHTML(uiText("貼上 AI 回覆"))}</button>` : ""}`;
+  const pendingSlot = allowBusyPending && state.busy && !content ? manualReplyPendingSlot(state, provider, phase) : null;
+  const pendingBusySlot = Boolean(pendingSlot);
+  if (!isRecoverableReply(content) && !pendingBusySlot) {
+    return content ? `<button type="button" class="secondary-action" data-repair-provider="${escapeHTML(provider)}" data-repair-phase="${escapeHTML(phase)}" ${recoveryActionPending ? "disabled" : ""}>${escapeHTML(uiText("貼上 AI 回覆"))}</button>` : "";
+  }
+  const promptControls = isRecoverableReply(content)
+    ? recoveryPromptControls(state, provider, phase, { translate: uiText, escape: escapeHTML }) : "";
+  const hint = pendingBusySlot
+    ? uiText("若 AI 網頁已完成這個階段的回覆，可直接貼上補入。")
+    : /未確認送出/.test(content)
     ? "送出尚未確認；AI 可能已回答，請先查看 AI 分頁，避免重複送出。"
     : (phase === "summary" ? "這位裁判的總結未取得；若 AI 分頁已完成，可手動補入。"
       : phase === "reveal" ? "這位 AI 的揭曉反應未取得；若 AI 分頁已回答，可手動補入。"
         : "未取得這段 AI 回覆；若 AI 分頁已回答，可手動補入。");
-  return `<div class="reply-recovery"><p>${hint}</p>${promptControls}<button type="button" class="secondary-action" data-repair-provider="${escapeHTML(provider)}" data-repair-phase="${escapeHTML(phase)}" ${state.busy || recoveryActionPending ? "disabled" : ""}>貼上 AI 回覆</button><button type="button" class="secondary-action" data-depart-provider="${escapeHTML(provider)}" data-depart-phase="${escapeHTML(phase)}" ${state.busy || recoveryActionPending ? "disabled" : ""}>讓 AI 離席</button><p>離席後，本場不再請它發言；先前內容保留。</p>${state.busy ? "<p>目前流程結束後即可處理。</p>" : ""}</div>`;
+  const departure = isRecoverableReply(content)
+    ? `<button type="button" class="secondary-action" data-depart-provider="${escapeHTML(provider)}" data-depart-phase="${escapeHTML(phase)}" ${recoveryActionPending ? "disabled" : ""}>${escapeHTML(uiText("讓 AI 離席"))}</button>`
+    : pendingBusySlot ? `<button type="button" class="secondary-action" data-depart-provider="${escapeHTML(provider)}" data-depart-phase="${escapeHTML(phase)}" data-depart-attempt-id="${escapeHTML(pendingSlot.attemptId)}" ${recoveryActionPending ? "disabled" : ""}>${escapeHTML(uiText("讓 AI 離席"))}</button>` : "";
+  return `<div class="reply-recovery"><p>${escapeHTML(uiText(hint))}</p>${promptControls}<button type="button" class="secondary-action" data-repair-provider="${escapeHTML(provider)}" data-repair-phase="${escapeHTML(phase)}" ${recoveryActionPending ? "disabled" : ""}>${escapeHTML(uiText("貼上 AI 回覆"))}</button>${departure}${departure ? `<p>${escapeHTML(uiText("離席後，本場不再請它發言；先前內容保留。"))}</p>` : ""}</div>`;
 }
 
 function renderReplyRecoveryNotice(state) {
@@ -1425,10 +1501,24 @@ function renderReplyRecoveryNotice(state) {
     saveManualReplyBtn.disabled = true;
     setManualReplyStatus("會議已變更；貼上的內容仍保留，請取消後重新選擇故障訊息。");
   }
+  if (manualReplyTarget?.mode === "edit" && !manualReplyEditor.hidden &&
+      manualReplyContent(state, manualReplyTarget.provider, manualReplyTarget.phase) !== manualReplyTarget.expectedContent) {
+    saveManualReplyBtn.disabled = true;
+    setManualReplyStatus("這段 AI 回覆已更新；你的草稿仍保留，請取消後重新選擇最新內容。");
+  }
 }
 
 function hasPendingReplyRepairs(state) {
   return pendingReplyRepairs(state).length > 0;
+}
+
+function hasManualReplyPendingSlot(state, provider, phase) {
+  return Boolean(manualReplyPendingSlot(state, provider, phase));
+}
+
+function manualReplyPendingSlot(state, provider, phase) {
+  return Array.isArray(state?.manualReplySlots) ? state.manualReplySlots.find((slot) =>
+    slot?.provider === provider && slot?.phase === phase) || null : null;
 }
 
 function manualReplyContent(state, provider, phase) {

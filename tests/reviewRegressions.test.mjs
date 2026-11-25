@@ -73,7 +73,7 @@ test('continuous response collection crosses phase timeouts but stops at the fix
       const context = {
         Date:{now:() => now}, PROVIDER_RESPONSE_HARD_CAP_MS:hardCap,
         getProviderTimeoutMs:stage => stage==='first-round' ? 240000 : 480000,
-        runController:{assertCurrent() {}}, chrome:{tabs:{get:async () => ({id:7})}},
+        runController:{assertCurrent() {}}, chrome:{tabs:{get:async () => ({id:7})}}, liveReplyAttempt: () => null,
         setProviderDiagnostic:async (provider, patch) => {
           if (patch.stage === 'activating-tab') assert.deepEqual(
             { ...context.runtimeState.workflowCheckpoint }, { stage: 'collecting', provider, runId: 'one-submission' });

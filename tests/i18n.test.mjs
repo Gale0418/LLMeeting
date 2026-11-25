@@ -14,7 +14,7 @@ import { DEFAULT_LOCALE, MESSAGES, SUPPORTED_LOCALES } from "../src/shared/i18n-
 import { UI_COPY } from "../src/shared/ui-copy-catalog.js";
 
 test("production UI catalog is complete in three languages with unchanged dynamic parameters", () => {
-  assert.equal(UI_COPY.length, 587);
+  assert.equal(UI_COPY.length, 594);
   assert.equal(uiText("使用者提問 🙋", "en"), "User Question 🙋");
   assert.equal(uiText("使用者提問 🙋", "ja"), "ユーザーの質問 🙋");
   assert.equal(uiText("背景電路", "en"), "Circuit Glow");
@@ -25,7 +25,12 @@ test("production UI catalog is complete in three languages with unchanged dynami
     assert.deepEqual(placeholders(entry[locale]), placeholders(entry.source), `${entry.id}/${locale}`);
   }
   assert.equal(uiText("貼上 AI 回覆", "en"), "Paste AI reply");
+  assert.equal(uiText("若 AI 網頁已完成這個階段的回覆，可直接貼上補入。", "en"), "If the AI page has finished this stage, paste its reply here.");
+  assert.notEqual(uiText("這段 AI 回覆已自動取得，已保留原回覆；你貼上的草稿仍保留。", "ja"), "這段 AI 回覆已自動取得，已保留原回覆；你貼上的草稿仍保留。");
   assert.notEqual(uiText("讓 AI 離席", "ja"), "讓 AI 離席");
+  assert.equal(uiText("這份總結依據的是修改前的回覆。", "en"), "This summary is based on the reply before it was edited.");
+  assert.equal(uiText("已手動修改 AI 回覆", "ja"), "AIの回答を手動で編集しました");
+  assert.equal(uiText("回覆已套用，尚未存入本機。你可以再按一次儲存。", "ja"), "回答の変更は反映されました。端末に保存するには、もう一度保存を押してください。");
   assert.equal(uiText("任意使用者私人內容", "en"), "任意使用者私人內容");
 });
 

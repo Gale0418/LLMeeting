@@ -215,6 +215,24 @@ test("interrupted recovery never queues an AI that already left this meeting", (
   assert.equal(pendingReplyRepairs(result.state).some(p=>p.provider === "meta"), false);
 });
 
+test("recovery keeps other submissions repairable when the current collector already left", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini", "meta"], "chatgpt", 1);
+  engine.start("等待 ChatGPT 時讓它離席");
+  engine.departProvider("chatgpt");
+  const result = recoverSession({
+    savedAt: Date.now(), busy: true, status: "running", phase: "first-round", mode: "fast",
+    activeProviders: engine.activeProviders, departedProviders: ["chatgpt"], transcript: engine.snapshot(),
+    workflowCheckpoint: { stage: "collecting", provider: "chatgpt", phase: "first-round" },
+    providerDiagnostics: {
+      chatgpt: { stage: "departed", phase: "first-round" },
+      gemini: { stage: "submitted", phase: "first-round" },
+    },
+  }, mockCreateIdleState);
+  assert.equal(result.state.status, "waiting_for_user");
+  assert.deepEqual(result.state.repairPause.remainingJobs.map(({ provider }) => provider), ["meta"]);
+  assert.deepEqual(pendingReplyRepairs(result.state).map(({ provider }) => provider), ["gemini"]);
+});
+
 test("interrupted imposter first round without an explicit saved role keeps the error fallback", () => {
   const providers = ["chatgpt", "gemini"];
   const engine = new DebateEngine(providers, "chatgpt", 2, { interactionStyle: "imposter" });

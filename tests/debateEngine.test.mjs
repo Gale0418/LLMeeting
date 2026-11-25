@@ -23,6 +23,59 @@ test("departed providers keep history and never receive subsequent interaction o
   assert.throws(() => restored.departProvider("meta"), /已離席/);
 });
 
+test("editing a successful reply uses exact-content and session guards while preserving downstream history", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 1);
+  engine.start("編輯測試");
+  engine.recordAnswer("chatgpt", "原回答");
+  engine.recordAnswer("gemini", "另一回答");
+  const jobs = engine.buildCritiqueJobs(1);
+  engine.recordCritique("gemini", "已送出的互評，保留原樣", 1);
+  const edited = engine.editProviderReply({
+    provider: "chatgpt", phase: "first-round", content: "修訂回答",
+    expectedContent: "原回答", sessionId: engine.state.sessionId,
+  });
+  assert.equal(edited.answers.chatgpt, "修訂回答");
+  assert.equal(edited.critiqueRounds[0].gemini, "已送出的互評，保留原樣");
+  assert.equal(edited.manualRepairs.at(-1).source, "edit");
+  assert.equal(edited.manualRepairs.at(-1).previousContent, "原回答");
+  assert.equal(edited.manualRepairs.at(-1).originalError, undefined);
+  assert.throws(() => engine.editProviderReply({
+    provider: "chatgpt", phase: "first-round", content: "再次修改",
+    expectedContent: "原回答", sessionId: engine.state.sessionId,
+  }), /訊息已變更/);
+  assert.throws(() => engine.editProviderReply({
+    provider: "chatgpt", phase: "first-round", content: "再次修改",
+    expectedContent: "修訂回答", sessionId: "other-session",
+  }), /訊息已變更/);
+  const restored = DebateEngine.restore(edited);
+  assert.equal(restored.snapshot().manualRepairs.at(-1).source, "edit");
+  assert.ok(jobs.length);
+});
+
+test("successful critique and reveal replies can be edited using their displayed phase names", () => {
+  const engine = new DebateEngine(["chatgpt", "gemini"], "chatgpt", 2);
+  engine.start("多階段編輯");
+  engine.recordAnswer("chatgpt", "A");
+  engine.recordAnswer("gemini", "B");
+  engine.buildCritiqueJobs(1);
+  engine.recordCritique("chatgpt", "舊互評 A", 1);
+  engine.recordCritique("gemini", "互評 B", 1);
+  engine.buildCritiqueJobs(2);
+  engine.recordCritique("chatgpt", "第二輪原文", 2);
+  engine.editProviderReply({ provider: "chatgpt", phase: "critique", content: "新互評 A",
+    expectedContent: "舊互評 A", sessionId: engine.state.sessionId });
+  const reveal = { reactions: { chatgpt: "舊揭曉反應", gemini: "另一反應" } };
+  engine.state.reveal = reveal;
+  engine.editProviderReply({ provider: "chatgpt", phase: "reveal", content: "修訂揭曉反應",
+    expectedContent: reveal.reactions.chatgpt, sessionId: engine.state.sessionId });
+  assert.equal(engine.snapshot().critiqueRounds[0].chatgpt, "新互評 A");
+  assert.equal(engine.snapshot().critiqueRounds[1].chatgpt, "第二輪原文");
+  assert.equal(engine.snapshot().reveal.reactions.chatgpt, "修訂揭曉反應");
+  assert.deepEqual(engine.snapshot().manualRepairs.map(({ phase, source }) => [phase, source]), [
+    ["critique", "edit"], ["reveal", "edit"],
+  ]);
+});
+
 test("all providers departing produces no final jobs and a fresh meeting resets departures", () => {
   const engine = new DebateEngine(["chatgpt", "gemini"]);
   engine.start("首場");

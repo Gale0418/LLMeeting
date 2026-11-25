@@ -37,7 +37,8 @@ function fixture(state) {
     recommendation: {render() {}}, playScenes: {render() {}}
   });
   vm.runInContext(['renderChatBubbles', 'renderRoundZeroBubbles', 'replyRecoveryControls',
-    'renderReplyRecoveryNotice', 'formatReplyContent', 'translateFaultStage', 'formatContent', 'escapeHTML',
+    'renderReplyRecoveryNotice', 'hasManualReplyPendingSlot', 'manualReplyPendingSlot',
+    'formatReplyContent', 'translateFaultStage', 'formatContent', 'escapeHTML',
     'providerLabel', 'meetingSpeakerLabel', 'safeProviderClass', 'critiqueRoundMaps',
     'manualReplyPhaseLabel', 'setManualReplyStatus', 'renderManualReplyStatus', 'zhRoundLabel'].map(fn).join('\n'), context);
   vm.runInContext(source.slice(source.indexOf('document.addEventListener("llmeeting:locale-changed"'),

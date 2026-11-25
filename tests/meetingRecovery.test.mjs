@@ -122,6 +122,7 @@ test("reading state cannot overwrite a completed auto-resume with an older busy 
   let signalReadStarted;
   const readStarted = new Promise((resolve) => { signalReadStarted = resolve; });
   const context = vm.createContext({ runtimeState: { status: "running", busy: true },
+    stateWithLiveReplySlots: (state) => state,
     ensureRuntimeStateRetention: async () => {}, getEntitlements: () => new Promise((resolve) => {
       resolveEntitlements = resolve; signalReadStarted();
     }) });
@@ -224,6 +225,7 @@ test("a paused meeting expiring during the repair commit is not restored or ackn
   const context = runtimeHarness({
     engine: previousEngine,
     lifecycleRevision: 1, controlOperation: null, pendingArchiveEvents: [], cachedEntitlements: {},
+    stateWithLiveReplySlots: (state) => state,
     runController: { assertCurrent() {}, isCurrent: () => true },
     enqueueStateStorage: createStateStorageQueue(),
     createIdleState: () => ({ transcript: null, status: "idle", savedAt: now }),
@@ -325,6 +327,65 @@ test("runtime repair rejects missing identity, a different meeting with the same
       expectedContent: transcript.critiqueRounds[6].chatgpt, content: "必須保留的草稿", ...override }, 1));
     assert.equal(JSON.stringify(context.runtimeState), JSON.stringify(before));
   }
+});
+
+test("edit endpoint restores a completed meeting and edits summary/source replies with basis revisions", async () => {
+  const transcript = failedMeeting(1).snapshot();
+  transcript.reveal = { reactions: { chatgpt: "已完成反應", grok: "另一反應" } };
+  const summaryState = { transcript, busy: false, status: "done", phase: "done", savedAt: Date.now(),
+    summary: "舊總結", summaries: { chatgpt: "舊總結" }, summaryProvider: "chatgpt",
+    sourceProvider: "chatgpt", sourceSummary: "來源舊摘要", replyBasisRevision: 0 };
+  const context = runtimeHarness({ runtimeState: structuredClone(summaryState), engine: new DebateEngine(),
+    controlOperation: null, runController: { isReserved: () => false },
+    ensureRuntimeInitialized: async () => {}, ensureRuntimeStateRetention: async () => {},
+    appendArchiveEvent() {}, publishState: async () => true });
+  vm.runInContext(source.slice(source.indexOf("async function editMeetingReply"), source.indexOf("async function validateNextRound")), context);
+  const base = { sessionId: transcript.sessionId, provider: "chatgpt" };
+  await context.editMeetingReply({ ...base, mode: "edit", phase: "summary", expectedContent: "舊總結", content: "新總結" });
+  assert.equal(context.runtimeState.summary, "新總結");
+  assert.equal(context.runtimeState.summaries.chatgpt, "新總結");
+  assert.equal(context.runtimeState.transcript.manualRepairs.at(-1).previousContent, "舊總結");
+  assert.equal(context.runtimeState.transcript.manualRepairs.at(-1).originalError, undefined);
+  assert.equal(context.runtimeState.replyBasisRevision, 0);
+  assert.equal(context.runtimeState.summaryStale, false);
+  await context.editMeetingReply({ ...base, mode: "edit", phase: "source-summary", expectedContent: "來源舊摘要", content: "來源新摘要" });
+  assert.equal(context.runtimeState.sourceSummary, "來源新摘要");
+  assert.equal(context.runtimeState.replyBasisRevision, 1);
+  assert.equal(context.runtimeState.transcript.manualRepairs.at(-1).phase, "source-summary");
+  assert.equal(context.runtimeState.summaryStale, true);
+  context.runController.isReserved = () => true;
+  await assert.rejects(context.editMeetingReply({ ...base, mode: "edit", phase: "summary",
+    expectedContent: "新總結", content: "仍在等待其他操作" }), { code: "BUSY" });
+  assert.equal(context.runtimeState.summary, "新總結");
+});
+
+test("an accepted edit can retry failed storage without duplicating its history or losing live replies", async () => {
+  const transcript = failedMeeting(1).snapshot();
+  const events = [];
+  let saved = false;
+  const context = runtimeHarness({
+    runtimeState: { transcript, busy: false, phase: "done", summary: "原總結", summaries: { chatgpt: "原總結" }, summaryProvider: "chatgpt" },
+    engine: new DebateEngine(), controlOperation: null, runController: { isReserved: () => false },
+    ensureRuntimeInitialized: async () => {}, ensureRuntimeStateRetention: async () => {},
+    appendArchiveEvent(event) { events.push(event); },
+    async publishState() {
+      context.runtimeState = { ...context.runtimeState, providerDiagnostics: { grok: { stage: "received" } } };
+      return saved;
+    },
+  });
+  vm.runInContext(source.slice(source.indexOf("async function editMeetingReply"), source.indexOf("async function validateNextRound")), context);
+  const request = { mode: "edit", provider: "chatgpt", phase: "summary", sessionId: transcript.sessionId,
+    expectedContent: "原總結", content: "完整總結" };
+  const result = await context.editMeetingReply(request);
+  assert.equal(result.ok, true);
+  assert.equal(result.saved, false);
+  assert.equal(result.appliedContent, "完整總結");
+  assert.equal(result.state.providerDiagnostics.grok.stage, "received");
+  saved = true;
+  const retry = await context.editMeetingReply({ ...request, expectedContent: result.appliedContent });
+  assert.equal(retry.saved, true);
+  assert.equal(retry.state.transcript.manualRepairs.length, 1);
+  assert.equal(events.length, 1);
 });
 
 test("repairing a historical fault during a summary pause preserves collected judge replies", async () => {

@@ -16,7 +16,8 @@ function createProviderMessagingHarness({ sendMessage, getTab, executeScript, ti
   const calls = { messages: [], injections: [], delays: [], readinessTimeouts: [] };
   const context = {
     PROVIDER_CONTROL_TIMEOUT_MS: 3000,
-    READINESS_TIMEOUT_MS: 15000,
+    READINESS_TIMEOUT_MS: 30000,
+    PROVIDER_TAB_LOAD_TIMEOUT_MS: 60000,
     PROVIDERS: [{ id: "chatgpt", matchPatterns: ["https://chatgpt.com/*"] }],
     runController: { assertCurrent() {} },
     URL,
@@ -349,6 +350,39 @@ test("readiness DOM timeout retries without reinjecting a healthy listener", asy
   assert.equal(capabilitiesCalls, 2);
   assert.equal(readinessCalls, 2);
   assert.equal(calls.injections.length, 0);
+});
+
+test("ChatGPT checks the composer again if it is still mounting", async () => {
+  let checks = 0;
+  const { api, calls } = createProviderMessagingHarness({
+    sendMessage: async (_tabId, payload) => {
+      if (payload.type === "aiDebate:getCapabilities") {
+        return { contentScriptVersion: providerContentScriptVersion, driverContractVersion: 1 };
+      }
+      assert.equal(payload.type, "aiDebate:checkReadiness");
+      if (++checks === 1) return { ready: false, status: "input-not-ready" };
+      return { ready: true, status: "ready" };
+    },
+  });
+  assert.deepEqual(await api.sendProviderReadinessMessage(19, job), { ready: true, status: "ready" });
+  assert.equal(checks, 2);
+  assert.equal(calls.injections.length, 0);
+});
+
+test("readiness keeps checking a slowly mounting composer within the extended budget", async () => {
+  let checks = 0;
+  const { api, calls } = createProviderMessagingHarness({
+    sendMessage: async (_tabId, payload) => {
+      if (payload.type === "aiDebate:getCapabilities") {
+        return { contentScriptVersion: providerContentScriptVersion, driverContractVersion: 1 };
+      }
+      checks += 1;
+      return checks < 4 ? { ready: false, status: "input-not-ready" } : { ready: true, status: "ready" };
+    },
+  });
+  assert.deepEqual(await api.sendProviderReadinessMessage(19, job), { ready: true, status: "ready" });
+  assert.equal(checks, 4);
+  assert.deepEqual(calls.delays, [500, 500, 500]);
 });
 
 test("expired provider deadline prevents content injection", async () => {

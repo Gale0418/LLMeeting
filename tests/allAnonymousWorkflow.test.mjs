@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DebateEngine } from "../src/background/debateEngine.js";
 
-const PROVIDER_CONTENT_VERSION = "0.5.3-driver.20";
+const PROVIDER_CONTENT_VERSION = "0.5.3-driver.21";
 
-function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [], serverOverload = [], pendingReads = [], pauseFirstRead, navigateAfterConversationRead = "", navigateAfterConversationReadiness = "", pendingAfterConversationReadiness = "", navigateAfterSubmit = {}, transitionOnSubmit = {}, transitionOnRead = {}, initialUrl = "chrome://newtab/", initialCurrentState, conversationReplies = {} } = {}) {
+function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [], serverOverload = [], pendingReads = [], pauseFirstRead, pauseFirstReadProvider, pauseReadPhase = "first-round", navigateAfterConversationRead = "", navigateAfterConversationReadiness = "", pendingAfterConversationReadiness = "", navigateAfterSubmit = {}, transitionOnSubmit = {}, transitionOnRead = {}, initialUrl = "chrome://newtab/", initialCurrentState, conversationReplies = {} } = {}) {
   const tabs = new Map();
   const submitted = new Map();
   const readAttempts = new Map();
@@ -140,7 +140,7 @@ function createChromeMock({ failSummaryProvider, failSubmit = [], failRead = [],
           if (!job) return { ok: false, error: "Missing submitted prompt" };
           const attempt = (readAttempts.get(message.runId) || 0) + 1;
           readAttempts.set(message.runId, attempt);
-          if (pauseFirstRead && job.phase === "first-round") {
+          if (pauseFirstRead && job.phase === pauseReadPhase && (!pauseFirstReadProvider || pauseFirstReadProvider === job.provider)) {
             signalFirstReadStarted?.();
             await pausedRead;
           }
@@ -1221,6 +1221,132 @@ test("start acknowledges once before provider reads finish", async () => {
     assert.equal(finished.transcript.answers.chatgpt.startsWith("chatgpt:first-round:"), true);
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(startCall.responses.length, 1, "start must not answer again when background work finishes");
+  });
+});
+
+test("live pastes can repair a failed submit and take over an unresolved collection without waiting for its reply", async () => {
+  await quickly(async () => {
+    const mock = createChromeMock({ pauseFirstRead: true, pauseFirstReadProvider: "chatgpt",
+      failSubmit: { provider: "gemini", phase: "first-round" } });
+    await loadWorker(mock, "live-paste-in-collect");
+    const start = await mock.dispatch({ type: "aiDebate:start", mode: "fast", question: "測試會議執行中補入",
+      activeProviders: ["chatgpt", "gemini", "meta"], skipSummary: true });
+    assert.equal(start.ok, true, start.error);
+    await mock.firstReadStarted;
+    try {
+      const { state } = await mock.dispatch({ type: "aiDebate:getState" });
+      assert.equal(state.busy, true);
+      assert.deepEqual(state.manualReplySlots.map(({ provider, phase }) => ({ provider, phase })),
+        [{ provider: "chatgpt", phase: "first-round" }]);
+      const sessionId = state.transcript.sessionId;
+      const faultRepair = await mock.dispatch({ type: "aiDebate:repairReply", sessionId,
+        provider: "gemini", phase: "first-round", expectedContent: state.transcript.answers.gemini,
+        content: "Gemini 原頁已完成的答案" });
+      assert.equal(faultRepair.ok, true, faultRepair.error);
+      assert.equal(faultRepair.state.busy, true);
+      const manual = { type: "aiDebate:repairReply", sessionId, provider: "chatgpt",
+        phase: "first-round", expectedContent: "", content: "ChatGPT 原頁已完成的答案" };
+      assert.equal((await mock.dispatch({ ...manual, attemptId: "stale" })).ok, false);
+      const accepted = await mock.dispatch({ ...manual, attemptId: state.manualReplySlots[0].attemptId });
+      assert.equal(accepted.ok, true, accepted.error);
+      const done = await waitForState(mock, (s) => s.status === "done", "手動補入後其他發言與評析完成");
+      assert.equal(done.transcript.answers.chatgpt, manual.content);
+      assert.equal(done.transcript.answers.gemini, "Gemini 原頁已完成的答案");
+      assert.match(done.transcript.answers.meta, /^meta:first-round:/);
+      assert.equal(done.transcript.manualRepairs.length, 2);
+      assert.equal((await mock.dispatch({ ...manual, attemptId: state.manualReplySlots[0].attemptId })).ok, false);
+      mock.releaseRead();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const { state: afterLateReply } = await mock.dispatch({ type: "aiDebate:getState" });
+      assert.equal(afterLateReply.transcript.answers.chatgpt, manual.content);
+      assert.equal(mock.sent.filter((message) => message.type === "aiDebate:submitPrompt" && message.provider === "chatgpt" && message.phase === "first-round").length, 1);
+    } finally {
+      mock.releaseRead();
+    }
+  });
+});
+
+test("a generating provider can leave without waiting for its read and receives no later prompt", async () => {
+  await quickly(async () => {
+    const mock = createChromeMock({ pauseFirstRead: true, pauseFirstReadProvider: "chatgpt" });
+    await loadWorker(mock, "depart-during-collect");
+    const start = await mock.dispatch({ type: "aiDebate:start", mode: "fast", question: "等待時離席",
+      activeProviders: ["chatgpt", "gemini", "meta"], skipSummary: true });
+    assert.equal(start.ok, true, start.error);
+    await mock.firstReadStarted;
+    try {
+      const { state } = await mock.dispatch({ type: "aiDebate:getState" });
+      const slot = state.manualReplySlots.find(({ provider }) => provider === "chatgpt");
+      const request = { type: "aiDebate:departProvider", ...slot,
+        sessionId: state.transcript.sessionId, expectedContent: "" };
+      assert.equal((await mock.dispatch({ ...request, attemptId: "stale" })).ok, false);
+      assert.equal((await mock.dispatch(request)).ok, true);
+      const done = await waitForState(mock, (s) => s.status === "done", "剩餘成員完成");
+      assert.deepEqual(done.departedProviders, ["chatgpt"]);
+      assert.equal(done.transcript.answers.chatgpt, "");
+      assert.match(done.transcript.critiqueRounds[0].gemini, /^gemini:critique:/);
+      assert.match(done.transcript.critiqueRounds[0].meta, /^meta:critique:/);
+      assert.equal(mock.sent.filter(({ type, provider }) => type === "aiDebate:submitPrompt" && provider === "chatgpt").length, 1);
+      mock.releaseRead();
+      const { state: afterLateReply } = await mock.dispatch({ type: "aiDebate:getState" });
+      assert.equal(afterLateReply.transcript.answers.chatgpt, "");
+    } finally {
+      mock.releaseRead();
+    }
+  });
+});
+
+test("a generating final judge can leave and the remaining participants receive a replacement summary", async () => {
+  await quickly(async () => {
+    const mock = createChromeMock({ pauseFirstRead: true, pauseFirstReadProvider: "chatgpt", pauseReadPhase: "summary" });
+    await loadWorker(mock, "depart-generating-judge");
+    const start = await mock.dispatch({ type: "aiDebate:start", mode: "fast", question: "總結時更換裁判",
+      activeProviders: ["chatgpt", "gemini", "meta"], summaryProvider: "chatgpt" });
+    assert.equal(start.ok, true, start.error);
+    await mock.firstReadStarted;
+    try {
+      const { state } = await mock.dispatch({ type: "aiDebate:getState" });
+      const slot = state.manualReplySlots.find(({ provider }) => provider === "chatgpt");
+      assert.equal(slot.phase, "summary");
+      assert.equal((await mock.dispatch({ type: "aiDebate:departProvider", ...slot,
+        sessionId: state.transcript.sessionId, expectedContent: "" })).ok, true);
+      const done = await waitForState(mock, (s) => s.status === "done", "新裁判完成總結");
+      assert.equal(done.summaryProvider, "gemini");
+      assert.match(done.summary, /^gemini:summary:/);
+      assert.match(done.transcript.answers.chatgpt, /^chatgpt:first-round:/);
+      assert.equal(done.summaries.chatgpt, undefined);
+    } finally {
+      mock.releaseRead();
+    }
+  });
+});
+
+test("editing a received reply during a final read keeps the sent summary and marks it stale", async () => {
+  await quickly(async () => {
+    const mock = createChromeMock({ pauseFirstRead: true, pauseFirstReadProvider: "chatgpt", pauseReadPhase: "summary" });
+    await loadWorker(mock, "edit-before-summary-returns");
+    const started = await mock.dispatch({ type: "aiDebate:start", mode: "fast", question: "補齊首輪正文",
+      activeProviders: ["chatgpt", "gemini"], summaryProvider: "chatgpt" });
+    assert.equal(started.ok, true, started.error);
+    await mock.firstReadStarted;
+    try {
+      const { state } = await mock.dispatch({ type: "aiDebate:getState" });
+      const sentSummary = mock.sent.find(({ type, phase }) => type === "aiDebate:submitPrompt" && phase === "summary");
+      const edit = { type: "aiDebate:repairReply", mode: "edit", phase: "first-round", provider: "gemini",
+        sessionId: state.transcript.sessionId, expectedContent: state.transcript.answers.gemini, content: "補齊後的完整正文" };
+      const accepted = await mock.dispatch(edit);
+      assert.equal(accepted.ok, true, accepted.error);
+      assert.equal(accepted.state.transcript.answers.gemini, edit.content);
+      assert.equal((await mock.dispatch(edit)).ok, false, "the earlier reply text can no longer be replaced");
+      mock.releaseRead();
+      const done = await waitForState(mock, (s) => s.status === "done", "已送出的總結完成");
+      assert.equal(done.summaryStale, true);
+      assert.equal(done.transcript.answers.gemini, edit.content);
+      assert.equal(done.summary, `chatgpt:summary:${sentSummary.prompt}`);
+      assert.equal(mock.sent.filter(({ type, phase }) => type === "aiDebate:submitPrompt" && phase === "summary").length, 1);
+    } finally {
+      mock.releaseRead();
+    }
   });
 });
 

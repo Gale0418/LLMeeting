@@ -262,6 +262,9 @@
         "main [data-lexical-text='true']",
       ],
       userMessageSelectors: [
+        // Meta's current message wrapper carries the stable turn identity;
+        // the legacy class below is only on a nested text container.
+        "[data-message-item][data-message-role='user'][role='article']",
         "[class*='group/user-message']",
         "[role='article'][aria-label='你的訊息']",
         "[role='article'][aria-label='Your message' i]",

@@ -64,17 +64,39 @@ test("new tab detection checks early, backs off, and retains the 45 second deadl
   assert.ok(clock.delays.includes(500));
 });
 
+test("startup can open a loading tab immediately and then wait for a slow foreground load", async () => {
+  const provider = { id: "chatgpt", startUrl: "https://chatgpt.com/", matchPatterns: ["https://chatgpt.com/*"] };
+  const { context, clock } = clockHarness([
+    section(source, "async function getOrCreateProviderTab(", "async function activateProviderTab("),
+    section(source, "async function activateProviderTabForReadiness(", "async function restoreActiveTab("),
+  ].join("\n"), {
+    PROVIDERS: [provider], PROVIDER_TAB_LOAD_TIMEOUT_MS: 60000, runtimeState: { providerTabs: {} },
+    waitForProviderTab: () => assert.fail("startup allocation must not wait for page load"),
+    chrome: { tabs: {
+      create: async (options) => { assert.equal(options.active, false); return { id: 7, status: "loading" }; },
+      update: async (id, options) => { assert.equal(id, 7); assert.equal(options.active, true); },
+      get: async (id) => ({ id, active: true, status: clock.now >= 52000 ? "complete" : "loading" }),
+    } },
+  });
+  const tab = await context.getOrCreateProviderTab(provider.id, { forceNewTab: true, activate: false });
+  assert.equal(tab.status, "loading");
+  assert.equal(clock.now, 0);
+  await context.activateProviderTabForReadiness(tab);
+  assert.equal(clock.now, 52200);
+});
+
 function submissionHarness({ holdWrite, cancelOnTab = false } = {}) {
   const writes = [], sends = [], broadcasts = [], sequence = [];
   let cancelled = false, release;
   const held = new Promise(resolve => { release = resolve; });
   const job = { provider: "chatgpt", phase: "critique-4", round: 4, prompt: "Exact synthetic prompt\n完整原文" };
   const { context, clock } = clockHarness("", {
+    PROVIDER_TAB_LOAD_TIMEOUT_MS: 60000,
     JSON, Number, isProviderId, updateProviderDiagnostic, rememberRecoveryPrompt, boundRecoveryPrompts,
     enqueueStateStorage: createStateStorageQueue(), safePersistState,
     STORAGE_KEY: "test-state", MAX_DEBUG_EVENTS: 100, MAX_PERSISTED_TEXT_CHARS: 12000, MAX_PERSISTED_TRANSCRIPT_CHARS: 120000,
     meetingArchive: { available: false }, archiveStatus: "saved", pendingArchiveEvents: [],
-    lifecycleRevision: 0,
+    lifecycleRevision: 0, activeReplyAttempts: new Map(),
     runtimeState: { recoveryPrompts: {}, providerDiagnostics: {}, providerTabs: {}, errors: [], savedAt: 1 },
     runController: { assertCurrent() { if (cancelled) throw Object.assign(new Error("cancelled"), { code: "RUN_CANCELLED" }); }, isCurrent: () => !cancelled },
     getOrCreateProviderTab: async () => { if (cancelOnTab) cancelled = true; return { id: 7, url: "https://chatgpt.com/" }; },
@@ -94,6 +116,7 @@ function submissionHarness({ holdWrite, cancelOnTab = false } = {}) {
     },
   });
   vm.runInContext([
+    section(source, "function liveReplyAttempt(", "async function submitProviderJob("),
     section(source, "async function submitProviderJob(", "async function collectProviderJob("),
     section(source, "async function assertLinkedTabBindingsCurrent(", "async function captureLinkedReplies("),
     section(source, "async function activateProviderTabForReadiness(", "async function restoreActiveTab("),

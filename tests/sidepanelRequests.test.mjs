@@ -68,7 +68,7 @@ test("fault controls offer departure and departed faults have no repeat actions"
       const departed = context.controls({departedProviders: ["grok"]}, "grok", "critique", "[錯誤：額度用完]");
       assert.ok(departed.includes(uiText("已離席；本場不再參與後續討論，先前發言仍保留。")));
       assert.doesNotMatch(departed, /data-depart|data-repair/);
-      assert.match(context.controls({busy: true}, "grok", "critique", "[錯誤：額度用完]"), /data-depart-phase="critique" disabled/);
+      assert.match(context.controls({busy: true}, "grok", "critique", "[錯誤：額度用完]"), /data-depart-phase="critique"/);
     }
   } finally { setLocale("en"); }
 });
@@ -150,20 +150,127 @@ test("recovery controls preserve summary and reveal phase identifiers", () => {
   assert.match(context.render(state, "claude", "reveal", "[錯誤：揭曉]"), /data-repair-phase="reveal"/);
 });
 
+test("acknowledged busy pending slots allow paste or attempt-scoped departure", () => {
+  const body = source.slice(source.indexOf("function replyRecoveryControls"), source.indexOf("function renderReplyRecoveryNotice"));
+  const context = {
+    recoveryActionPending: false, recoveryPromptControls, uiText,
+    isRecoverableReply: (text) => typeof text === "string" && text.startsWith("[錯誤："),
+    hasManualReplyPendingSlot: (state, provider, phase) => state.manualReplySlots?.some((slot) => slot.provider === provider && slot.phase === phase),
+    manualReplyPendingSlot: (state, provider, phase) => state.manualReplySlots?.find((slot) => slot.provider === provider && slot.phase === phase) || null,
+    escapeHTML: (text) => String(text),
+  };
+  vm.createContext(context);
+  vm.runInContext(`${body}\nglobalThis.render = replyRecoveryControls;`, context);
+  try {
+    for (const locale of ["zh_TW", "en", "ja"]) {
+      setLocale(locale);
+      const html = context.render({busy: true, manualReplySlots: [{provider: "meta", phase: "first-round", attemptId: "send-1"}]}, "meta", "first-round", "", {allowBusyPending: true});
+      assert.match(html, /data-repair-provider="meta"/);
+      assert.doesNotMatch(html, /data-repair-provider="meta"[^>]*disabled/);
+      assert.match(html, /data-depart-provider="meta"[^>]*data-depart-attempt-id="send-1"/);
+      assert.doesNotMatch(html, /data-depart-provider="meta"[^>]*disabled/);
+      assert.ok(html.includes(uiText("若 AI 網頁已完成這個階段的回覆，可直接貼上補入。")));
+      const fault = context.render({busy: true}, "meta", "critique", "[錯誤：等待回覆逾時]");
+      assert.doesNotMatch(fault, /data-repair-provider="meta"[^>]*disabled/);
+      assert.match(fault, /data-depart-provider="meta"/);
+      const unacknowledged = context.render({busy: true}, "meta", "first-round", "", {allowBusyPending: true});
+      assert.equal(unacknowledged, "");
+    }
+  } finally { setLocale("en"); }
+});
+
+test("successful replies keep an edit action and edits are guarded against stale source text", () => {
+  const body = source.slice(source.indexOf("function replyRecoveryControls"), source.indexOf("function renderReplyRecoveryNotice"));
+  const context = { recoveryActionPending: false, uiText, escapeHTML: text => String(text), isRecoverableReply: text => String(text).startsWith("[錯誤：") };
+  vm.createContext(context);
+  vm.runInContext(`${body}\nglobalThis.render = replyRecoveryControls;`, context);
+  assert.match(context.render({}, "chatgpt", "first-round", "原始完整回答"), /data-repair-provider="chatgpt"/);
+  const clickHandler = source.slice(source.indexOf('const button = event.target.closest?.("[data-repair-provider]")'), source.indexOf('document.querySelector("#cancelManualReplyBtn")'));
+  assert.match(clickHandler, /mode: "edit"/);
+  const saveHandler = source.slice(source.indexOf("saveManualReplyBtn?.addEventListener"), source.indexOf("const advancedControlEls"));
+  assert.match(saveHandler, /manualReplyTarget\.mode === "edit" && currentReply !== manualReplyTarget\.expectedContent/);
+  assert.match(saveHandler, /mode: "edit"/);
+});
+
+test("clicking a successful reply opens an edit and repeated clicks preserve its draft", () => {
+  const start = source.lastIndexOf('chatTranscript?.addEventListener("click", (event) => {', source.indexOf('const copyButton = event.target.closest?.("[data-copy-prompt-provider]")'));
+  const end = source.indexOf("\n});", start) + "\n});".length;
+  const body = source.slice(start, end);
+  let click;
+  const input = { value: "", focus() {} };
+  const editor = { hidden: true };
+  const save = { disabled: true };
+  const target = { textContent: "" };
+  const button = { disabled: false, dataset: { repairProvider: "chatgpt", repairPhase: "first-round" } };
+  const context = vm.createContext({
+    chatTranscript: { addEventListener(_type, handler) { click = handler; } },
+    latestState: { transcript: { sessionId: "session-1", originalQuestion: "Q", answers: { chatgpt: "Completed reply" } } },
+    recoveryActionPending: false, manualReplyTarget: null, manualReplyEditor: editor, manualReplyInput: input,
+    saveManualReplyBtn: save, manualReplyStatusSources: [],
+    document: { querySelector(selector) { return selector === "#manualReplyTarget" ? target : null; } },
+    uiText: text => text, setManualReplyStatus() {},
+    manualReplyContent(state, provider, phase) { return phase === "first-round" ? state.transcript.answers[provider] || "" : ""; },
+    manualReplyPendingSlot() { return null; },
+    isRecoverableReply: text => String(text).startsWith("[錯誤："),
+    meetingSpeakerLabel: () => "ChatGPT", manualReplyPhaseLabel: () => "第一輪回答",
+  });
+  vm.runInContext(body, context);
+  const event = { target: { closest(selector) { return selector === "[data-repair-provider]" ? button : null; } } };
+  click(event);
+  assert.equal(editor.hidden, false);
+  assert.equal(input.value, "Completed reply");
+  assert.equal(context.manualReplyTarget.mode, "edit");
+  input.value = "My corrected draft";
+  click(event);
+  assert.equal(input.value, "My corrected draft", "re-clicking the same card must not discard the draft");
+  assert.equal(save.disabled, false);
+});
+
+test("an automatically received answer keeps its slot and leaves the manual draft unsent", async () => {
+  const handler = source.slice(source.indexOf("saveManualReplyBtn?.addEventListener"), source.indexOf("const advancedControlEls"));
+  let save;
+  let status = "";
+  const requests = [];
+  const input = { value: "My manual draft" };
+  const target = { provider: "chatgpt", phase: "first-round", sessionId: "session-1", expectedContent: "", attemptId: "attempt-1" };
+  const state = { busy: true, transcript: { sessionId: "session-1", answers: { chatgpt: "Automatic answer" } } };
+  const context = vm.createContext({
+    saveManualReplyBtn: { addEventListener(_type, listener) { save = listener; } },
+    manualReplyTarget: target, manualReplyInput: input, latestState: state, recoveryActionPending: false,
+    MAX_MANUAL_REPLY_CHARS: 12000,
+    manualReplyContent(meeting, provider) { return meeting.transcript.answers[provider]; },
+    isRecoverableReply: () => false,
+    setManualReplyStatus(message) { status = message; },
+    chrome: { runtime: { sendMessage(message) { requests.push(message); } } },
+  });
+  vm.runInContext(handler, context);
+  await save();
+  assert.equal(input.value, "My manual draft");
+  assert.equal(state.transcript.answers.chatgpt, "Automatic answer");
+  assert.match(status, /這段 AI 回覆已自動取得/);
+  assert.deepEqual(requests, []);
+  const clickHandler = source.slice(source.indexOf('const button = event.target.closest?.("[data-repair-provider]")'), source.indexOf('document.querySelector("#cancelManualReplyBtn")'));
+  assert.match(clickHandler, /attemptId: pendingSlot\.attemptId/);
+  assert.match(handler, /manualReplyPendingSlot\(latestState, manualReplyTarget\.provider, manualReplyTarget\.phase\)\?\.attemptId !== manualReplyTarget\.attemptId/);
+});
+
 test("a repaired reply retains the latest original fault as escaped visible evidence", () => {
   const body = source.slice(source.indexOf("function replyRecoveryControls"), source.indexOf("function renderReplyRecoveryNotice"));
   const escapeHTML = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const context = vm.createContext({ recoveryActionPending: false, escapeHTML, isRecoverableReply: () => false });
+  const context = vm.createContext({ recoveryActionPending: false, escapeHTML, uiText, isRecoverableReply: () => false });
   vm.runInContext(`${body}\nglobalThis.render = replyRecoveryControls;`, context);
   const state = { transcript: { manualRepairs: [
     { provider: "meta", phase: "critique-2", originalError: "舊故障" },
     { provider: "meta", phase: "critique-2", originalError: "[錯誤：等待回覆逾時] <script>" },
   ] } };
   const html = context.render(state, "meta", "critique-2", "已補入正文");
-  assert.match(html, /查看原故障/);
+  assert.ok(html.includes(uiText("查看原故障")));
   assert.match(html, /等待回覆逾時/);
   assert.match(html, /&lt;script&gt;/);
   assert.doesNotMatch(html, /舊故障|<script>/);
+  state.transcript.manualRepairs.push({ provider: "meta", phase: "first-round", source: "edit", originalError: "prior successful text" });
+  const edited = context.render(state, "meta", "first-round", "corrected text");
+  assert.doesNotMatch(edited, /查看原故障|prior successful text/);
 });
 
 test("repair pauses disable new meetings but leave reset available", () => {

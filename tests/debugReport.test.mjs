@@ -39,3 +39,15 @@ test("debug export masks conversation URLs embedded in original errors before tr
   assert.doesNotMatch(JSON.stringify(report), /https:|private-conversation|private-id/);
   assert.match(report.manualRepairs[0].originalError, /網址已遮蔽/);
 });
+
+test("debug export omits prior reply text from legacy edited-reply repair records", () => {
+  const privateReply = "使用者私人回答內容";
+  const report = buildDebugReport({ transcript: { manualRepairs: [
+    { provider: "chatgpt", phase: "first-round", source: "edit", originalError: privateReply, previousContent: privateReply },
+    { provider: "grok", phase: "critique-2", originalError: "額度用完" },
+  ] } });
+  assert.equal(report.manualRepairs[0].source, "edit");
+  assert.equal("originalError" in report.manualRepairs[0], false);
+  assert.doesNotMatch(JSON.stringify(report), /使用者私人回答內容/);
+  assert.equal(report.manualRepairs[1].originalError, "額度用完");
+});

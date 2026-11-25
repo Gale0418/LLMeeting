@@ -97,6 +97,7 @@ export function buildMeetingExport(state, providerEvents, status, version, now =
     summaries: state.summaries,
     sourceSummary: state.sourceSummary,
     summary: state.summary,
+    ...(state.summaryStale ? { summaryStale: true } : {}),
     reveal: state.reveal,
     providerEvents,
     completeness: {

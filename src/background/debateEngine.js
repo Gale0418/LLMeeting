@@ -188,7 +188,8 @@ export class DebateEngine {
       ...state,
       sessionId: state.sessionId || engine.state.sessionId,
       manualRepairs: Array.isArray(state.manualRepairs) ? state.manualRepairs.filter((repair) =>
-        repair && isProviderId(repair.provider) && typeof repair.phase === "string" && repair.source === "manual") : [],
+        repair && isProviderId(repair.provider) && typeof repair.phase === "string" &&
+        ["manual", "edit"].includes(repair.source)) : [],
       activeProviders: [...engine.activeProviders],
       departedProviders: (Array.isArray(state.departedProviders) ? state.departedProviders : []).filter((id) => engine.activeProviders.includes(id)),
       summaryProvider: engine.summaryProvider,
@@ -309,7 +310,7 @@ ${rawProviderContent}`
     }
   }
 
-  repairProviderReply({ provider, phase, content, expectedContent, sessionId }) {
+  repairProviderReply({ provider, phase, content, expectedContent, sessionId }, { allowPending = false } = {}) {
     this.assertKnownProvider(provider);
     if (!this.participatingProviders.includes(provider) || sessionId !== this.state.sessionId) {
       throw new Error("會議已變更，請重新選擇要補回覆的訊息。");
@@ -318,7 +319,9 @@ ${rawProviderContent}`
     const replies = phase === "first-round" ? this.state.answers :
       phase === "reveal" ? this.state.reveal?.reactions :
       round > 0 ? this.state.critiqueRounds[round - 1] : null;
-    if (!replies || !isRecoverableReply(replies[provider]) || replies[provider] !== expectedContent) {
+    const previous = replies?.[provider];
+    const pending = allowPending && previous === "";
+    if (!replies || (!pending && !isRecoverableReply(previous)) || previous !== expectedContent) {
       throw new Error("這段訊息已變更或不是故障回覆，請重新確認。");
     }
     if (typeof content !== "string" || !content.trim() || content.length > MAX_MANUAL_REPLY_CHARS) {
@@ -329,13 +332,45 @@ ${rawProviderContent}`
     if (phase === "first-round") this.recordAnswer(provider, text);
     else if (phase === "reveal") this.recordReveal(provider, text);
     else this.recordCritique(provider, text, round);
-    this.state.manualRepairs = [...(this.state.manualRepairs || []), {
-      provider, phase, source: "manual", repairedAt: Date.now(), originalError: expectedContent,
-    }].slice(-100);
-    this.state.errors = this.state.errors.map((error) => error.provider === provider && error.phase === phase
-      ? { ...error, resolvedManually: true } : error);
+    this.recordManualRepair(provider, phase, expectedContent);
     if (phase !== "reveal") this.state.reveal = null;
     return this.snapshot();
+  }
+
+  editProviderReply({ provider, phase, content, expectedContent, sessionId }) {
+    this.assertKnownProvider(provider);
+    const normalizedPhase = phase === "answer" ? "first-round" : phase;
+    const round = critiqueRoundFromPhase(normalizedPhase);
+    const replies = normalizedPhase === "first-round" ? this.state.answers
+      : normalizedPhase === "reveal" ? this.state.reveal?.reactions
+        : round > 0 ? this.state.critiqueRounds[round - 1] : null;
+    const previous = replies?.[provider];
+    if (sessionId !== this.state.sessionId || !this.activeProviders.includes(provider) ||
+        !replies || typeof previous !== "string" || !previous.trim() || isRecoverableReply(previous) ||
+        previous !== expectedContent) {
+      throw new Error("這段訊息已變更或不是可編輯的成功回覆，請重新確認。");
+    }
+    if (typeof content !== "string" || !content.trim() || content.length > MAX_MANUAL_REPLY_CHARS) {
+      throw new Error(`請貼上完整 AI 回覆（1–${MAX_MANUAL_REPLY_CHARS.toLocaleString("en-US")} 字元）。`);
+    }
+    const text = normalizePastedReply(provider, content);
+    if (!text || isRecoverableReply(text)) throw new Error("請貼上 AI 的回答，不能貼上 LLMeeting 錯誤訊息。");
+    if (text === previous) return this.snapshot();
+    replies[provider] = text;
+    if (normalizedPhase.startsWith("critique")) this.state.critiques = this.state.critiqueRounds[0];
+    this.recordManualRepair(provider, normalizedPhase, undefined, { source: "edit", previousContent: previous });
+    return this.snapshot();
+  }
+
+  recordManualRepair(provider, phase, expectedContent, { source = "manual", previousContent } = {}) {
+    this.state.manualRepairs = [...(this.state.manualRepairs || []), {
+      provider, phase, source, repairedAt: Date.now(), originalError: expectedContent,
+      ...(previousContent === undefined ? {} : { previousContent }),
+    }].slice(-100);
+    if (source === "manual") {
+      this.state.errors = this.state.errors.map((error) => error.provider === provider && error.phase === phase
+        ? { ...error, resolvedManually: true } : error);
+    }
   }
 
   getLastCompletedRoundData() {

@@ -15,7 +15,8 @@ export function buildDebugReport(state = {}, version = "", now = Date.now()) {
     })),
     manualRepairs: (state.transcript?.manualRepairs || []).slice(-100).map((entry) => ({
       provider: text(entry.provider, 30), phase: text(entry.phase, 80), repairedAt: entry.repairedAt,
-      originalError: errorText(entry.originalError),
+      ...(entry.source === "edit" || entry.source === "manual" ? { source: entry.source } : {}),
+      ...(entry.source === "edit" ? {} : { originalError: errorText(entry.originalError) }),
     })),
     providers: Object.entries(state.providerDiagnostics || {}).map(([provider, entry]) => ({
       provider: text(provider, 30), stage: text(entry.stage, 80), phase: text(entry.phase, 80),

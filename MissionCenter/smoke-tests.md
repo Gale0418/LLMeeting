@@ -1,5 +1,11 @@
 # Smoke Tests
 
+## 2026-11-25 0.5.3 分頁啟動與會議補救（LLM-T82）
+
+- `node --test --test-reporter=tap tests/*.test.mjs` 與 `npm --prefix tests/browser test`。Node 661 項、Chromium 獨立側欄 101 項與原生側欄 52 項、ZIP 59 檔通過。CodeRabbit 初查 125 檔、複查 10 檔，初查 0 項，複查 2 項經查已由現行程式與測試覆蓋；另修正偵錯匯出的舊回覆洩漏及編輯儲存失敗重試。
+- 驗證背景開頁後逐一檢查、慢分頁喚醒、等待中離席、忽略晚到的自動回覆、修補完成後可再開啟編輯。隔離瀏覽器使用模擬回覆，登入態五家長會議待驗。
+- 候選 ZIP SHA256 fe00e423ef72e7170e7cf8ac45a2d63aee7c31edea02ca3bc5109d58b7f2c0f0。[本次驗收](evidence/053-driver21-main-20261125.json)。
+
 ## 2026-11-23 0.5.3 封裝與上傳前驗證
 
 - Node 641/641，隔離 Chromium 獨立側欄 101 項及原生側欄 51 項通過，ZIP 59 檔逐一驗證。

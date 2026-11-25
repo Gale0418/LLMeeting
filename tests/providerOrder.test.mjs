@@ -54,20 +54,26 @@ test("custom order reaches first round, masked peer prompts, restored rounds, fi
   assert.deepEqual(restored.buildCritiqueJobs(round).map(j => j.provider), order.filter(id => id !== "grok"));
 });
 
-test("preflight opens or reuses tabs sequentially in the requested activation order", async () => {
+test("startup opens required tabs together, then checks them sequentially in requested order", async () => {
   const worker = await readFile("src/background/service-worker.js", "utf8");
   const body = worker.slice(worker.indexOf("async function checkProviderTabsSequentially("), worker.indexOf("async function getCurrentActiveTab("));
-  const calls = [];
+  const opened = [], openOptions = [], checked = [];
   const order = ["meta", "claude", "grok", "chatgpt", "gemini"];
   const context = vm.createContext({ getCurrentActiveTab: async () => ({ id: 99 }),
     runController: { assertCurrent() {} },
-    getOrCreateProviderTab: async (id, options) => { calls.push(id); return { id: options.preferredTabId || calls.length }; },
-    activateProviderTabForReadiness: async () => {}, checkProviderTabReadiness: async (tabId, provider) => ({ provider, tabId, ready: true }),
+    getOrCreateProviderTab: async (id, options) => { opened.push(id); openOptions.push(options); return { id: options.preferredTabId || opened.length }; },
+    activateProviderTabForReadiness: async () => {}, checkProviderTabReadiness: async (tabId, provider) => {
+      assert.deepEqual(opened, order, "all startup tabs must be opened before the first readiness check");
+      checked.push(provider);
+      return { provider, tabId, ready: true };
+    },
     restoreActiveTab: async tab => { assert.equal(tab.id, 99); },
   });
   vm.runInContext(body, context);
   const results = await context.checkProviderTabsSequentially(order, { claude: 78 }, 1, { forceNewTabs: true });
-  assert.deepEqual(calls, order);
+  assert.deepEqual(opened, order);
+  assert.ok(openOptions.every(options => options.activate === false));
+  assert.deepEqual(checked, order);
   assert.deepEqual(Array.from(results, row => row.provider), order);
   assert.equal(results[1].tabId, 78);
 });

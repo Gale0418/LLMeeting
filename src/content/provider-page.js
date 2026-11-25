@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = "0.5.3-driver.20";
+  const CONTENT_SCRIPT_VERSION = "0.5.3-driver.21";
   const {
     assistantSnapshot,
     classifyProviderResponseError,
@@ -672,9 +672,21 @@
       if (!initialConversationIdentity && postSubmitConversationIdentity &&
           String(location.href || "") !== initialPageUrl &&
           !hasVerifiedNewSubmittedTurn(config, providerId, message.prompt, initialPromptCount, initialUserTurnIdentities)) {
+        // Some providers publish the new route before the committed user turn
+        // is visible. Keep the exact-turn gate, but allow the full confirmation
+        // window for the page's conversation tree to hydrate.
+        const assertNewConversation = () => {
+          assertSourceConversation();
+          if (readConversationIdentity(providerId) !== postSubmitConversationIdentity) {
+            throw Object.assign(new Error("等待提示出現時已切換對話，已停止擷取。"), {
+              code: "PROVIDER_CONVERSATION_CHANGED",
+            });
+          }
+        };
         await waitForOptional(() => hasVerifiedNewSubmittedTurn(
           config, providerId, message.prompt, initialPromptCount, initialUserTurnIdentities,
-        ) ? true : null, Math.min(SUBMISSION_CONFIRM_TIMEOUT_MS, 2000), assertSourceConversation);
+        ) ? true : null, SUBMISSION_CONFIRM_TIMEOUT_MS, assertNewConversation);
+        assertNewConversation();
         if (!hasVerifiedNewSubmittedTurn(config, providerId, message.prompt, initialPromptCount, initialUserTurnIdentities)) {
           const error = new Error("新對話網址尚未對應到這次送出的提示，已停止擷取。");
           error.code = "PROVIDER_CONVERSATION_CHANGED";

@@ -860,7 +860,7 @@ test("Grok readiness recognizes the localized live composer structure", async ()
 test("provider content script uses a replaceable versioned listener after extension reload", async () => {
   const script = await readFile("src/content/provider-page.js", "utf8");
 
-  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.3-driver\.20"/);
+  assert.match(script, /CONTENT_SCRIPT_VERSION = "0\.5\.3-driver\.21"/);
   assert.match(script, /"aiDebate:getCapabilities": getCapabilities/);
   assert.match(script, /__aiDebateContentVersion/);
   assert.match(script, /onMessage\.removeListener\(globalThis\.__aiDebateContentMessageListener\)/);
@@ -881,7 +881,7 @@ test("same-version content reinjection replaces the listener without duplicating
   assert.equal(listeners.size, 1);
   assert.notEqual(context.__aiDebateContentMessageListener, previous);
   const response = await new Promise(resolve => context.__aiDebateContentMessageListener({ type: "aiDebate:getCapabilities" }, {}, resolve));
-  assert.equal(response.contentScriptVersion, "0.5.3-driver.20");
+  assert.equal(response.contentScriptVersion, "0.5.3-driver.21");
 });
 
 test("failed content initialization cannot poison the next injection", async () => {
@@ -1388,6 +1388,45 @@ test("Meta AI adapter only matches the packaged meta.ai hosts", () => {
   assert.equal(meta.preferredInputSelector, "[data-testid='composer-input'][data-lexical-editor='true'][contenteditable='true'][role='textbox']");
   assert.ok(meta.inputSelectors.includes("div[data-lexical-editor='true'][contenteditable='true'][role='textbox']"));
   assert.equal(meta.sendSelectors[0], "button[data-testid='composer-send-button']");
+  assert.equal(meta.userMessageSelectors[0], "[data-message-item][data-message-role='user'][role='article']");
+  assert.ok(meta.userMessageSelectors.includes("[role='article'][aria-label='你的訊息']"));
+});
+
+test("ChatGPT resolves the current id-less composer and localized send button", async () => {
+  const config = globalThis.aiDebateProviderAdapters.chatgpt;
+  const send = {
+    disabled: false,
+    getAttribute: name => ({ role: "button", "aria-label": "傳送" })[name] || null,
+    getBoundingClientRect: () => ({ width: 40, height: 40 }),
+  };
+  const voice = {
+    disabled: false,
+    getAttribute: name => ({ role: "button", "aria-label": "開始語音對話", "data-composer-voice-start": "true" })[name] || null,
+    getBoundingClientRect: () => ({ width: 40, height: 40 }),
+  };
+  const composer = { querySelectorAll: selector => selector === "button[aria-label='傳送']" ? [send]
+    : selector === "button, [role='button']" ? [send, voice] : [] };
+  const input = {
+    tagName: "DIV", parentElement: composer,
+    getAttribute: name => ({ role: "textbox", contenteditable: "true", "aria-label": "問問 ChatGPT" })[name] || null,
+    getBoundingClientRect: () => ({ width: 400, height: 50 }),
+    closest: selector => selector === "[data-chatgpt-composer]" ? composer : null,
+  };
+  const context = await loadProviderPageTestContext({
+    aiDebateProviderAdapters: globalThis.aiDebateProviderAdapters,
+    aiDebateAutomationCore: globalThis.aiDebateAutomationCore,
+    location: { hostname: "chatgpt.com", pathname: "/" },
+    document: { querySelectorAll: selector => selector === config.preferredInputSelector || config.inputSelectors.includes(selector)
+      ? [input] : selector === "[data-chatgpt-composer]" ? [composer] : [] },
+    getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+  });
+  const api = context.aiDebateProviderPageTest;
+  assert.equal(api.findInput(config), input);
+  assert.equal(api.findSendButton(config, input), send);
+  const readiness = await context.aiDebateProviderPageReadiness({ provider: "chatgpt" });
+  assert.equal(readiness.ready, true);
+  assert.equal(readiness.checks.input.ok, true);
+  assert.equal(readiness.checks.send.found, true);
 });
 
 test("Gemini send selectors match the current composer without generic submit buttons", () => {
@@ -1618,7 +1657,7 @@ test("Meta selection synchronization rechecks cancellation before changing the e
   assert.equal(writes, 0);
 });
 
-async function sourceSubmissionFixture({ provider = "meta", navigateBeforeWrite, navigateAfterWrite, navigateAfterClick, newChat = false, prompt: promptOverride, userTurnIdentity = true, userTurnsBefore = [], userTurnsAfter = [] } = {}) {
+async function sourceSubmissionFixture({ provider = "meta", navigateBeforeWrite, navigateAfterWrite, navigateAfterClick, newChat = false, prompt: promptOverride, userTurnIdentity = true, userTurnsBefore = [], userTurnsAfter = [], userTurnDelayMs = 0, routeChangeDelayMs = Infinity } = {}) {
   const config = globalThis.aiDebateProviderAdapters[provider];
   const isChatGpt = provider === "chatgpt";
   const hostname = isChatGpt ? "chatgpt.com" : "www.meta.ai";
@@ -1631,6 +1670,8 @@ async function sourceSubmissionFixture({ provider = "meta", navigateBeforeWrite,
   let value = "";
   let clicks = 0;
   let writes = 0;
+  let now = 0;
+  let clickedAt = 0;
   const prompt = promptOverride || (isChatGpt
     ? "分析這個網址 https://example.com/report?q=1 並提出建議。"
     : "原問題\n\n互評引用\n完整尾端");
@@ -1655,7 +1696,7 @@ async function sourceSubmissionFixture({ provider = "meta", navigateBeforeWrite,
     disabled: false, isConnected: true, textContent: "傳送", className: "",
     getAttribute: (name) => ({ role: "button", "aria-label": "傳送" })[name] || null,
     getBoundingClientRect: () => ({ width: 40, height: 40 }),
-    click() { clicks += 1; value = ""; if (navigateAfterClick) navigate(); },
+    click() { clicks += 1; clickedAt = now; value = ""; if (navigateAfterClick) navigate(); },
   };
   const context = await loadProviderPageTestContext({
     aiDebateProviderAdapters: globalThis.aiDebateProviderAdapters,
@@ -1664,7 +1705,7 @@ async function sourceSubmissionFixture({ provider = "meta", navigateBeforeWrite,
     document: {
       querySelectorAll: (selector) => selector === config.preferredInputSelector || config.inputSelectors.includes(selector)
         ? [editor] : config.sendSelectors.includes(selector) ? [button]
-          : selector === config.userMessageSelectors[0] ? userTurns(clicks ? userTurnsAfter : userTurnsBefore) : [],
+          : selector === config.userMessageSelectors[0] ? userTurns(clicks && now - clickedAt >= userTurnDelayMs ? userTurnsAfter : userTurnsBefore) : [],
       getSelection: () => ({ selectAllChildren() {} }),
       execCommand: (_command, _ui, text) => {
         writes += 1;
@@ -1674,6 +1715,16 @@ async function sourceSubmissionFixture({ provider = "meta", navigateBeforeWrite,
       },
     },
     getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+    Date: class extends Date { static now() { return now; } },
+    setTimeout: (callback, milliseconds) => {
+      now += Number(milliseconds) || 0;
+      if (clicks && now - clickedAt >= routeChangeDelayMs) {
+        Object.assign(location, { pathname: "/prompt/foreign", href: `https://${hostname}/prompt/foreign` });
+      }
+      queueMicrotask(callback);
+      return 0;
+    },
+    clearTimeout: () => {},
   });
   const submit = (options) => context.aiDebateProviderPageTest.submitPrompt({
     provider, prompt, phase: "critique-1", runId: "meta-regression", ...options,
@@ -1720,6 +1771,27 @@ test("new chat route ID is accepted after its submitted user turn appears", asyn
   assert.equal(fixture.submittedRun().conversationIdentity, "new");
   assert.equal(result.conversationTransition.fromUrl, fixture.sourceUrl);
   assert.equal(result.conversationTransition.toUrl, "https://www.meta.ai/prompt/new");
+  assert.deepEqual(fixture.counts(), { clicks: 1, writes: 1 });
+});
+
+test("Meta waits for its delayed committed turn before accepting a new chat route", async () => {
+  const fixture = await sourceSubmissionFixture({
+    newChat: true, navigateAfterClick: true, userTurnsAfter: ["new-turn"], userTurnDelayMs: 3500,
+  });
+  const result = await fixture.submit({ expectedSourceUrl: fixture.sourceUrl });
+  assert.equal(result.ok, true);
+  assert.equal(fixture.submittedRun().submittedPromptIdentity, "new-turn");
+  assert.equal(result.conversationTransition.toUrl, "https://www.meta.ai/prompt/new");
+  assert.deepEqual(fixture.counts(), { clicks: 1, writes: 1 });
+});
+
+test("Meta's delayed confirmation stops if the new conversation is switched", async () => {
+  const fixture = await sourceSubmissionFixture({
+    newChat: true, navigateAfterClick: true, userTurnsAfter: ["new-turn"],
+    userTurnDelayMs: 3500, routeChangeDelayMs: 1000,
+  });
+  await assert.rejects(fixture.submit(), { code: "PROVIDER_CONVERSATION_CHANGED" });
+  assert.equal(fixture.submittedRun(), undefined);
   assert.deepEqual(fixture.counts(), { clicks: 1, writes: 1 });
 });
 
@@ -2479,10 +2551,13 @@ test("submitted run is bound to the confirmed conversation route", async () => {
 });
 
 test("new conversation route is bound when its ID arrives after submission confirmation", async () => {
+  let now = 1000;
   const user = { innerText: "這次提示", textContent: "這次提示", contains: other => other === user,
     getAttribute: name => name === "data-message-author-role" ? "user" : null,
     getBoundingClientRect: () => ({ width: 400, height: 40 }) };
   const context = await loadProviderPageTestContext({
+    Date: { now: () => now },
+    setTimeout: (callback, delay) => { now += delay; queueMicrotask(callback); },
     aiDebateAutomationCore: { ...globalThis.aiDebateAutomationCore, matchesProviderLocation },
     aiDebateProviderAdapters: globalThis.aiDebateProviderAdapters,
     location: { hostname: "chatgpt.com", pathname: "/c/new-thread", search: "", hash: "" },
@@ -2490,7 +2565,7 @@ test("new conversation route is bound when its ID arrives after submission confi
     getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
   });
   const run = { providerId: "chatgpt", epoch: 0, phase: "first-round", prompt: "這次提示",
-    baseline: assistantSnapshot([]), errorBaseline: [], submittedAt: Date.now(), userTurnCount: 0,
+    baseline: assistantSnapshot([]), errorBaseline: [], submittedAt: now, userTurnCount: 0,
     baselinePromptCount: 0, conversationIdentity: null };
   context.aiDebateProviderPageTest.submittedRuns.set("late-route", run);
 

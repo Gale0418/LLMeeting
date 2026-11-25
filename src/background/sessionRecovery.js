@@ -61,7 +61,9 @@ function recoverInterruptedRepairPause(normalized) {
     }
   }
   const snapshot = engine.snapshot();
+  const departed = new Set([...(normalized.departedProviders || []), ...(snapshot.departedProviders || [])]);
   for (const job of jobsToRecover) {
+    if (departed.has(job.provider)) continue;
     const reply = job.phase === "first-round"
       ? snapshot.answers?.[job.provider]
       : String(job.phase).startsWith("critique")
@@ -187,7 +189,7 @@ function recoverInterruptedDebate(normalized, checkpoint) {
   const providers = engine.participatingProviders;
   const snapshot = engine.snapshot();
   const originalQuestion = snapshot.originalQuestion;
-  if ((checkpoint.provider && !providers.includes(checkpoint.provider)) ||
+  if ((checkpoint.provider && !providers.includes(checkpoint.provider) && !snapshot.departedProviders?.includes(checkpoint.provider)) ||
       (!checkpoint.provider && checkpoint.stage !== "prepared") || !originalQuestion?.trim()) return null;
   if (firstRound && snapshot.interactionStyle === "imposter") {
     const pausedPhase = normalized.repairPause?.pausedPhase ||
@@ -349,6 +351,13 @@ export function recoverSession(storedState, createIdleState, now = Date.now()) {
 
   if (normalized.busy || normalized.status === "running") {
     const checkpoint = normalized.workflowCheckpoint;
+    if (checkpoint?.phase === "source-summary" && normalized.departedProviders?.includes(normalized.sourceProvider)) {
+      return {
+        state: { ...normalized, busy: false, status: "done", phase: "done", repairPause: null, workflowCheckpoint: null,
+          message: "來源摘要提供者已離席，已安全結束本場並保留歷史紀錄。" },
+        engine: null, shouldPersist: true,
+      };
+    }
     const repaired = recoverInterruptedDebate(normalized, checkpoint);
     if (repaired) return repaired;
     const resumedPause = recoverInterruptedRepairPause(normalized);

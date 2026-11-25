@@ -24,7 +24,7 @@ test("provider readiness has a stable service-worker boundary and status mapping
   assert.match(script, /async function checkReadinessRequest\(message = \{\}, readinessToken\)/);
   assert.match(script, /Array\.isArray\(message\.activeProviders\)/);
   assert.match(script, /preflightResults: results/);
-  assert.match(script, /sendProviderReadinessMessage\(effectiveTabId, \{[\s\S]*phase: "readiness"[\s\S]*\}, "aiDebate:checkReadiness"\)/);
+  assert.match(script, /sendProviderReadinessMessage\(effectiveTabId, \{[\s\S]*phase: "readiness"[\s\S]*\}, "aiDebate:checkReadiness", runToken\)/);
   for (const code of [
     "READY",
     "TAB_NOT_FOUND",
@@ -44,7 +44,7 @@ test("provider readiness has a stable service-worker boundary and status mapping
 test("provider messaging repairs stale content scripts through a version handshake", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
-  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.3-driver\.20"/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.3-driver\.21"/);
   assert.match(script, /PROVIDER_DRIVER_CONTRACT_VERSION = 1/);
   assert.match(script, /"src\/content\/provider-driver\.js"/);
   assert.match(script, /type: "aiDebate:getCapabilities"/);
@@ -81,11 +81,12 @@ test("debate warms and checks provider tabs sequentially before creating a forma
 
   assert.match(preflight, /checkProviderTabsSequentially\(uniqueProviderIds, hookedTabs, runToken, options\)/);
   assert.match(sequential, /for \(const providerId of providerIds\)/);
-  assert.match(sequential, /forceNewTab: options\.forceNewTabs === true && !Number\.isInteger\(seededTabId\)/);
-  assert.match(sequential, /await activateProviderTabForReadiness\(tab\)/);
-  assert.match(sequential, /results\.push\(await checkProviderTabReadiness\(tab\.id, providerId\)\)/);
+  assert.match(sequential, /forceNewTab: !Number\.isInteger\(seededTabId\)/);
+  assert.match(sequential, /await activateProviderTabForReadiness\(tab, runToken\)/);
+  assert.match(sequential, /results\.push\(await checkProviderTabReadiness\(tab\.id, providerId, runToken\)\)/);
   assert.match(sequential, /finally \{[\s\S]*await restoreActiveTab\(originalTab\)/);
-  assert.doesNotMatch(sequential, /Promise\.all/);
+  assert.match(sequential, /Open all required startup tabs before focusing any one of them/);
+  assert.match(sequential, /preparedTabs = await Promise\.all\(providerIds\.map/);
   assert.ok(questionStart.indexOf("await preflightProviderTabs") < questionStart.indexOf("new DebateEngine"));
   assert.match(script, /const providerTabs = \{ \.\.\.\(options\.hookedTabs \|\| \{\}\), \.\.\.preflight\.providerTabs \};/);
   assert.match(script, /openEnded: true,[\s\S]*interactiveMode: true,[\s\S]*debateRounds: 1/);
@@ -204,7 +205,7 @@ test("service worker forwards selected debate round count into the engine", asyn
 test("new provider tabs open as active pages instead of dormant background tabs", async () => {
   const script = await readFile("src/background/service-worker.js", "utf8");
 
-  assert.match(script, /chrome\.tabs\.create\(\{ url: provider\.startUrl, active: true \}\)/);
+  assert.match(script, /chrome\.tabs\.create\(\{ url: provider\.startUrl, active: options\.activate !== false \}\)/);
 });
 
 test("summary debate starts from the current provider tab and returns the final prompt there", async () => {
@@ -303,7 +304,7 @@ test("provider debug history is bounded, persisted, and keeps only approved diag
   }
   assert.match(script, /error\.debugDetails = sanitizeDebugDetails\(response\?\.debugDetails\)/);
   assert.match(script, /debugDetails: sanitizeDebugDetails\(error\.debugDetails\)/);
-  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.3-driver\.20"/);
+  assert.match(script, /PROVIDER_CONTENT_SCRIPT_VERSION = "0\.5\.3-driver\.21"/);
 });
 
 test("transient response read RPC failures retry the same run within the provider deadline", async () => {
@@ -314,7 +315,7 @@ test("transient response read RPC failures retry the same run within the provide
   const collect = script.slice(collectStart, helperStart);
   const helper = script.slice(helperStart, helperEnd);
 
-  assert.match(collect, /readSubmittedResponseWithRetry\(submitted, tab\.id, deadline, runToken\)/);
+  assert.match(collect, /readSubmittedResponseWithRetry\(submitted, tab\.id, deadline, runToken, liveAttempt\)/);
   assert.match(helper, /sendProviderMessage\(tabId, submitted, "aiDebate:readSubmittedResponse"/);
   assert.match(helper, /runId: submitted\.runId/);
   assert.match(helper, /isSafeReadRetryTransientError\(error\)/);
@@ -790,7 +791,7 @@ test("readiness falls back to a fresh provider tab when the requested tab is sta
       async update() {},
       async sendMessage(_tabId, message) {
         if (message.type === "aiDebate:getCapabilities") {
-          return { contentScriptVersion: "0.5.3-driver.20", driverContractVersion: 1 };
+          return { contentScriptVersion: "0.5.3-driver.21", driverContractVersion: 1 };
         }
         return { ready: true, status: "ready", checks: {} };
       },
@@ -820,7 +821,7 @@ test("provider tabs reuse matching open pages before creating a fresh one", asyn
   assert.match(helper, /candidateTabIds\.push\(options\.preferredTabId\)[\s\S]*candidateTabIds\.push\(boundTabId\)[\s\S]*for \(const candidateTabId of candidateTabIds\)/);
   assert.match(helper, /if \(!options\.forceNewTab\) \{[\s\S]*chrome\.tabs\.query\(\{ url: pattern \}\)/);
   assert.match(helper, /const existingTab = existingTabs\.find\(\(tab\) => isProviderTabReady\(tab, provider\)\)/);
-  assert.ok(helper.includes("chrome.tabs.create({ url: provider.startUrl, active: true })"));
+  assert.ok(helper.includes("chrome.tabs.create({ url: provider.startUrl, active: options.activate !== false })"));
   assert.ok(helper.indexOf("for (const candidateTabId of candidateTabIds)") < helper.indexOf("chrome.tabs.create"));
 });
 

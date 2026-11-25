@@ -84,8 +84,30 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       await saveAndBroadcast();
       return { ok: true, state };
     }
+    if (message.type === 'aiDebate:departProvider' && state.transcript?.originalQuestion.startsWith('[fixture:live-actions]')) {
+      const slot = state.manualReplySlots.find(({ provider, phase, attemptId }) =>
+        provider === message.provider && phase === message.phase && attemptId === message.attemptId);
+      if (!slot || message.sessionId !== state.transcript.sessionId || message.expectedContent !== '') {
+        return { ok: false, error: 'Fixture pending departure mismatch' };
+      }
+      state.departedProviders.push(slot.provider);
+      state.manualReplySlots = state.manualReplySlots.filter((entry) => entry !== slot);
+      await saveAndBroadcast();
+      return { ok: true, state };
+    }
     if (message.type === 'aiDebate:repairReply') {
       if (rejectRepair) return { ok: false, error: '補入失敗，貼上的內容已保留。' };
+      if (message.mode === 'edit' && state.transcript?.originalQuestion.startsWith('[fixture:live-actions]')) {
+        const { provider, phase, sessionId, expectedContent, content } = message;
+        if (phase !== 'first-round' || sessionId !== state.transcript.sessionId || state.transcript.answers[provider] !== expectedContent) {
+          return { ok: false, error: 'Fixture completed reply mismatch' };
+        }
+        state.transcript.answers[provider] = content;
+        const saved = Boolean(state.fixtureEditStorageFailed);
+        state.fixtureEditStorageFailed = true;
+        await saveAndBroadcast();
+        return { ok: true, saved, appliedContent: content, state };
+      }
       if (typeof message.sessionId !== 'string' || !message.sessionId.trim()
           || message.sessionId !== state.transcript.sessionId || message.expectedContent !== state.summary) {
         return { ok: false, error: 'Fixture repair target mismatch' };

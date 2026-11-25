@@ -1,0 +1,61 @@
+{
+  "task": "LLM-T82",
+  "version": "0.5.3",
+  "driver": "0.5.3-driver.21",
+  "recordedAt": "2026-11-25T21:46:29+08:00",
+  "gitTarget": "Gale0418/LLMeeting main",
+  "baseCommit": "53a3fc8edb7d952522ba77b2fa35a4d5c88e6177",
+  "nodeTests": 661,
+  "browser": {
+    "standalone": 101,
+    "native": 52,
+    "pageErrors": 0,
+    "syntheticProviderTrafficOnly": true,
+    "reportSha256": "bf2b90a3a9aba59d208d7ca454b80bcab8be4c8e21c54f0cb783e67c184e7cd2"
+  },
+  "package": {
+    "files": 59,
+    "bytes": 2919897,
+    "sha256": "fe00e423ef72e7170e7cf8ac45a2d63aee7c31edea02ca3bc5109d58b7f2c0f0",
+    "matchesWorkspace": true
+  },
+  "codeRabbit": {
+    "filesPerRun": 150,
+    "runsPerHour": 3,
+    "runs": [
+      {
+        "scope": "full",
+        "files": 125,
+        "issues": 0,
+        "status": "review_completed"
+      },
+      {
+        "scope": "focus",
+        "files": 10,
+        "issues": 2,
+        "status": "review_completed",
+        "dispositions": [
+          {
+            "path": "src/background/service-worker.js",
+            "issue": "編輯回執需區分已套用與已保存",
+            "result": "already-covered",
+            "proof": "訊息端原樣回傳 saved 與 appliedContent。Chrome 原生側欄模擬第一次儲存失敗，保留草稿後按第二次便成功。"
+          },
+          {
+            "path": "src/background/service-worker.js",
+            "issue": "確認新編輯與重試的歷史判斷",
+            "result": "already-covered",
+            "proof": "DebateEngine.recordManualRepair 一律以新陣列寫入；同值重試在建立紀錄前返回。背景回歸驗證一筆編輯紀錄及一筆事件。"
+          }
+        ]
+      }
+    ],
+    "scope": "現行變更及仍在使用的歷史原始碼、合成測試、語系與產品文件。排除二進位素材、鎖檔、舊計畫、營運紀錄和本機輸出。"
+  },
+  "reviewSummary": "CodeRabbit 初查 125 檔、複查 10 檔，初查 0 項，複查 2 項經查已由現行程式與測試覆蓋；另修正偵錯匯出的舊回覆洩漏及編輯儲存失敗重試。",
+  "localFixes": [
+    "修正舊回答進入偵錯下載的問題，舊格式編輯紀錄也會略過正文。",
+    "編輯已套用但尚未寫入本機時保留草稿，可安全重試且只記錄一次編輯。"
+  ],
+  "remaining": "五家登入態長會議尚待驗收，LLM-T82 保持 Review。"
+}

@@ -9,7 +9,7 @@ test("all-anonymous summary returns an explicit failure when no judges return re
   const section = source.slice(source.indexOf("async function runFinalSummary"), source.indexOf("async function finishImposterReveal"));
   const context = {
     runtimeState: { summaryStrategy: "allAnonymous" },
-    engine: { buildFinalJobs: () => [] },
+    engine: { buildFinalJobs: () => [], participatingProviders: [] },
     runController: { assertCurrent() {} },
     runFastProviderJobs: async () => [],
   };
@@ -43,10 +43,12 @@ test("all-anonymous summary ordering and fallback labels do not depend on reply 
     runtimeState: { summaryStrategy: "allAnonymous" },
     PROVIDERS: [{ id: "chatgpt" }, { id: "gemini" }, { id: "grok" }],
     engine: {
+      participatingProviders: ["grok", "chatgpt"],
       buildFinalJobs: () => [{ provider: "grok" }, { provider: "chatgpt" }],
       snapshot: () => ({ anonymousNames: {} }),
     },
     runController: { assertCurrent() {} },
+    filterParticipatingJobs: (jobs) => jobs,
     async runFastProviderJobs() {
       context.runtimeState.summaries = { chatgpt: "second reply", grok: "first reply" };
       return [{ ok: true }, { ok: true }];

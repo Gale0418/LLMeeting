@@ -235,7 +235,7 @@ async function exercise(panel, settings, control, label) {
     const ids = await panel.locator('.bubble-group.assistant').evaluateAll(nodes => nodes.map(n =>
       ['meta','grok','chatgpt','claude','gemini'].find(id => n.classList.contains(id))));
     assert.deepEqual(ids.slice(0, 5), order);
-    assert.deepEqual(ids.slice(5), order);
+    assert.deepEqual(ids.slice(5), order.filter(id => id !== 'claude'));
   }, 'discussion provider order');
   checks.push({scenario:'activation-order-cards-hooks-personas-focus-reload-discussion',status:'pass'});
   for (const scenario of ['first-round', 'critique', 'summary', 'fault']) {
@@ -334,6 +334,36 @@ async function exercise(panel, settings, control, label) {
   await panel.locator('#sessionHealth').scrollIntoViewIfNeeded();
   await panel.evaluate(() => window.scrollBy(0, -document.querySelector('header').getBoundingClientRect().height - 12));
   await panel.screenshot({ path: path.join(out, `${label}-health-en.png`) });
+  if (label === 'native') {
+    await control({ type: 'test:scenario', scenario: 'live-actions' });
+    await panel.getByText('[fixture:live-actions] Public synthetic question', { exact: true }).waitFor();
+    const leave = panel.locator('[data-depart-provider="gemini"][data-depart-phase="first-round"]');
+    assert.equal(await leave.isEnabled(), true);
+    await leave.click();
+    await leave.waitFor({ state: 'detached' });
+    assert.equal(await panel.locator('.bubble-group.assistant.gemini.loading').count(), 0);
+    const edit = panel.locator('[data-repair-provider="chatgpt"][data-repair-phase="first-round"]');
+    await edit.click();
+    await editor.waitFor({ state: 'visible' });
+    assert.equal(await input.inputValue(), rawReply);
+    const complete = `${rawReply}\nThe complete ending.`;
+    await input.fill(complete);
+    const saveEdit = panel.locator('#saveManualReplyBtn');
+    await saveEdit.click();
+    await panel.getByText(uiText('回覆已套用，尚未存入本機。你可以再按一次儲存。','en'), { exact: true }).waitFor();
+    assert.equal(await input.inputValue(), complete);
+    await saveEdit.click();
+    await editor.waitFor({ state: 'hidden' });
+    const updated = await control({ type: 'test:inspect' });
+    assert.ok(updated.state.departedProviders.includes('gemini'));
+    assert.equal(updated.state.transcript.answers.chatgpt, complete);
+    assert.equal(updated.state.busy, true);
+    await eventually(async () => assert.equal(await edit.isEnabled(), true), 'completed reply stays editable after saving');
+    await edit.click();
+    assert.equal(await input.inputValue(), complete);
+    await panel.locator('#cancelManualReplyBtn').click();
+    checks.push({ scenario: 'live-departure-and-completed-reply-edit', status: 'pass' });
+  }
   if (label === 'standalone-480') {
     const archiveResult = await control({ type: 'test:archiveRegression' });
     assert.equal(archiveResult.ok, true, archiveResult.error);
