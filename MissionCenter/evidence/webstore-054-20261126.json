@@ -1,6 +1,6 @@
 {
   "extensionId": "cjombmcmgifhanenolhaeepbpnlchjdp",
-  "phase": "preflight",
+  "phase": "submittedForReview",
   "package": {
     "filename": "llmeeting-0.5.4.zip",
     "version": "0.5.4",
@@ -46,5 +46,12 @@
     "uses signed-in web pages"
   ],
   "listingModified": false,
-  "autoPublishRequested": true
+  "autoPublishRequested": true,
+  "webstore": {
+    "confirmedAt": "2026-11-26T00:06:43+08:00",
+    "draftVersion": "0.5.4",
+    "publishedVersionBeforeSubmission": "0.5.3",
+    "autoPublish": true,
+    "confirmationText": "你已將擴充功能提交審查"
+  }
 }
