@@ -21,8 +21,8 @@ test("manifest declares the side-panel MV3 extension shell", async () => {
   assert.equal(manifest.name, "LLMeeting");
   assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
   assert.equal(manifest.version, packageJson.version);
-  assert.equal(manifest.version, "0.5.3");
-  assert.equal(packageJson.version, "0.5.3");
+  assert.equal(manifest.version, "0.5.4");
+  assert.equal(packageJson.version, "0.5.4");
   assert.equal(manifest.action.default_title, "LLMeeting");
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.side_panel.default_path, "src/sidepanel/index.html");

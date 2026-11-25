@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = "0.5.3-driver.21";
+  const CONTENT_SCRIPT_VERSION = "0.5.4-driver.21";
   const {
     assistantSnapshot,
     classifyProviderResponseError,
