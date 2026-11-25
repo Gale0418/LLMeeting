@@ -1,0 +1,50 @@
+{
+  "extensionId": "cjombmcmgifhanenolhaeepbpnlchjdp",
+  "phase": "preflight",
+  "package": {
+    "filename": "llmeeting-0.5.4.zip",
+    "version": "0.5.4",
+    "driverVersion": "0.5.4-driver.21",
+    "sha256": "9f01911ceba45636a064e838724c19c29bbd3cae489bcc00965ec20e479cf54f",
+    "entries": 59,
+    "bytes": 2910191,
+    "manifestChanges": [
+      "version"
+    ],
+    "changedEntries": [
+      "manifest.json",
+      "src/background/service-worker.js",
+      "src/content/provider-page.js",
+      "src/sidepanel/index.html"
+    ]
+  },
+  "sourceCommit": "302edc2cbaa8fefc2a30c7d57f41f4fd8272da00",
+  "functionalBaseCommit": "27508081401122eeb4fefb3113a57e315414865c",
+  "preflightAt": "2026-11-26T00:05:08+08:00",
+  "preflightStore": {
+    "draftVersion": "0.5.3",
+    "publishedVersion": "0.5.3",
+    "publishedVisibility": "public"
+  },
+  "tests": {
+    "node": {
+      "passed": 661,
+      "total": 661
+    },
+    "packageCrc": "pass",
+    "packageEntriesMatchSource": true,
+    "priorDriverValidationReused": "053-driver21-main-20261125.json",
+    "fiveProviderSignedInLongMeeting": "pending"
+  },
+  "verifiedListingDescriptions": {
+    "en": 2402,
+    "ja": 1138,
+    "zh-TW": 1087
+  },
+  "listingClaimsVerified": [
+    "OWO+ free to use",
+    "uses signed-in web pages"
+  ],
+  "listingModified": false,
+  "autoPublishRequested": true
+}
